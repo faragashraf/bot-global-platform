@@ -4,6 +4,7 @@ import { Subject } from 'rxjs';
 import type { CatalogProduct } from '../models/catalog.model';
 import { CATALOG_REPOSITORY } from './catalog.repository';
 import { CatalogEngine, validateCatalogProducts } from './catalog-engine.service';
+import { InMemoryCatalogRepository } from './in-memory-catalog.repository';
 
 const CATALOG_PRODUCT_FIXTURE: CatalogProduct = {
   id: 'catalog-fixture',
@@ -23,7 +24,14 @@ describe('CatalogEngine', () => {
   let engine: CatalogEngine;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({});
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: CATALOG_REPOSITORY,
+          useExisting: InMemoryCatalogRepository
+        }
+      ]
+    });
     engine = TestBed.inject(CatalogEngine);
   });
 
@@ -112,5 +120,71 @@ describe('CatalogEngine repository state', () => {
     expect(engine.hasLoadError()).toBe(false);
     expect(engine.getProductByCategoryAndSlug('app', 'catalog-fixture'))
       .toEqual(CATALOG_PRODUCT_FIXTURE);
+  });
+
+  it('treats an empty asynchronous response as a successful catalog load', () => {
+    const products = new Subject<readonly CatalogProduct[]>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: CATALOG_REPOSITORY,
+          useValue: { products$: products.asObservable() }
+        }
+      ]
+    });
+
+    const engine = TestBed.inject(CatalogEngine);
+    products.next([]);
+
+    expect(engine.isLoading()).toBe(false);
+    expect(engine.hasLoadError()).toBe(false);
+    expect(engine.getProductsByCategory('app')).toEqual([]);
+  });
+
+  it('exposes a stable empty error state when the repository fails', () => {
+    const products = new Subject<readonly CatalogProduct[]>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: CATALOG_REPOSITORY,
+          useValue: { products$: products.asObservable() }
+        }
+      ]
+    });
+
+    const engine = TestBed.inject(CatalogEngine);
+    products.error(new Error('Private repository failure'));
+
+    expect(engine.isLoading()).toBe(false);
+    expect(engine.hasLoadError()).toBe(true);
+    expect(engine.getFeaturedProducts()).toEqual([]);
+  });
+
+  it('exposes a stable empty error state when product validation fails', () => {
+    const products = new Subject<readonly CatalogProduct[]>();
+    const malformedProduct: CatalogProduct = {
+      ...CATALOG_PRODUCT_FIXTURE,
+      id: 'malformed-catalog-fixture',
+      slug: 'malformed-catalog-fixture',
+      name: { en: 'Malformed fixture', ar: '   ' }
+    };
+
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: CATALOG_REPOSITORY,
+          useValue: { products$: products.asObservable() }
+        }
+      ]
+    });
+
+    const engine = TestBed.inject(CatalogEngine);
+    products.next([malformedProduct]);
+
+    expect(engine.isLoading()).toBe(false);
+    expect(engine.hasLoadError()).toBe(true);
+    expect(engine.getProductsByCategory('app')).toEqual([]);
   });
 });

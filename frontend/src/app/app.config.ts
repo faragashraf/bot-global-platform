@@ -1,4 +1,5 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { provideHttpClient } from '@angular/common/http';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideRouter } from '@angular/router';
 import { providePrimeNG } from 'primeng/config';
@@ -7,10 +8,13 @@ import { provideTranslateService } from '@ngx-translate/core';
 
 import { routes } from './app.routes';
 import { BotGlobalPreset } from './core/theme/bot-global.preset';
+import { CATALOG_REPOSITORY } from './features/catalog/services/catalog.repository';
+import { HttpCatalogRepository } from './features/catalog/services/http-catalog.repository';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
+    provideHttpClient(),
     provideAnimationsAsync(),
     provideRouter(routes),
     providePrimeNG({
@@ -29,6 +33,10 @@ export const appConfig: ApplicationConfig = {
         prefix: '/i18n/',
         suffix: '.json'
       })
-    })
+    }),
+    {
+      provide: CATALOG_REPOSITORY,
+      useExisting: HttpCatalogRepository
+    }
   ]
 };
