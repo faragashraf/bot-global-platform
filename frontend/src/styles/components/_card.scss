@@ -1,0 +1,10 @@
+.bgp-card {
+  display: block;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--bgp-border);
+  border-radius: var(--bgp-radius-xl);
+  background: var(--bgp-surface);
+  box-shadow: var(--bgp-shadow-soft);
+  backdrop-filter: blur(18px);
+}

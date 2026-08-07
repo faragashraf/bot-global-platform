@@ -1,0 +1,33 @@
+{
+  "brand": {
+    "name": "BOT GLOBAL",
+    "tagline": "حيث تتحول الأفكار إلى واقع رقمي"
+  },
+  "designSystem": {
+    "eyebrow": "نظام تصميم BOT GLOBAL",
+    "title": "هوية واحدة. لكل منتجاتنا.",
+    "description": "أساس موحد وقابل لإعادة الاستخدام يدعم العربية والإنجليزية في كل تجارب Bot Global.",
+    "controls": "إعدادات التجربة",
+    "theme": "المظهر",
+    "language": "اللغة",
+    "buttons": "الأزرار",
+    "forms": "حقول الإدخال",
+    "cards": "البطاقات والحالات",
+    "primary": "الإجراء الأساسي",
+    "secondary": "ثانوي",
+    "success": "نجاح",
+    "danger": "خطر",
+    "name": "الاسم",
+    "namePlaceholder": "اكتب الاسم",
+    "application": "التطبيق",
+    "applicationPlaceholder": "اختر تطبيقًا",
+    "light": "نهاري",
+    "dark": "ليلي",
+    "system": "النظام",
+    "english": "English",
+    "arabic": "العربية",
+    "online": "متصل",
+    "preview": "معاينة الأساس",
+    "previewText": "الألوان والخطوط والاتجاه ومكونات PrimeNG أصبحت الآن تعمل بعقد بصري واحد."
+  }
+}

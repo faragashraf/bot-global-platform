@@ -1,0 +1,34 @@
+.bgp-field {
+  display: grid;
+  gap: .45rem;
+  width: 100%;
+}
+
+.bgp-field__label {
+  color: var(--bgp-text-soft);
+  font-size: .88rem;
+  font-weight: 700;
+}
+
+.bgp-field__required,
+.bgp-field__error {
+  color: var(--bgp-red);
+}
+
+.bgp-field__hint,
+.bgp-field__error {
+  font-size: .78rem;
+}
+
+.bgp-field__hint {
+  color: var(--bgp-text-muted);
+}
+
+.bgp-field__control {
+  width: 100%;
+}
+
+/* Reusable component shape contract, independent of page CSS */
+.bgp-field :is(.p-inputtext, .p-select) {
+  border-radius: var(--bgp-radius-md);
+}

@@ -1,0 +1,35 @@
+:root {
+  --bgp-cyan: #18c9ff;
+  --bgp-blue: #2f7cff;
+  --bgp-violet: #7c4dff;
+  --bgp-green: #29d391;
+  --bgp-red: #ff5263;
+
+  --bgp-radius-sm: 10px;
+  --bgp-radius-md: 14px;
+  --bgp-radius-lg: 20px;
+  --bgp-radius-xl: 28px;
+
+  --bgp-shadow-soft: 0 18px 60px rgb(13 34 63 / 8%);
+  --bgp-transition-fast: 160ms ease;
+  --bgp-transition-base: 240ms ease;
+
+  --bgp-page: #f6f9fd;
+  --bgp-surface: rgb(255 255 255 / 84%);
+  --bgp-surface-soft: #f0f5fb;
+  --bgp-border: #dbe5f0;
+  --bgp-text: #102238;
+  --bgp-text-soft: #314a67;
+  --bgp-text-muted: #687e96;
+}
+
+:root.bgp-dark-mode {
+  --bgp-page: #06111f;
+  --bgp-surface: rgb(11 27 45 / 82%);
+  --bgp-surface-soft: #0e2034;
+  --bgp-border: #203950;
+  --bgp-text: #f4f8fc;
+  --bgp-text-soft: #c6d5e6;
+  --bgp-text-muted: #91a6bd;
+  --bgp-shadow-soft: 0 24px 70px rgb(0 0 0 / 28%);
+}

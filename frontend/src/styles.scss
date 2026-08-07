@@ -1,1 +1,6 @@
-/* You can add global styles to this file, and also import other style files */
+@use './styles/tokens/brand';
+@use './styles/base/reset';
+@use './styles/components/fields';
+@use './styles/components/card';
+
+@import 'primeicons/primeicons.css';

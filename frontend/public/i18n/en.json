@@ -1,0 +1,33 @@
+{
+  "brand": {
+    "name": "BOT GLOBAL",
+    "tagline": "Where ideas become digital reality"
+  },
+  "designSystem": {
+    "eyebrow": "BOT GLOBAL DESIGN SYSTEM",
+    "title": "One identity. Every product.",
+    "description": "A reusable bilingual foundation for every Bot Global experience.",
+    "controls": "Experience controls",
+    "theme": "Theme",
+    "language": "Language",
+    "buttons": "Buttons",
+    "forms": "Forms",
+    "cards": "Cards & status",
+    "primary": "Primary action",
+    "secondary": "Secondary",
+    "success": "Success",
+    "danger": "Danger",
+    "name": "Display name",
+    "namePlaceholder": "Enter your name",
+    "application": "Application",
+    "applicationPlaceholder": "Choose an application",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "english": "English",
+    "arabic": "Arabic",
+    "online": "Online",
+    "preview": "Foundation preview",
+    "previewText": "Tokens, typography, direction and PrimeNG components now share one visual contract."
+  }
+}
