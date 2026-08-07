@@ -4,6 +4,9 @@ import { PublicFooterComponent } from '../../layout/public-footer/public-footer.
 import { PublicHeaderComponent } from '../../layout/public-header/public-header.component';
 
 import { ThemeService } from '../../core/theme/theme.service';
+import { HOME_PLATFORM_CATEGORIES } from './data/home-platform-categories.data';
+import { MarketingSectionHeaderComponent } from '../../shared/ui/marketing/marketing-section-header/marketing-section-header.component';
+import { PlatformCategoryCardComponent } from '../../shared/ui/marketing/platform-category-card/platform-category-card.component';
 interface CategoryCard {
   icon: string;
   titleKey: string;
@@ -26,12 +29,16 @@ interface PortfolioCard {
 @Component({
   selector: 'bgp-home-page',
   standalone: true,
-  imports: [TranslateModule, PublicHeaderComponent, PublicFooterComponent],
+  imports: [TranslateModule, PublicHeaderComponent, PublicFooterComponent,
+    MarketingSectionHeaderComponent,
+    PlatformCategoryCardComponent,],
   templateUrl: './home-page.component.html',
   styleUrl: './home-page.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class HomePageComponent {
+  readonly platformCategories = HOME_PLATFORM_CATEGORIES;
+
   readonly theme = inject(ThemeService);
 
   readonly categories: CategoryCard[] = [

@@ -1,0 +1,34 @@
+:host {
+  display: block;
+}
+
+.marketing-section-header {
+  max-width: 46rem;
+}
+
+.marketing-section-header--center {
+  margin-inline: auto;
+  text-align: center;
+}
+
+.marketing-section-header__eyebrow {
+  margin: 0 0 .55rem;
+  color: var(--bgp-blue);
+  font-size: .76rem;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.marketing-section-header h2 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3.3rem);
+  line-height: 1.02;
+  letter-spacing: -.035em;
+}
+
+.marketing-section-header__description {
+  margin: 1rem 0 0;
+  color: var(--bgp-text-muted);
+  line-height: 1.75;
+}

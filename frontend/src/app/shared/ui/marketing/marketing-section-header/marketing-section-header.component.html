@@ -1,0 +1,14 @@
+<header
+  class="marketing-section-header"
+  [class.marketing-section-header--center]="align() === 'center'"
+>
+  <p class="marketing-section-header__eyebrow">
+    {{ eyebrowKey() | translate }}
+  </p>
+
+  <h2>{{ titleKey() | translate }}</h2>
+
+  <p class="marketing-section-header__description">
+    {{ descriptionKey() | translate }}
+  </p>
+</header>
