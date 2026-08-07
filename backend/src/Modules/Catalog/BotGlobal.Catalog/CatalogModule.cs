@@ -1,3 +1,4 @@
+using BotGlobal.Catalog.Application;
 using BotGlobal.Catalog.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -28,6 +29,8 @@ public static class CatalogModule
                         CatalogDbContext.MigrationHistoryTable,
                         CatalogDbContext.Schema);
                 }));
+        services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();
+        services.AddSingleton<IMediaUrlResolver, NullMediaUrlResolver>();
 
         return services;
     }
