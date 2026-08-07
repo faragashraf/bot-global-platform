@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Postman">
+  <circle cx="32" cy="32" r="30" fill="#ff6c37"/>
+  <path fill="#fff" d="M45 18 21 42l-2-9 16-8-8 16 9 2 14-19z"/>
+  <path fill="#ff6c37" d="m35 25 5 5-10 10-5-5z"/>
+</svg>
