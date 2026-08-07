@@ -3,8 +3,9 @@ import { Routes } from '@angular/router';
 export const routes: Routes = [
   {
     path: '',
-    pathMatch: 'full',
-    redirectTo: 'design-system'
+    loadComponent: () =>
+      import('./features/home/home-page.component')
+        .then((m) => m.HomePageComponent)
   },
   {
     path: 'design-system',
@@ -14,6 +15,6 @@ export const routes: Routes = [
   },
   {
     path: '**',
-    redirectTo: 'design-system'
+    redirectTo: ''
   }
 ];

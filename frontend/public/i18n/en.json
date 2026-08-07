@@ -29,5 +29,87 @@
     "online": "Online",
     "preview": "Foundation preview",
     "previewText": "Tokens, typography, direction and PrimeNG components now share one visual contract."
+  },
+  "nav": {
+    "home": "Home",
+    "products": "Products",
+    "games": "Games",
+    "portfolio": "Portfolio",
+    "about": "About",
+    "contact": "Contact",
+    "login": "Login"
+  },
+  "common": {
+    "explore": "Explore",
+    "viewAll": "View all",
+    "learnMore": "Learn more"
+  },
+  "home": {
+    "hero": {
+      "eyebrow": "BOT GLOBAL DIGITAL PLATFORM",
+      "line1": "Where ideas",
+      "line2": "become",
+      "line3": "digital reality.",
+      "description": "We build intelligent digital products, applications and platforms that empower businesses and create better experiences.",
+      "primary": "Explore Products",
+      "secondary": "View Portfolio",
+      "trusted": "Built for ambitious products and real-world digital experiences"
+    },
+    "categories": {
+      "mobile": {
+        "title": "Mobile Apps",
+        "description": "High-performance mobile experiences built for iOS and Android."
+      },
+      "programs": {
+        "title": "Programs",
+        "description": "Powerful desktop and web applications built for real impact."
+      },
+      "games": {
+        "title": "Games",
+        "description": "Engaging game experiences with thoughtful design and smooth interaction."
+      },
+      "solutions": {
+        "title": "Solutions",
+        "description": "Custom digital solutions for complex business and platform challenges."
+      }
+    },
+    "featured": {
+      "eyebrow": "Featured products",
+      "title": "Products & Applications"
+    },
+    "portfolio": {
+      "eyebrow": "Selected work",
+      "title": "Our Portfolio"
+    },
+    "realtime": {
+      "eyebrow": "Platform capability",
+      "title": "Real-time Platform Built for the Future",
+      "description": "A SignalR-ready platform foundation designed for fast, isolated and scalable realtime experiences across products.",
+      "latency": "Realtime latency",
+      "uptime": "Connection uptime",
+      "users": "Concurrent users",
+      "global": "Global",
+      "scale": "Scalable infrastructure"
+    },
+    "features": {
+      "secure": "Secure",
+      "secureText": "Enterprise-minded security from the platform foundation.",
+      "scalable": "Scalable",
+      "scalableText": "Designed to grow by capability without duplicated logic.",
+      "realtime": "Realtime",
+      "realtimeText": "Live updates and connected product experiences.",
+      "bilingual": "Bilingual",
+      "bilingualText": "Full English and Arabic support with RTL/LTR.",
+      "responsive": "Responsive",
+      "responsiveText": "A consistent experience across desktop, tablet and mobile."
+    }
+  },
+  "footer": {
+    "description": "Building intelligent digital solutions that turn ideas into practical digital experiences.",
+    "company": "Company",
+    "products": "Products",
+    "resources": "Resources",
+    "support": "Support",
+    "privacy": "Privacy"
   }
 }

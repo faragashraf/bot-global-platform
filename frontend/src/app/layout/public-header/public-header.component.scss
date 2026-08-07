@@ -1,0 +1,106 @@
+.public-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  border-bottom: 1px solid color-mix(in srgb, var(--bgp-border) 78%, transparent);
+  background: color-mix(in srgb, var(--bgp-page) 84%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.public-header__inner {
+  width: min(1220px, calc(100% - 2rem));
+  min-height: 78px;
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 2rem;
+}
+
+.public-header__nav {
+  display: flex;
+  justify-content: center;
+  gap: clamp(1rem, 2vw, 2rem);
+}
+
+.public-header__nav a {
+  position: relative;
+  text-decoration: none;
+  color: var(--bgp-text-soft);
+  font-size: .9rem;
+  font-weight: 650;
+  transition: color var(--bgp-transition-fast);
+}
+
+.public-header__nav a:hover {
+  color: var(--bgp-text);
+}
+
+.public-header__actions {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+}
+
+.header-action,
+.public-header__mobile-toggle {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  aspect-ratio: 1;
+  border: 1px solid var(--bgp-border);
+  border-radius: 12px;
+  background: var(--bgp-surface);
+  color: var(--bgp-text);
+  cursor: pointer;
+}
+
+.header-action--language {
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.header-login {
+  padding: .7rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--bgp-blue) 60%, var(--bgp-border));
+  border-radius: 12px;
+  color: var(--bgp-text);
+  text-decoration: none;
+  font-size: .84rem;
+  font-weight: 700;
+}
+
+.public-header__mobile-toggle {
+  display: none;
+  justify-self: end;
+}
+
+@media (max-width: 900px) {
+  .public-header__inner {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .public-header__mobile-toggle {
+    display: grid;
+  }
+
+  .public-header__nav {
+    position: absolute;
+    inset: 78px 1rem auto;
+    display: none;
+    padding: 1rem;
+    border: 1px solid var(--bgp-border);
+    border-radius: var(--bgp-radius-lg);
+    background: var(--bgp-surface);
+    box-shadow: var(--bgp-shadow-soft);
+    flex-direction: column;
+  }
+
+  .public-header__nav--open {
+    display: flex;
+  }
+
+  .public-header__actions {
+    display: none;
+  }
+}

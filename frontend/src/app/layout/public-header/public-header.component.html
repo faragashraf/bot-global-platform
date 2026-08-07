@@ -1,0 +1,39 @@
+<header class="public-header">
+  <div class="public-header__inner">
+    <bgp-brand />
+
+    <button
+      class="public-header__mobile-toggle"
+      type="button"
+      aria-label="Toggle navigation"
+      (click)="toggleMobile()"
+    >
+      <i class="pi" [class.pi-bars]="!mobileOpen()" [class.pi-times]="mobileOpen()"></i>
+    </button>
+
+    <nav class="public-header__nav" [class.public-header__nav--open]="mobileOpen()">
+      <a routerLink="/" fragment="home">{{ 'nav.home' | translate }}</a>
+      <a routerLink="/" fragment="products">{{ 'nav.products' | translate }}</a>
+      <a routerLink="/" fragment="games">{{ 'nav.games' | translate }}</a>
+      <a routerLink="/" fragment="portfolio">{{ 'nav.portfolio' | translate }}</a>
+      <a routerLink="/" fragment="about">{{ 'nav.about' | translate }}</a>
+      <a routerLink="/" fragment="contact">{{ 'nav.contact' | translate }}</a>
+    </nav>
+
+    <div class="public-header__actions">
+      <button class="header-action" type="button" (click)="toggleTheme()">
+        <i class="pi" [class.pi-moon]="theme.resolvedTheme() === 'light'" [class.pi-sun]="theme.resolvedTheme() === 'dark'"></i>
+      </button>
+
+      <button
+        class="header-action header-action--language"
+        type="button"
+        (click)="language.setLanguage(language.language() === 'ar' ? 'en' : 'ar')"
+      >
+        {{ language.language() === 'ar' ? 'EN' : 'AR' }}
+      </button>
+
+      <a class="header-login" href="#">{{ 'nav.login' | translate }}</a>
+    </div>
+  </div>
+</header>

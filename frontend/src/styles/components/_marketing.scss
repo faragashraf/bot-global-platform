@@ -1,0 +1,112 @@
+.section-shell,
+.hero {
+  width: min(1220px, calc(100% - 2rem));
+  margin-inline: auto;
+}
+
+.eyebrow {
+  margin: 0 0 .8rem;
+  color: var(--bgp-cyan);
+  font-size: .76rem;
+  font-weight: 850;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.gradient-text {
+  background: linear-gradient(90deg, var(--bgp-violet), var(--bgp-blue), var(--bgp-cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .85rem 1.15rem;
+  border-radius: 12px;
+  text-decoration: none;
+  font-weight: 750;
+  font-size: .9rem;
+}
+
+.btn--primary {
+  color: #fff;
+  background: linear-gradient(135deg, var(--bgp-blue), var(--bgp-violet));
+  box-shadow: 0 16px 34px color-mix(in srgb, var(--bgp-blue) 22%, transparent);
+}
+
+.btn--secondary {
+  border: 1px solid var(--bgp-border);
+  background: var(--bgp-surface);
+  color: var(--bgp-text);
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.section-heading h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.section-heading a {
+  color: var(--bgp-blue);
+  text-decoration: none;
+  font-size: .82rem;
+  font-weight: 700;
+}
+
+@media (max-width: 700px) {
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* Shared public marketing primitives */
+
+.hero__description {
+  max-width: 58ch;
+  margin: 1.6rem 0 0;
+  color: var(--bgp-text-muted);
+  font-size: 1.06rem;
+  line-height: 1.8;
+}
+
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .8rem;
+  margin-top: 1.8rem;
+}
+
+.hero__trust {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin-top: 1.25rem;
+  color: var(--bgp-text-muted);
+}
+
+.hero__avatars { display: flex; }
+
+.hero__avatars span {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  aspect-ratio: 1;
+  margin-inline-start: -.35rem;
+  border: 2px solid var(--bgp-page);
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--bgp-blue), var(--bgp-violet));
+  color: #fff;
+  font-size: .55rem;
+  font-weight: 800;
+}

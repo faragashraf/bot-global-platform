@@ -1,0 +1,142 @@
+<bgp-public-header />
+
+<main class="home">
+  <section class="hero" id="home">
+    <div class="hero__content">
+      <p class="eyebrow">{{ 'home.hero.eyebrow' | translate }}</p>
+      <h1>
+        <span>{{ 'home.hero.line1' | translate }}</span>
+        <span>{{ 'home.hero.line2' | translate }}</span>
+        <span class="gradient-text">{{ 'home.hero.line3' | translate }}</span>
+      </h1>
+      <p class="hero__description">{{ 'home.hero.description' | translate }}</p>
+
+      <div class="hero__actions">
+        <a class="btn btn--primary" href="#products">
+          {{ 'home.hero.primary' | translate }}
+          <i class="pi pi-arrow-right"></i>
+        </a>
+        <a class="btn btn--secondary" href="#portfolio">
+          {{ 'home.hero.secondary' | translate }}
+        </a>
+      </div>
+
+      <div class="hero__trust">
+        <div class="hero__avatars" aria-hidden="true">
+          <span>BG</span><span>AI</span><span>UX</span><span>DEV</span>
+        </div>
+        <small>{{ 'home.hero.trusted' | translate }}</small>
+      </div>
+    </div>
+
+    <div class="hero__visual" aria-hidden="true">
+      <div class="hero__artwork-frame">
+        @if (theme.resolvedTheme() === 'dark') {
+          <img
+            class="hero__artwork"
+            src="/brand/hero-tech-horizon-dark.png"
+            alt=""
+            decoding="async"
+            fetchpriority="high"
+          />
+        } @else {
+          <img
+            class="hero__artwork"
+            src="/brand/hero-tech-horizon-light.png"
+            alt=""
+            decoding="async"
+            fetchpriority="high"
+          />
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="categories section-shell" id="products">
+    @for (category of categories; track category.titleKey) {
+      <article class="category-card">
+        <span class="category-card__icon"><i [class]="category.icon"></i></span>
+        <div>
+          <h2>{{ category.titleKey | translate }}</h2>
+          <p>{{ category.descriptionKey | translate }}</p>
+          <a href="#">{{ 'common.explore' | translate }} <i class="pi pi-arrow-right"></i></a>
+        </div>
+      </article>
+    }
+  </section>
+
+  <section class="showcase section-shell">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">{{ 'home.featured.eyebrow' | translate }}</p>
+        <h2>{{ 'home.featured.title' | translate }}</h2>
+      </div>
+      <a href="#">{{ 'common.viewAll' | translate }}</a>
+    </div>
+
+    <div class="product-grid">
+      @for (product of products; track product.title) {
+        <article class="product-card">
+          <div class="product-card__preview" [class]="'product-card__preview product-card__preview--' + product.gradient">
+            <div class="product-card__screen">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+          <div class="product-card__body">
+            <div>
+              <strong>{{ product.title }}</strong>
+              <small>{{ product.meta }}</small>
+            </div>
+            <span class="product-card__badge">{{ product.badge }}</span>
+          </div>
+        </article>
+      }
+    </div>
+  </section>
+
+  <section class="portfolio section-shell" id="portfolio">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">{{ 'home.portfolio.eyebrow' | translate }}</p>
+        <h2>{{ 'home.portfolio.title' | translate }}</h2>
+      </div>
+      <a href="#">{{ 'common.viewAll' | translate }}</a>
+    </div>
+
+    <div class="portfolio-grid">
+      @for (item of portfolio; track item.title) {
+        <article class="portfolio-card">
+          <div class="portfolio-card__icon"><i [class]="item.icon"></i></div>
+          <strong>{{ item.title }}</strong>
+          <small>{{ item.meta }}</small>
+        </article>
+      }
+    </div>
+  </section>
+
+  <section class="realtime section-shell" id="about">
+    <div class="realtime__intro">
+      <p class="eyebrow">{{ 'home.realtime.eyebrow' | translate }}</p>
+      <h2>{{ 'home.realtime.title' | translate }}</h2>
+      <p>{{ 'home.realtime.description' | translate }}</p>
+      <a class="btn btn--secondary" href="#">{{ 'common.learnMore' | translate }}</a>
+    </div>
+
+    <div class="realtime__stats">
+      <div><i class="pi pi-bolt"></i><strong>&lt; 50ms</strong><small>{{ 'home.realtime.latency' | translate }}</small></div>
+      <div><i class="pi pi-wifi"></i><strong>99.99%</strong><small>{{ 'home.realtime.uptime' | translate }}</small></div>
+      <div><i class="pi pi-users"></i><strong>1M+</strong><small>{{ 'home.realtime.users' | translate }}</small></div>
+      <div><i class="pi pi-globe"></i><strong>{{ 'home.realtime.global' | translate }}</strong><small>{{ 'home.realtime.scale' | translate }}</small></div>
+    </div>
+  </section>
+
+  <section class="features section-shell">
+    <article><i class="pi pi-shield"></i><div><strong>{{ 'home.features.secure' | translate }}</strong><small>{{ 'home.features.secureText' | translate }}</small></div></article>
+    <article><i class="pi pi-clone"></i><div><strong>{{ 'home.features.scalable' | translate }}</strong><small>{{ 'home.features.scalableText' | translate }}</small></div></article>
+    <article><i class="pi pi-bolt"></i><div><strong>{{ 'home.features.realtime' | translate }}</strong><small>{{ 'home.features.realtimeText' | translate }}</small></div></article>
+    <article><i class="pi pi-language"></i><div><strong>{{ 'home.features.bilingual' | translate }}</strong><small>{{ 'home.features.bilingualText' | translate }}</small></div></article>
+    <article><i class="pi pi-desktop"></i><div><strong>{{ 'home.features.responsive' | translate }}</strong><small>{{ 'home.features.responsiveText' | translate }}</small></div></article>
+  </section>
+</main>
+
+<bgp-public-footer />
