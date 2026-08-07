@@ -1,0 +1,26 @@
+.catalog-empty {
+  text-align: center;
+  padding: clamp(2rem, 5vw, 3.5rem);
+  border: 1px dashed var(--bgp-border);
+  background: var(--bgp-surface);
+  border-radius: var(--bgp-radius-xl);
+}
+
+.catalog-empty h2 {
+  margin: 0 0 .7rem;
+}
+
+.catalog-empty p {
+  margin: 0 auto;
+  max-width: 58ch;
+  color: var(--bgp-text-muted);
+  line-height: 1.6;
+}
+
+.catalog-empty__action {
+  display: inline-flex;
+  margin-top: 1rem;
+  text-decoration: none;
+  color: var(--bgp-blue);
+  font-weight: 700;
+}

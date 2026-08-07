@@ -1,7 +1,9 @@
+import { type PublicCatalogCategoryPath } from '../../catalog/models/catalog.model';
+
 export type HomePlatformCategoryAccent = 'blue' | 'violet' | 'cyan';
 
 export interface HomePlatformCategory {
-  readonly id: 'apps' | 'games' | 'programs';
+  readonly id: PublicCatalogCategoryPath;
   readonly titleKey: string;
   readonly descriptionKey: string;
   readonly eyebrowKey: string;

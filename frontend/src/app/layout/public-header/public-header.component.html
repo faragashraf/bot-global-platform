@@ -5,29 +5,36 @@
     <button
       class="public-header__mobile-toggle"
       type="button"
-      aria-label="Toggle navigation"
+      [attr.aria-label]="'nav.toggleNavigation' | translate"
       (click)="toggleMobile()"
     >
-      <i class="pi" [class.pi-bars]="!mobileOpen()" [class.pi-times]="mobileOpen()"></i>
+      <i class="pi" [class.pi-bars]="!mobileOpen()" [class.pi-times]="mobileOpen()" aria-hidden="true"></i>
     </button>
 
     <nav class="public-header__nav" [class.public-header__nav--open]="mobileOpen()">
-      <a routerLink="/" fragment="home">{{ 'nav.home' | translate }}</a>
-      <a routerLink="/" fragment="products">{{ 'nav.products' | translate }}</a>
-      <a routerLink="/" fragment="games">{{ 'nav.games' | translate }}</a>
+      <a routerLink="/">{{ 'nav.home' | translate }}</a>
+      <a routerLink="/apps">{{ 'nav.apps' | translate }}</a>
+      <a routerLink="/games">{{ 'nav.games' | translate }}</a>
+      <a routerLink="/programs">{{ 'nav.programs' | translate }}</a>
       <a routerLink="/portfolio">{{ 'nav.portfolio' | translate }}</a>
       <a routerLink="/" fragment="about">{{ 'nav.about' | translate }}</a>
       <a routerLink="/" fragment="contact">{{ 'nav.contact' | translate }}</a>
     </nav>
 
     <div class="public-header__actions">
-      <button class="header-action" type="button" (click)="toggleTheme()">
-        <i class="pi" [class.pi-moon]="theme.resolvedTheme() === 'light'" [class.pi-sun]="theme.resolvedTheme() === 'dark'"></i>
+      <button
+        class="header-action"
+        type="button"
+        [attr.aria-label]="'designSystem.theme' | translate"
+        (click)="toggleTheme()"
+      >
+        <i class="pi" [class.pi-moon]="theme.resolvedTheme() === 'light'" [class.pi-sun]="theme.resolvedTheme() === 'dark'" aria-hidden="true"></i>
       </button>
 
       <button
         class="header-action header-action--language"
         type="button"
+        [attr.aria-label]="'designSystem.language' | translate"
         (click)="language.setLanguage(language.language() === 'ar' ? 'en' : 'ar')"
       >
         {{ language.language() === 'ar' ? 'EN' : 'AR' }}

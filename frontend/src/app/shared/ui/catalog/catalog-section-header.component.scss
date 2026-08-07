@@ -1,0 +1,24 @@
+.catalog-section-header {
+  max-width: 66ch;
+}
+
+.catalog-section-header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  line-height: 1.04;
+  letter-spacing: -.035em;
+}
+
+.catalog-section-header__description {
+  margin: 1rem 0 0;
+  color: var(--bgp-text-muted);
+  line-height: 1.7;
+  max-width: 60ch;
+}
+
+.catalog-section-header__count {
+  margin: 1rem 0 0;
+  color: var(--bgp-blue);
+  font-weight: 750;
+  font-size: .9rem;
+}

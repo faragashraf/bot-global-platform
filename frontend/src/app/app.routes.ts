@@ -1,4 +1,9 @@
 import { Routes } from '@angular/router';
+import type { PublicCatalogCategory } from './features/catalog/models/catalog.model';
+
+interface CatalogRouteData {
+  readonly catalogCategory: PublicCatalogCategory;
+}
 
 export const routes: Routes = [
   {
@@ -24,6 +29,33 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/design-system/design-system-page.component')
             .then((m) => m.DesignSystemPageComponent)
+      },
+      {
+        path: 'apps',
+        loadChildren: () =>
+          import('./features/catalog/catalog.routes')
+            .then((m) => m.CATALOG_ROUTES),
+        data: {
+          catalogCategory: 'app'
+        } satisfies CatalogRouteData
+      },
+      {
+        path: 'games',
+        loadChildren: () =>
+          import('./features/catalog/catalog.routes')
+            .then((m) => m.CATALOG_ROUTES),
+        data: {
+          catalogCategory: 'game'
+        } satisfies CatalogRouteData
+      },
+      {
+        path: 'programs',
+        loadChildren: () =>
+          import('./features/catalog/catalog.routes')
+            .then((m) => m.CATALOG_ROUTES),
+        data: {
+          catalogCategory: 'program'
+        } satisfies CatalogRouteData
       }
     ]
   },

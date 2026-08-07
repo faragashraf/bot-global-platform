@@ -23,7 +23,7 @@ export class PublicHeaderComponent {
   }
 
   toggleTheme(): void {
-    const current = this.theme.preference();
+    const current = this.theme.resolvedTheme();
     this.theme.setPreference(current === 'dark' ? 'light' : 'dark');
   }
 }

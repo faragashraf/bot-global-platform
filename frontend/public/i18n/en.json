@@ -35,14 +35,71 @@
     "products": "Products",
     "games": "Games",
     "portfolio": "Portfolio",
+    "apps": "Applications",
     "about": "About",
     "contact": "Contact",
+    "programs": "Programs",
+    "toggleNavigation": "Toggle navigation",
     "login": "Login"
   },
   "common": {
     "explore": "Explore",
     "viewAll": "View all",
     "learnMore": "Learn more"
+  },
+  "catalog": {
+    "categories": {
+      "apps": {
+        "title": "Applications",
+        "description": "Mobile and connected applications built around practical experiences, realtime capabilities, and scalable product foundations.",
+        "intro": "Reliable mobile experiences for practical business workflows."
+      },
+      "games": {
+        "title": "Games",
+        "description": "Interactive game experiences with practical design, smooth controls, and family-friendly direction.",
+        "intro": "Interactive game experiences with practical design and smooth sessions."
+      },
+      "programs": {
+        "title": "Programs",
+        "description": "Web and desktop productivity programs for teams that prioritize clarity and repeatability.",
+        "intro": "Practical desktop and web productivity applications."
+      }
+    },
+    "listing": {
+      "count": "Products available: {{count}}"
+    },
+    "actions": {
+      "openProduct": "View {{product}}"
+    },
+    "detail": {
+      "overview": "Overview",
+      "status": "Status",
+      "platforms": "Platforms",
+      "technologies": "Technologies",
+      "description": "Description",
+      "quickActions": "Useful links",
+      "links": {
+        "support": "Support",
+        "privacy": "Privacy",
+        "store": "Store",
+        "download": "Download",
+        "website": "Website"
+      }
+    },
+    "loading": {
+      "title": "Loading catalog",
+      "description": "Catalog products are loading."
+    },
+    "error": {
+      "title": "Catalog unavailable",
+      "description": "Catalog products could not be loaded. Please try again later."
+    },
+    "empty": {
+      "title": "Nothing published yet",
+      "description": "This category is currently empty. Please check another category while we finalize this section.",
+      "backToCategory": "Return to category",
+      "browseCatalog": "Browse featured products"
+    }
   },
   "home": {
     "hero": {

@@ -1,0 +1,44 @@
+<main class="catalog-page">
+  @if (isLoading()) {
+    <bgp-empty-catalog-state
+      [titleKey]="'catalog.loading.title'"
+      [descriptionKey]="'catalog.loading.description'"
+      [live]="true"
+    />
+  } @else if (hasLoadError()) {
+    <bgp-empty-catalog-state
+      [titleKey]="'catalog.error.title'"
+      [descriptionKey]="'catalog.error.description'"
+      [live]="true"
+    />
+  } @else if (!isCategoryKnown()) {
+    <bgp-empty-catalog-state
+      [actionLink]="'/apps'"
+      [actionLabelKey]="'catalog.empty.backToCategory'"
+    />
+  } @else {
+    <bgp-catalog-section-header
+      [titleKey]="titleKey()"
+      [descriptionKey]="descriptionKey()"
+      [count]="count()"
+    />
+
+    @if (!hasProducts()) {
+      <bgp-empty-catalog-state
+        [actionLink]="productPath()"
+        [actionLabelKey]="'catalog.empty.browseCatalog'"
+      />
+    } @else {
+      <section class="catalog-page__grid">
+        @for (product of products(); track product.id) {
+          <bgp-product-card
+            [product]="product"
+            [route]="buildProductRoute(product)"
+            [showPlatforms]="true"
+            [showTechnologies]="true"
+          />
+        }
+      </section>
+    }
+  }
+</main>
