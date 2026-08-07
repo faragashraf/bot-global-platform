@@ -134,5 +134,43 @@
     "resources": "Resources",
     "support": "Support",
     "privacy": "Privacy"
+  },
+  "portfolio": {
+    "hero": {
+      "eyebrow": "Portfolio",
+      "downloadCv": "Download CV"
+    },
+    "about": {
+      "eyebrow": "About",
+      "title": "Building practical digital systems with a product mindset."
+    },
+    "projects": {
+      "eyebrow": "Selected work",
+      "title": "Case studies and delivery highlights.",
+      "description": "A curated selection of work presented with confidentiality-safe context, technical depth, and practical outcomes.",
+      "integrations": "Integration context"
+    },
+    "expertise": {
+      "eyebrow": "Expertise",
+      "title": "Integrated technical and delivery expertise"
+    },
+    "stack": {
+      "eyebrow": "Technology",
+      "title": "Technology stack and tools"
+    },
+    "experience": {
+      "eyebrow": "Experience",
+      "title": "Professional experience"
+    },
+    "certifications": {
+      "eyebrow": "Certifications",
+      "title": "Certifications and credentials",
+      "description": "Professional and technical credentials supporting hands-on delivery experience."
+    },
+    "contact": {
+      "eyebrow": "Contact",
+      "title": "Let's build something useful",
+      "description": "Professional and direct contact channels."
+    }
   }
 }

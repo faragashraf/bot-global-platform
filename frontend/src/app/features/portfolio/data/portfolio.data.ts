@@ -1,3 +1,5 @@
+import * as ar from './portfolio.ar';
+
 import {
   aboutText,
   caseStudies,
@@ -18,7 +20,7 @@ import {
   PORTFOLIO_ASSET_ROOT
 } from './portfolio-asset-paths';
 
-const sourcePortfolio = {
+const en = {
   profile,
   aboutText,
   expertise,
@@ -29,7 +31,26 @@ const sourcePortfolio = {
   contactLinks
 } satisfies PortfolioContent;
 
-export const PORTFOLIO_DATA: PortfolioContent =
-  normalizePortfolioAssetPaths(sourcePortfolio);
+const arabic = {
+  profile: ar.profile,
+  aboutText: ar.aboutText,
+  expertise: ar.expertise,
+  caseStudies: ar.caseStudies,
+  techStack: ar.techStack,
+  certifications: ar.certifications,
+  experience: ar.experience,
+  contactLinks: ar.contactLinks
+} satisfies PortfolioContent;
+
+const EN = normalizePortfolioAssetPaths(en);
+const AR = normalizePortfolioAssetPaths(arabic);
+
+export function getPortfolioData(
+  language: string
+): PortfolioContent {
+  return language === 'ar' ? AR : EN;
+}
+
+export const PORTFOLIO_DATA = EN;
 
 export { PORTFOLIO_ASSET_ROOT };
