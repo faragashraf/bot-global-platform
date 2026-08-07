@@ -1,20 +1,18 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { TranslateModule } from '@ngx-translate/core';
 import { ThemeService } from '../../core/theme/theme.service';
 import { HOME_PLATFORM_CATEGORIES } from './data/home-platform-categories.data';
 import { MarketingSectionHeaderComponent } from '../../shared/ui/marketing/marketing-section-header/marketing-section-header.component';
 import { PlatformCategoryCardComponent } from '../../shared/ui/marketing/platform-category-card/platform-category-card.component';
+import { CatalogEngine } from '../catalog/services/catalog-engine.service';
+import type { CatalogProduct } from '../catalog/models/catalog.model';
+import { ProductCardComponent } from '../../shared/ui/catalog/product-card.component';
 interface CategoryCard {
   icon: string;
   titleKey: string;
   descriptionKey: string;
-}
-
-interface ProductCard {
-  title: string;
-  meta: string;
-  badge: string;
-  gradient: string;
+  route: string;
 }
 
 interface PortfolioCard {
@@ -26,15 +24,17 @@ interface PortfolioCard {
 @Component({
   selector: 'bgp-home-page',
   standalone: true,
-  imports: [TranslateModule,
+  imports: [TranslateModule, RouterLink,
     MarketingSectionHeaderComponent,
-    PlatformCategoryCardComponent,],
+    PlatformCategoryCardComponent,
+    ProductCardComponent],
   templateUrl: './home-page.component.html',
   styleUrl: './home-page.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class HomePageComponent {
   readonly platformCategories = HOME_PLATFORM_CATEGORIES;
+  private readonly catalog = inject(CatalogEngine);
 
   readonly theme = inject(ThemeService);
 
@@ -42,35 +42,40 @@ export class HomePageComponent {
     {
       icon: 'pi pi-mobile',
       titleKey: 'home.categories.mobile.title',
-      descriptionKey: 'home.categories.mobile.description'
+      descriptionKey: 'home.categories.mobile.description',
+      route: '/apps'
     },
     {
       icon: 'pi pi-code',
       titleKey: 'home.categories.programs.title',
-      descriptionKey: 'home.categories.programs.description'
+      descriptionKey: 'home.categories.programs.description',
+      route: '/programs'
     },
     {
       icon: 'pi pi-discord',
       titleKey: 'home.categories.games.title',
-      descriptionKey: 'home.categories.games.description'
+      descriptionKey: 'home.categories.games.description',
+      route: '/games'
     },
     {
       icon: 'pi pi-th-large',
       titleKey: 'home.categories.solutions.title',
-      descriptionKey: 'home.categories.solutions.description'
+      descriptionKey: 'home.categories.solutions.description',
+      route: '/portfolio'
     }
   ];
 
-  readonly products: ProductCard[] = [
-    { title: 'SentriCam', meta: 'Mobile Security', badge: 'NEW', gradient: 'blue' },
-    { title: 'Bot Dashboard', meta: 'Analytics Platform', badge: 'PRO', gradient: 'violet' },
-    { title: 'TaskFlow', meta: 'Productivity', badge: 'NEW', gradient: 'cyan' },
-    { title: 'PlayZone', meta: 'Games', badge: 'NEW', gradient: 'orange' }
-  ];
+  readonly products = computed(() => this.catalog.getFeaturedProducts(undefined, 4));
+  readonly catalogLoading = this.catalog.isLoading;
+  readonly catalogLoadFailed = this.catalog.hasLoadError;
 
   readonly portfolio: PortfolioCard[] = [
     { title: 'Enterprise Platform', meta: 'Web Application', icon: 'pi pi-chart-line' },
     { title: 'Space Explorer', meta: 'Game Concept', icon: 'pi pi-send' },
     { title: 'Health Tracker', meta: 'Mobile Application', icon: 'pi pi-heart' }
   ];
+
+  protected getProductRoute(product: CatalogProduct): string {
+    return this.catalog.getProductRoute(product);
+  }
 }

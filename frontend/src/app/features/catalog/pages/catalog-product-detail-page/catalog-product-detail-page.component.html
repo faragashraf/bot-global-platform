@@ -1,0 +1,92 @@
+<main class="catalog-detail-page">
+  @if (isLoading()) {
+    <bgp-empty-catalog-state
+      [titleKey]="'catalog.loading.title'"
+      [descriptionKey]="'catalog.loading.description'"
+      [live]="true"
+    />
+  } @else if (hasLoadError()) {
+    <bgp-empty-catalog-state
+      [titleKey]="'catalog.error.title'"
+      [descriptionKey]="'catalog.error.description'"
+      [live]="true"
+    />
+  } @else if (!hasProduct()) {
+    <bgp-empty-catalog-state
+      [actionLink]="categoryPath()"
+      [actionLabelKey]="'catalog.empty.backToCategory'"
+    />
+  } @else {
+    <nav class="catalog-detail-page__breadcrumb" aria-label="breadcrumb">
+      <a routerLink="/">{{ 'nav.home' | translate }}</a>
+      <span aria-hidden="true">/</span>
+      <a [routerLink]="categoryPath()">{{ categoryTitleKey() | translate }}</a>
+      <span aria-hidden="true">/</span>
+      <span>{{ productName() }}</span>
+    </nav>
+
+    <section class="catalog-detail-page__header">
+      <div>
+        <p class="catalog-detail-page__eyebrow">{{ 'catalog.detail.overview' | translate }}</p>
+        <h1>{{ productName() }}</h1>
+        <p class="catalog-detail-page__short">{{ productShortDescription() }}</p>
+        @if (statusLabel()) {
+          <p class="catalog-detail-page__status">
+            <strong>{{ 'catalog.detail.status' | translate }}:</strong>
+            {{ statusLabel() }}
+          </p>
+        }
+      </div>
+
+      <div class="catalog-detail-page__chips">
+        @if (hasPlatforms()) {
+          <p>{{ 'catalog.detail.platforms' | translate }}</p>
+          <div>
+            @for (platform of platforms(); track platform) {
+              <span>{{ platform }}</span>
+            }
+          </div>
+        }
+
+        @if (hasTechnologies()) {
+          <p>{{ 'catalog.detail.technologies' | translate }}</p>
+          <div>
+            @for (technology of technologies(); track technology) {
+              <span>{{ technology }}</span>
+            }
+          </div>
+        }
+      </div>
+    </section>
+
+    <section class="catalog-detail-page__content">
+      <article class="catalog-detail-page__description">
+        <h2>{{ 'catalog.detail.description' | translate }}</h2>
+        <p>{{ productDescription() }}</p>
+      </article>
+
+      @if (product()?.heroMedia) {
+        <bgp-product-media
+          [heroMedia]="product()!.heroMedia!"
+          [screenshots]="product()?.screenshots ?? []"
+        />
+      }
+
+      @if (hasLinks()) {
+        <section class="catalog-detail-page__actions">
+          <h2>{{ 'catalog.detail.quickActions' | translate }}</h2>
+
+          @for (link of productLinks(); track link.url) {
+            <a [href]="link.url" target="_blank" rel="noopener noreferrer">
+              @if (getLinkLabel(link); as label) {
+                {{ label }}
+              } @else {
+                {{ ('catalog.detail.links.' + link.type) | translate }}
+              }
+            </a>
+          }
+        </section>
+      }
+    </section>
+  }
+</main>

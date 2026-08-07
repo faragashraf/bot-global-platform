@@ -120,6 +120,15 @@
   gap: 1rem;
 }
 
+.showcase__catalog-status {
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed var(--bgp-border);
+  border-radius: var(--bgp-radius-lg);
+  color: var(--bgp-text-muted);
+  text-align: center;
+}
+
 @media (max-width: 900px) {
   .explore-platform__grid {
     grid-template-columns: 1fr;
