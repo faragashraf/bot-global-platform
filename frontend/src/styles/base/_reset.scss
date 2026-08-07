@@ -1,0 +1,36 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--bgp-page);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: var(--bgp-page);
+  color: var(--bgp-text);
+  font-family:
+    Inter, "Segoe UI", Roboto, Helvetica, Arial,
+    "Noto Sans Arabic", "Noto Kufi Arabic", sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  transition:
+    background var(--bgp-transition-base),
+    color var(--bgp-transition-base);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}

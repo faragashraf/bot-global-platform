@@ -1,0 +1,115 @@
+<main class="ds-page">
+  <div class="ds-glow ds-glow--one"></div>
+  <div class="ds-glow ds-glow--two"></div>
+
+  <section class="ds-container">
+    <header class="ds-hero">
+      <div class="ds-brand-mark" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+      </div>
+
+      <p class="ds-eyebrow">{{ 'designSystem.eyebrow' | translate }}</p>
+      <h1>{{ 'designSystem.title' | translate }}</h1>
+      <p class="ds-description">{{ 'designSystem.description' | translate }}</p>
+      <p class="ds-tagline">{{ 'brand.tagline' | translate }}</p>
+    </header>
+
+    <bgp-card>
+      <div class="ds-section">
+        <div>
+          <p class="ds-kicker">{{ 'designSystem.controls' | translate }}</p>
+          <h2>{{ 'designSystem.theme' | translate }} / {{ 'designSystem.language' | translate }}</h2>
+        </div>
+
+        <div class="ds-control-row">
+          <bgp-button
+            [label]="'designSystem.light' | translate"
+            icon="pi pi-sun"
+            [outlined]="theme.preference() !== 'light'"
+            (pressed)="setTheme('light')"
+          />
+          <bgp-button
+            [label]="'designSystem.dark' | translate"
+            icon="pi pi-moon"
+            [outlined]="theme.preference() !== 'dark'"
+            (pressed)="setTheme('dark')"
+          />
+          <bgp-button
+            [label]="'designSystem.system' | translate"
+            icon="pi pi-desktop"
+            [outlined]="theme.preference() !== 'system'"
+            (pressed)="setTheme('system')"
+          />
+          <span class="ds-divider"></span>
+          <bgp-button
+            [label]="'designSystem.english' | translate"
+            [outlined]="language.language() !== 'en'"
+            (pressed)="language.setLanguage('en')"
+          />
+          <bgp-button
+            [label]="'designSystem.arabic' | translate"
+            [outlined]="language.language() !== 'ar'"
+            (pressed)="language.setLanguage('ar')"
+          />
+        </div>
+      </div>
+    </bgp-card>
+
+    <div class="ds-grid">
+      <bgp-card>
+        <div class="ds-section">
+          <p class="ds-kicker">{{ 'designSystem.buttons' | translate }}</p>
+          <div class="ds-stack">
+            <bgp-button [label]="'designSystem.primary' | translate" icon="pi pi-sparkles" />
+            <bgp-button [label]="'designSystem.secondary' | translate" tone="secondary" [outlined]="true" />
+            <bgp-button [label]="'designSystem.success' | translate" tone="success" icon="pi pi-check" />
+            <bgp-button [label]="'designSystem.danger' | translate" tone="danger" [text]="true" />
+          </div>
+        </div>
+      </bgp-card>
+
+      <bgp-card>
+        <div class="ds-section">
+          <p class="ds-kicker">{{ 'designSystem.forms' | translate }}</p>
+          <div class="ds-form-stack">
+            <bgp-input
+              [label]="'designSystem.name' | translate"
+              [placeholder]="'designSystem.namePlaceholder' | translate"
+              hint="Reusable PrimeNG input contract"
+              [(ngModel)]="displayName"
+            />
+            <bgp-select
+              [label]="'designSystem.application' | translate"
+              [placeholder]="'designSystem.applicationPlaceholder' | translate"
+              [options]="applications"
+              [filterable]="true"
+              [clearable]="true"
+              [(ngModel)]="selectedApplication"
+            />
+          </div>
+        </div>
+      </bgp-card>
+
+      <bgp-card>
+        <div class="ds-section ds-preview">
+          <div class="ds-preview__top">
+            <div>
+              <p class="ds-kicker">{{ 'designSystem.cards' | translate }}</p>
+              <h3>{{ 'designSystem.preview' | translate }}</h3>
+            </div>
+            <bgp-badge [value]="'designSystem.online' | translate" severity="success" />
+          </div>
+          <p>{{ 'designSystem.previewText' | translate }}</p>
+
+          <div class="ds-metric">
+            <span class="ds-metric__icon"><i class="pi pi-bolt"></i></span>
+            <div>
+              <strong>Realtime ready</strong>
+              <small>SignalR capability boundary prepared</small>
+            </div>
+          </div>
+        </div>
+      </bgp-card>
+    </div>
+  </section>
+</main>
