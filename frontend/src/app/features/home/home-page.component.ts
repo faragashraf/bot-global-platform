@@ -1,8 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { TranslateModule } from '@ngx-translate/core';
-import { PublicFooterComponent } from '../../layout/public-footer/public-footer.component';
-import { PublicHeaderComponent } from '../../layout/public-header/public-header.component';
-
 import { ThemeService } from '../../core/theme/theme.service';
 import { HOME_PLATFORM_CATEGORIES } from './data/home-platform-categories.data';
 import { MarketingSectionHeaderComponent } from '../../shared/ui/marketing/marketing-section-header/marketing-section-header.component';
@@ -29,7 +26,7 @@ interface PortfolioCard {
 @Component({
   selector: 'bgp-home-page',
   standalone: true,
-  imports: [TranslateModule, PublicHeaderComponent, PublicFooterComponent,
+  imports: [TranslateModule,
     MarketingSectionHeaderComponent,
     PlatformCategoryCardComponent,],
   templateUrl: './home-page.component.html',

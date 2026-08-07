@@ -1,0 +1,14 @@
+:host,
+.public-layout {
+  display: block;
+  min-height: 100dvh;
+}
+
+.public-layout {
+  background: var(--bgp-page);
+  color: var(--bgp-text);
+}
+
+.public-layout__content {
+  min-height: 70dvh;
+}

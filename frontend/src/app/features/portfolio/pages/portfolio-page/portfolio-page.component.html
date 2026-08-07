@@ -1,0 +1,323 @@
+<main class="portfolio-page">
+  <section class="portfolio-hero">
+    <div class="portfolio-hero__content">
+      <p class="portfolio-hero__eyebrow">
+        {{ 'portfolio.hero.eyebrow' | translate }}
+      </p>
+
+      <h1>{{ portfolio.profile.name }}</h1>
+
+      <p class="portfolio-hero__role">
+        {{ portfolio.profile.role }}
+      </p>
+
+      @if (portfolio.profile.positioning) {
+        <p class="portfolio-hero__positioning">
+          {{ portfolio.profile.positioning }}
+        </p>
+      }
+
+      @if (portfolio.profile.pitch) {
+        <p class="portfolio-hero__pitch">
+          {{ portfolio.profile.pitch }}
+        </p>
+      }
+
+      <div class="portfolio-hero__actions">
+        @if (portfolio.profile.cv) {
+          <a
+            class="bgp-button bgp-button--primary"
+            [href]="portfolio.profile.cv"
+            target="_blank"
+            rel="noopener"
+          >
+            {{ 'portfolio.hero.downloadCv' | translate }}
+          </a>
+        }
+
+        @if (portfolio.profile.linkedin) {
+          <a
+            class="bgp-button bgp-button--secondary"
+            [href]="portfolio.profile.linkedin"
+            target="_blank"
+            rel="noopener"
+          >
+            LinkedIn
+          </a>
+        }
+
+        @if (portfolio.profile.github) {
+          <a
+            class="bgp-button bgp-button--ghost"
+            [href]="portfolio.profile.github"
+            target="_blank"
+            rel="noopener"
+          >
+            GitHub
+          </a>
+        }
+      </div>
+    </div>
+
+    @if (portfolio.profile.image) {
+      <div class="portfolio-hero__media">
+        <div class="portfolio-hero__image-frame">
+          <img
+            [src]="portfolio.profile.image"
+            [alt]="portfolio.profile.name"
+          />
+        </div>
+      </div>
+    }
+  </section>
+
+  <section class="portfolio-section portfolio-about">
+    <header class="portfolio-section__header">
+      <p class="portfolio-section__eyebrow">
+        {{ 'portfolio.about.eyebrow' | translate }}
+      </p>
+
+      <h2>{{ 'portfolio.about.title' | translate }}</h2>
+    </header>
+
+    <div class="portfolio-about__copy">
+      @if (portfolio.aboutText; as about) {
+        @if (isStringArray(about)) {
+          @for (paragraph of about; track paragraph) {
+            <p>{{ paragraph }}</p>
+          }
+        } @else {
+          <p>{{ about }}</p>
+        }
+      }
+    </div>
+  </section>
+
+  <section class="portfolio-section">
+    <header class="portfolio-section__header portfolio-section__header--split">
+      <div>
+        <p class="portfolio-section__eyebrow">
+          {{ 'portfolio.projects.eyebrow' | translate }}
+        </p>
+
+        <h2>{{ 'portfolio.projects.title' | translate }}</h2>
+      </div>
+
+      <p>
+        {{ 'portfolio.projects.description' | translate }}
+      </p>
+    </header>
+
+    <div class="portfolio-case-grid">
+      @for (study of featuredCaseStudies; track $index) {
+        <article class="portfolio-case-card">
+          <div class="portfolio-case-card__visual">
+            <div class="case-visual__header">
+              <div>
+                <span>{{ study.visualMockup.eyebrow }}</span>
+                <strong>{{ study.visualMockup.title }}</strong>
+              </div>
+
+              <small>{{ study.category }}</small>
+            </div>
+
+            <div class="case-visual__metrics">
+              @for (metric of study.visualMockup.metrics; track $index) {
+                <div class="case-visual__metric">
+                  <span>{{ metric.label }}</span>
+                  <strong>{{ metric.value }}</strong>
+                  <small>{{ metric.caption }}</small>
+                </div>
+              }
+            </div>
+
+            <div class="case-visual__flow">
+              @for (step of study.visualMockup.flow; track step) {
+                <span>{{ step }}</span>
+              }
+            </div>
+
+            <div class="case-visual__rows">
+              @for (row of study.visualMockup.rows; track $index) {
+                <div class="case-visual__row">
+                  <span>{{ row.label }}</span>
+                  <strong>{{ row.value }}</strong>
+                  <small>{{ row.status }}</small>
+                </div>
+              }
+            </div>
+          </div>
+
+          <div class="portfolio-case-card__body">
+            <div class="portfolio-case-card__meta">
+              <span>{{ study.category }}</span>
+              <span>#{{ ($index + 1).toString().padStart(2, '0') }}</span>
+            </div>
+
+            <h3>{{ study.title }}</h3>
+
+            <p class="portfolio-case-card__subtitle">
+              {{ study.subtitle }}
+            </p>
+
+            <p>{{ study.description }}</p>
+
+            <div class="portfolio-highlights">
+              @for (highlight of study.highlights; track highlight) {
+                <span>{{ highlight }}</span>
+              }
+            </div>
+
+            <div class="portfolio-tags">
+              @for (tag of study.tags; track tag) {
+                <span>{{ tag }}</span>
+              }
+            </div>
+
+            @if (study.integrationContext.length) {
+              <div class="portfolio-integrations">
+                <span class="portfolio-integrations__label">
+                  {{ 'portfolio.projects.integrations' | translate }}
+                </span>
+
+                <div class="portfolio-integrations__items">
+                  @for (integration of study.integrationContext; track integration.label) {
+                    <div class="portfolio-integration">
+                      @if (integration.logo) {
+                        <img
+                          [src]="integration.logo"
+                          [alt]="integration.label"
+                          loading="lazy"
+                        />
+                      }
+
+                      <span>{{ integration.label }}</span>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        </article>
+      }
+    </div>
+  </section>
+
+  <!-- Complete portfolio: Tech Stack -->
+  <section class="portfolio-section portfolio-tech-stack">
+    <header class="portfolio-section__header">
+      <p class="portfolio-section__eyebrow">
+        {{ 'portfolio.stack.eyebrow' | translate }}
+      </p>
+      <h2>{{ 'portfolio.stack.title' | translate }}</h2>
+    </header>
+
+    <div class="portfolio-tech-stack__grid">
+      @for (tech of portfolio.techStack; track tech) {
+        <span class="portfolio-tech-stack__item">
+          {{ tech }}
+        </span>
+      }
+    </div>
+  </section>
+
+  <!-- Complete portfolio: Experience -->
+  <section class="portfolio-section portfolio-experience">
+    <header class="portfolio-section__header">
+      <p class="portfolio-section__eyebrow">
+        {{ 'portfolio.experience.eyebrow' | translate }}
+      </p>
+      <h2>{{ 'portfolio.experience.title' | translate }}</h2>
+    </header>
+
+    <article class="portfolio-experience__card">
+      <div class="portfolio-experience__identity">
+        <span>{{ portfolio.experience.company }}</span>
+        <h3>{{ portfolio.experience.role }}</h3>
+      </div>
+
+      <ul>
+        @for (bullet of portfolio.experience.bullets; track bullet) {
+          <li>{{ bullet }}</li>
+        }
+      </ul>
+    </article>
+  </section>
+
+  <!-- Complete portfolio: Certifications -->
+  <section class="portfolio-section portfolio-certifications">
+    <header class="portfolio-section__header portfolio-section__header--split">
+      <div>
+        <p class="portfolio-section__eyebrow">
+          {{ 'portfolio.certifications.eyebrow' | translate }}
+        </p>
+        <h2>{{ 'portfolio.certifications.title' | translate }}</h2>
+      </div>
+
+      <p>
+        {{ 'portfolio.certifications.description' | translate }}
+      </p>
+    </header>
+
+    <div class="portfolio-certifications__grid">
+      @for (certificate of portfolio.certifications; track certificate.title) {
+        <article class="portfolio-certificate-card">
+          <a
+            class="portfolio-certificate-card__media"
+            [href]="certificate.image"
+            target="_blank"
+            rel="noopener"
+          >
+            <img
+              [src]="certificate.image"
+              [alt]="certificate.title"
+              loading="lazy"
+            />
+          </a>
+
+          <div class="portfolio-certificate-card__body">
+            <span class="portfolio-certificate-card__category">
+              {{ certificate.category }}
+            </span>
+
+            <h3>{{ certificate.title }}</h3>
+
+            <p>{{ certificate.issuer }}</p>
+
+            <small>{{ certificate.date }}</small>
+          </div>
+        </article>
+      }
+    </div>
+  </section>
+
+  <!-- Complete portfolio: Contact -->
+  <section class="portfolio-section portfolio-contact">
+    <div class="portfolio-contact__copy">
+      <p class="portfolio-section__eyebrow">
+        {{ 'portfolio.contact.eyebrow' | translate }}
+      </p>
+
+      <h2>{{ 'portfolio.contact.title' | translate }}</h2>
+
+      <p>
+        {{ 'portfolio.contact.description' | translate }}
+      </p>
+    </div>
+
+    <div class="portfolio-contact__links">
+      @for (link of portfolio.contactLinks; track link.label) {
+        <a
+          [href]="link.href"
+          target="_blank"
+          rel="noopener"
+        >
+          <span>{{ link.label }}</span>
+          <strong>{{ link.value }}</strong>
+          <i class="pi pi-arrow-up-right" aria-hidden="true"></i>
+        </a>
+      }
+    </div>
+  </section>
+
+</main>
