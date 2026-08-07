@@ -1,0 +1,26 @@
+<a
+  class="platform-category-card"
+  [class]="'platform-category-card platform-category-card--' + category().accent"
+  [routerLink]="category().route"
+>
+  <div class="platform-category-card__top">
+    <span class="platform-category-card__icon" aria-hidden="true">
+      <i [class]="category().icon"></i>
+    </span>
+
+    <span class="platform-category-card__arrow" aria-hidden="true">
+      <i class="pi pi-arrow-up-right"></i>
+    </span>
+  </div>
+
+  <div class="platform-category-card__content">
+    <small>{{ category().eyebrowKey | translate }}</small>
+    <h3>{{ category().titleKey | translate }}</h3>
+    <p>{{ category().descriptionKey | translate }}</p>
+  </div>
+
+  <span class="platform-category-card__cta">
+    {{ 'home.explorePlatform.openCategory' | translate }}
+    <i class="pi pi-arrow-right" aria-hidden="true"></i>
+  </span>
+</a>

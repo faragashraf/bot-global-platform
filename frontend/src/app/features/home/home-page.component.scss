@@ -108,3 +108,20 @@
     width: min(480px, 92vw);
   }
 }
+
+.explore-platform {
+  padding-block: clamp(4rem, 8vw, 7rem);
+}
+
+.explore-platform__grid {
+  margin-top: clamp(2rem, 4vw, 3.25rem);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .explore-platform__grid {
+    grid-template-columns: 1fr;
+  }
+}

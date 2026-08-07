@@ -51,6 +51,20 @@
       </div>
     </div>
   </section>
+  <section class="explore-platform">
+    <bgp-marketing-section-header
+      eyebrowKey="home.explorePlatform.eyebrow"
+      titleKey="home.explorePlatform.title"
+      descriptionKey="home.explorePlatform.description"
+    />
+
+    <div class="explore-platform__grid">
+      @for (category of platformCategories; track category.id) {
+        <bgp-platform-category-card [category]="category" />
+      }
+    </div>
+  </section>
+
 
   <section class="categories section-shell" id="products">
     @for (category of categories; track category.titleKey) {

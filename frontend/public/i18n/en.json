@@ -102,6 +102,29 @@
       "bilingualText": "Full English and Arabic support with RTL/LTR.",
       "responsive": "Responsive",
       "responsiveText": "A consistent experience across desktop, tablet and mobile."
+    },
+    "explorePlatform": {
+      "eyebrow": "Explore the platform",
+      "title": "One platform. Multiple digital experiences.",
+      "description": "Discover the growing Bot Global ecosystem across applications, games, and productivity programs — built on one consistent digital foundation.",
+      "openCategory": "Explore category",
+      "categories": {
+        "apps": {
+          "eyebrow": "Mobile & digital",
+          "title": "Applications",
+          "description": "Mobile and connected applications designed around practical experiences, realtime capabilities, and scalable product foundations."
+        },
+        "games": {
+          "eyebrow": "Interactive experiences",
+          "title": "Games",
+          "description": "A dedicated space for interactive titles, experiments, and family-friendly digital experiences as the library grows."
+        },
+        "programs": {
+          "eyebrow": "Tools & productivity",
+          "title": "Programs",
+          "description": "Desktop, web, and productivity tools organized into clear categories and designed for useful everyday workflows."
+        }
+      }
     }
   },
   "footer": {
