@@ -71,7 +71,34 @@
     }
   </section>
 
-  <section class="portfolio-section portfolio-about">
+  <nav
+    class="portfolio-section-nav"
+    aria-label="Portfolio sections"
+  >
+    <ul class="portfolio-section-nav__list">
+      @for (section of sectionNavigation; track section.id) {
+        <li>
+          <a
+            class="portfolio-section-nav__link"
+            [href]="getSectionHref(section.id)"
+            [class.portfolio-section-nav__link--active]="activeSectionId() === section.id"
+            [attr.aria-current]="
+              activeSectionId() === section.id ? 'page' : null
+            "
+            (click)="onSectionLinkClick(section.id, $event)"
+          >
+            {{ section.label | translate }}
+          </a>
+        </li>
+      }
+    </ul>
+  </nav>
+
+  <section
+    class="portfolio-section portfolio-about"
+    id="about"
+    data-portfolio-section
+  >
     <header class="portfolio-section__header">
       <p class="portfolio-section__eyebrow">
         {{ 'portfolio.about.eyebrow' | translate }}
@@ -93,7 +120,11 @@
     </div>
   </section>
 
-  <section class="portfolio-section">
+  <section
+    class="portfolio-section"
+    id="work"
+    data-portfolio-section
+  >
     <header class="portfolio-section__header portfolio-section__header--split">
       <div>
         <p class="portfolio-section__eyebrow">
@@ -204,7 +235,11 @@
   </section>
 
   <!-- Complete portfolio: Tech Stack -->
-  <section class="portfolio-section portfolio-tech-stack">
+  <section
+    class="portfolio-section portfolio-tech-stack"
+    id="technology"
+    data-portfolio-section
+  >
     <header class="portfolio-section__header">
       <p class="portfolio-section__eyebrow">
         {{ 'portfolio.stack.eyebrow' | translate }}
@@ -215,14 +250,27 @@
     <div class="portfolio-tech-stack__grid">
       @for (tech of portfolio.techStack; track tech) {
         <span class="portfolio-tech-stack__item">
-          {{ tech }}
+          @if (getTechnologyIcon(tech); as technologyIcon) {
+            <img
+              class="portfolio-tech-stack__icon"
+              [src]="technologyIcon"
+              alt=""
+              aria-hidden="true"
+            />
+          }
+
+          <span>{{ tech }}</span>
         </span>
       }
     </div>
   </section>
 
   <!-- Complete portfolio: Experience -->
-  <section class="portfolio-section portfolio-experience">
+  <section
+    class="portfolio-section portfolio-experience"
+    id="experience"
+    data-portfolio-section
+  >
     <header class="portfolio-section__header">
       <p class="portfolio-section__eyebrow">
         {{ 'portfolio.experience.eyebrow' | translate }}
@@ -245,7 +293,11 @@
   </section>
 
   <!-- Complete portfolio: Certifications -->
-  <section class="portfolio-section portfolio-certifications">
+  <section
+    class="portfolio-section portfolio-certifications"
+    id="certifications"
+    data-portfolio-section
+  >
     <header class="portfolio-section__header portfolio-section__header--split">
       <div>
         <p class="portfolio-section__eyebrow">
@@ -292,7 +344,11 @@
   </section>
 
   <!-- Complete portfolio: Contact -->
-  <section class="portfolio-section portfolio-contact">
+  <section
+    class="portfolio-section portfolio-contact"
+    id="contact"
+    data-portfolio-section
+  >
     <div class="portfolio-contact__copy">
       <p class="portfolio-section__eyebrow">
         {{ 'portfolio.contact.eyebrow' | translate }}

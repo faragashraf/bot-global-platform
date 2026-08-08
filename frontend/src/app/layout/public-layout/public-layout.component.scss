@@ -2,6 +2,9 @@
 .public-layout {
   display: block;
   min-height: 100dvh;
+  --bgp-public-header-height: 78px;
+  --bgp-public-section-nav-top: var(--bgp-public-header-height);
+  --bgp-public-section-nav-offset: calc(2.6rem + var(--bgp-public-section-nav-top));
 }
 
 .public-layout {

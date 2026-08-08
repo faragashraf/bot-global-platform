@@ -78,6 +78,69 @@
   gap: .75rem;
 }
 
+.portfolio-section[data-portfolio-section] {
+  scroll-margin-block-start: var(--bgp-public-section-nav-offset, 8rem);
+}
+
+.portfolio-section-nav {
+  position: sticky;
+  top: var(--bgp-public-section-nav-top, 78px);
+  z-index: 45;
+  width: min(100% - 2rem, 1180px);
+  margin-inline: auto;
+  padding-block: .35rem;
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: none;
+}
+
+.portfolio-section-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.portfolio-section-nav__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  overflow-x: auto;
+}
+
+.portfolio-section-nav__link {
+  --_horizontal-pad: .75rem;
+  --_vertical-pad: .35rem;
+
+  display: inline-flex;
+  align-items: center;
+  padding: var(--_vertical-pad) var(--_horizontal-pad);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: var(--bgp-text-muted);
+  text-decoration: none;
+  font-size: .75rem;
+  font-weight: 650;
+  white-space: nowrap;
+  transition: background-color var(--bgp-transition-fast), border-color var(--bgp-transition-fast), color var(--bgp-transition-fast), transform var(--bgp-transition-fast);
+}
+
+.portfolio-section-nav__link:hover {
+  color: var(--bgp-text);
+  border-color: color-mix(in srgb, var(--bgp-blue) 18%, transparent);
+}
+
+.portfolio-section-nav__link:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--bgp-blue) 80%, transparent);
+  outline-offset: 2px;
+}
+
+.portfolio-section-nav__link--active {
+  border-color: color-mix(in srgb, var(--bgp-blue) 55%, var(--bgp-border));
+  background: color-mix(in srgb, var(--bgp-blue) 12%, transparent);
+  color: var(--bgp-text);
+}
+
 .portfolio-hero__media {
   display: grid;
   place-items: center;
@@ -406,6 +469,9 @@
 }
 
 .portfolio-tech-stack__item {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
   padding: .7rem 1rem;
   border: 1px solid var(--bgp-border);
   border-radius: 999px;
@@ -413,6 +479,16 @@
   color: var(--bgp-text);
   font-size: .82rem;
   font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.portfolio-tech-stack__icon {
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+  object-position: center;
+  flex: 0 0 auto;
 }
 
 /* Complete Portfolio — Experience */

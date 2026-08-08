@@ -9,7 +9,7 @@
 
 .public-header__inner {
   width: min(1220px, calc(100% - 2rem));
-  min-height: 78px;
+  min-height: var(--bgp-public-header-height);
   margin-inline: auto;
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -86,7 +86,7 @@
 
   .public-header__nav {
     position: absolute;
-    inset: 78px 1rem auto;
+    inset: var(--bgp-public-header-height) 1rem auto;
     display: none;
     padding: 1rem;
     border: 1px solid var(--bgp-border);
