@@ -1,3 +1,4 @@
+using BotGlobal.Identity;
 using BotGlobal.Catalog;
 using BotGlobal.Catalog.Endpoints;
 
@@ -8,6 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
 builder.Services.AddCatalogModule(builder.Configuration);
+builder.Services.AddIdentityModule(builder.Configuration);
 
 var app = builder.Build();
 
@@ -16,10 +18,14 @@ var app = builder.Build();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 app.MapCatalogEndpoints();
+app.MapIdentityModuleEndpoints();
+
+await app.InitializeIdentityAsync();
 
 app.Run();
 
