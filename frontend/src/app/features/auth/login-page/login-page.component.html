@@ -1,0 +1,60 @@
+<main class="auth-page">
+  <section class="auth-card" aria-labelledby="login-title">
+    <a class="auth-card__back" routerLink="/">
+      {{ 'auth.login.backHome' | translate }}
+    </a>
+
+    <header class="auth-card__header">
+      <span>{{ 'auth.login.eyebrow' | translate }}</span>
+      <h1 id="login-title">{{ 'auth.login.title' | translate }}</h1>
+      <p>{{ 'auth.login.description' | translate }}</p>
+    </header>
+
+    <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+      <label class="field">
+        <span>{{ 'auth.login.userNameOrEmail' | translate }}</span>
+        <input
+          type="text"
+          formControlName="userNameOrEmail"
+          autocomplete="username"
+          inputmode="email"
+        />
+      </label>
+
+      <label class="field">
+        <span>{{ 'auth.login.password' | translate }}</span>
+        <input
+          type="password"
+          formControlName="password"
+          autocomplete="current-password"
+        />
+      </label>
+
+      <label class="remember">
+        <input type="checkbox" formControlName="rememberMe" />
+        <span>{{ 'auth.login.rememberMe' | translate }}</span>
+      </label>
+
+      @if (errorKey(); as key) {
+        <p class="auth-error" role="alert">
+          {{ key | translate }}
+        </p>
+      }
+
+      <button
+        type="submit"
+        [disabled]="form.invalid || submitting()"
+      >
+        {{
+          (submitting()
+            ? 'auth.login.signingIn'
+            : 'auth.login.signIn') | translate
+        }}
+      </button>
+    </form>
+
+    <p class="auth-card__note">
+      {{ 'auth.login.securityNote' | translate }}
+    </p>
+  </section>
+</main>

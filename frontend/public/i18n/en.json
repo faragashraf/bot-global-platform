@@ -229,5 +229,30 @@
       "title": "Let's build something useful",
       "description": "Professional and direct contact channels."
     }
+  },
+  "auth": {
+    "login": {
+      "eyebrow": "Administration",
+      "title": "Administrator sign in",
+      "description": "Use your authorized platform administrator account.",
+      "userNameOrEmail": "Username or email",
+      "password": "Password",
+      "rememberMe": "Keep me signed in",
+      "signIn": "Sign in",
+      "signingIn": "Signing in…",
+      "invalidCredentials": "The supplied credentials are invalid.",
+      "tooManyAttempts": "Too many sign-in attempts. Please try again shortly.",
+      "unavailable": "Sign in is temporarily unavailable.",
+      "adminRequired": "This account does not have administrator access.",
+      "backHome": "Back to platform",
+      "securityNote": "Your authenticated session is stored in a secure HttpOnly cookie and is not exposed to page JavaScript."
+    },
+    "admin": {
+      "eyebrow": "Administration",
+      "title": "Management Studio",
+      "welcome": "Signed in as",
+      "placeholder": "The secure administration foundation is ready. Catalog management will be added in the next capability.",
+      "logout": "Sign out"
+    }
   }
 }

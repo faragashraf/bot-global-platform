@@ -1,0 +1,17 @@
+<main class="admin-page">
+  <section>
+    <span>{{ 'auth.admin.eyebrow' | translate }}</span>
+    <h1>{{ 'auth.admin.title' | translate }}</h1>
+
+    <p>
+      {{ 'auth.admin.welcome' | translate }}
+      <strong>{{ auth.user()?.displayName }}</strong>
+    </p>
+
+    <p>{{ 'auth.admin.placeholder' | translate }}</p>
+
+    <button type="button" (click)="logout()">
+      {{ 'auth.admin.logout' | translate }}
+    </button>
+  </section>
+</main>
