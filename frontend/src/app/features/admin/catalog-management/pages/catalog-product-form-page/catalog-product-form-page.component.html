@@ -1,0 +1,249 @@
+<section class="catalog-authoring" aria-labelledby="catalog-authoring-title">
+  <header class="catalog-authoring__header">
+    <div>
+      <span class="catalog-authoring__eyebrow">
+        {{ 'auth.management.catalogWorkspace.authoring.eyebrow' | translate }}
+      </span>
+      <h1 id="catalog-authoring-title">
+        {{
+          (editMode
+            ? 'auth.management.catalogWorkspace.authoring.editTitle'
+            : 'auth.management.catalogWorkspace.authoring.createTitle')
+            | translate
+        }}
+      </h1>
+      <p>{{ 'auth.management.catalogWorkspace.authoring.description' | translate }}</p>
+    </div>
+
+    <a class="catalog-authoring__back" routerLink="/admin/catalog">
+      <i class="pi pi-arrow-left" aria-hidden="true"></i>
+      {{ 'auth.management.catalogWorkspace.authoring.actions.back' | translate }}
+    </a>
+  </header>
+
+  @if (loading()) {
+    <div class="catalog-authoring__state" role="status">
+      <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+      <strong>{{ 'auth.management.catalogWorkspace.authoring.loading' | translate }}</strong>
+    </div>
+  } @else if (loadFailed()) {
+    <div class="catalog-authoring__state catalog-authoring__state--error" role="alert">
+      <i class="pi pi-exclamation-circle" aria-hidden="true"></i>
+      <strong>{{ error()! | translate }}</strong>
+      <a routerLink="/admin/catalog">
+        {{ 'auth.management.catalogWorkspace.authoring.actions.back' | translate }}
+      </a>
+    </div>
+  } @else {
+    @if (error(); as errorKey) {
+      <div class="catalog-authoring__error" role="alert">
+        <i class="pi pi-exclamation-circle" aria-hidden="true"></i>
+        {{ errorKey | translate }}
+      </div>
+    }
+
+    <form class="catalog-authoring__form" [formGroup]="form" (ngSubmit)="submit()">
+      <fieldset class="catalog-authoring__section">
+        <legend>{{ 'auth.management.catalogWorkspace.authoring.general.title' | translate }}</legend>
+
+        <div class="catalog-authoring__grid catalog-authoring__grid--general">
+          <label class="authoring-field authoring-field--wide">
+            <span>{{ 'auth.management.catalogWorkspace.authoring.general.slug' | translate }}</span>
+            <input type="text" formControlName="slug" autocomplete="off" />
+            @if (invalid('slug')) {
+              <small class="authoring-field__error">
+                {{ 'auth.management.catalogWorkspace.authoring.errors.field' | translate }}
+              </small>
+            }
+          </label>
+
+          <label class="authoring-field">
+            <span>{{ 'auth.management.catalogWorkspace.authoring.general.category' | translate }}</span>
+            <select formControlName="category">
+              @for (category of categories; track category) {
+                <option [value]="category">
+                  {{ ('auth.management.catalogWorkspace.categories.' + category) | translate }}
+                </option>
+              }
+            </select>
+          </label>
+
+          <label class="authoring-field">
+            <span>{{ 'auth.management.catalogWorkspace.authoring.general.sortOrder' | translate }}</span>
+            <input type="number" min="0" step="1" formControlName="sortOrder" />
+            @if (invalid('sortOrder')) {
+              <small class="authoring-field__error">
+                {{ 'auth.management.catalogWorkspace.authoring.errors.field' | translate }}
+              </small>
+            }
+          </label>
+
+          <label class="authoring-check">
+            <input type="checkbox" formControlName="featured" />
+            <span>{{ 'auth.management.catalogWorkspace.authoring.general.featured' | translate }}</span>
+            <small>{{ 'auth.management.catalogWorkspace.authoring.general.featuredDraft' | translate }}</small>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="catalog-authoring__localizations">
+        <fieldset class="catalog-authoring__section catalog-authoring__section--en">
+          <legend>{{ 'auth.management.catalogWorkspace.authoring.localizations.en' | translate }}</legend>
+          <ng-container
+            [ngTemplateOutlet]="localizationFields"
+            [ngTemplateOutletContext]="{ prefix: 'en', group: form.controls.en }"
+          />
+        </fieldset>
+
+        <fieldset class="catalog-authoring__section" dir="rtl">
+          <legend>{{ 'auth.management.catalogWorkspace.authoring.localizations.ar' | translate }}</legend>
+          <ng-container
+            [ngTemplateOutlet]="localizationFields"
+            [ngTemplateOutletContext]="{ prefix: 'ar', group: form.controls.ar }"
+          />
+        </fieldset>
+      </div>
+
+      <fieldset class="catalog-authoring__section">
+        <legend>{{ 'auth.management.catalogWorkspace.authoring.links.title' | translate }}</legend>
+        <div class="catalog-authoring__links-toolbar">
+          <button type="button" class="authoring-button authoring-button--secondary" (click)="addLink()">
+            <i class="pi pi-plus" aria-hidden="true"></i>
+            {{ 'auth.management.catalogWorkspace.authoring.links.add' | translate }}
+          </button>
+        </div>
+
+        <div class="catalog-authoring__links" formArrayName="links">
+          @for (link of links.controls; track link; let index = $index) {
+            <div class="catalog-authoring__link" [formGroupName]="index">
+              <label class="authoring-field">
+                <span>{{ 'auth.management.catalogWorkspace.authoring.links.type' | translate }}</span>
+                <select formControlName="type">
+                  @for (type of linkTypes; track type) {
+                    <option [value]="type">
+                      {{ ('auth.management.catalogWorkspace.authoring.linkTypes.' + type) | translate }}
+                    </option>
+                  }
+                </select>
+              </label>
+
+              <label class="authoring-field authoring-field--url">
+                <span>{{ 'auth.management.catalogWorkspace.authoring.links.url' | translate }}</span>
+                <input type="url" formControlName="url" inputmode="url" />
+                @if (invalid('links.' + index + '.url')) {
+                  <small class="authoring-field__error">
+                    {{ 'auth.management.catalogWorkspace.authoring.errors.field' | translate }}
+                  </small>
+                }
+              </label>
+
+              <label class="authoring-field">
+                <span>{{ 'auth.management.catalogWorkspace.authoring.links.labelEn' | translate }}</span>
+                <input type="text" formControlName="labelEn" />
+              </label>
+
+              <label class="authoring-field">
+                <span>{{ 'auth.management.catalogWorkspace.authoring.links.labelAr' | translate }}</span>
+                <input type="text" formControlName="labelAr" dir="rtl" />
+              </label>
+
+              <label class="authoring-field authoring-field--order">
+                <span>{{ 'auth.management.catalogWorkspace.authoring.links.sortOrder' | translate }}</span>
+                <input type="number" min="0" step="1" formControlName="sortOrder" />
+                @if (invalid('links.' + index + '.sortOrder')) {
+                  <small class="authoring-field__error">
+                    {{ 'auth.management.catalogWorkspace.authoring.errors.field' | translate }}
+                  </small>
+                }
+              </label>
+
+              <button
+                type="button"
+                class="catalog-authoring__remove"
+                (click)="removeLink(index)"
+                [attr.aria-label]="'auth.management.catalogWorkspace.authoring.links.remove' | translate"
+              >
+                <i class="pi pi-trash" aria-hidden="true"></i>
+              </button>
+            </div>
+          } @empty {
+            <p class="catalog-authoring__links-empty">
+              {{ 'auth.management.catalogWorkspace.authoring.links.empty' | translate }}
+            </p>
+          }
+        </div>
+      </fieldset>
+
+      <div class="catalog-authoring__actions">
+        <a class="authoring-button authoring-button--secondary" routerLink="/admin/catalog">
+          {{ 'auth.management.catalogWorkspace.authoring.actions.cancel' | translate }}
+        </a>
+        <button class="authoring-button" type="submit" [disabled]="saving()">
+          @if (saving()) {
+            <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+            {{ 'auth.management.catalogWorkspace.authoring.actions.saving' | translate }}
+          } @else {
+            <i class="pi pi-save" aria-hidden="true"></i>
+            {{
+              (editMode
+                ? 'auth.management.catalogWorkspace.authoring.actions.saveEdit'
+                : 'auth.management.catalogWorkspace.authoring.actions.saveCreate')
+                | translate
+            }}
+          }
+        </button>
+      </div>
+    </form>
+  }
+</section>
+
+<ng-template #localizationFields let-prefix="prefix" let-group="group">
+  <div class="catalog-authoring__grid" [formGroup]="group">
+    <label class="authoring-field">
+      <span>{{ 'auth.management.catalogWorkspace.authoring.localizations.name' | translate }}</span>
+      <input type="text" formControlName="name" />
+      @if (invalid(prefix + '.name')) {
+        <small class="authoring-field__error">
+          {{ 'auth.management.catalogWorkspace.authoring.errors.field' | translate }}
+        </small>
+      }
+    </label>
+
+    <label class="authoring-field">
+      <span>{{ 'auth.management.catalogWorkspace.authoring.localizations.displayStatus' | translate }}</span>
+      <input type="text" formControlName="displayStatus" />
+    </label>
+
+    <label class="authoring-field authoring-field--full">
+      <span>{{ 'auth.management.catalogWorkspace.authoring.localizations.shortDescription' | translate }}</span>
+      <textarea rows="3" formControlName="shortDescription"></textarea>
+      @if (invalid(prefix + '.shortDescription')) {
+        <small class="authoring-field__error">
+          {{ 'auth.management.catalogWorkspace.authoring.errors.field' | translate }}
+        </small>
+      }
+    </label>
+
+    <label class="authoring-field authoring-field--full">
+      <span>{{ 'auth.management.catalogWorkspace.authoring.localizations.description' | translate }}</span>
+      <textarea rows="7" formControlName="description"></textarea>
+      @if (invalid(prefix + '.description')) {
+        <small class="authoring-field__error">
+          {{ 'auth.management.catalogWorkspace.authoring.errors.field' | translate }}
+        </small>
+      }
+    </label>
+
+    <label class="authoring-field">
+      <span>{{ 'auth.management.catalogWorkspace.authoring.localizations.platforms' | translate }}</span>
+      <textarea rows="4" formControlName="platforms"></textarea>
+      <small>{{ 'auth.management.catalogWorkspace.authoring.localizations.listHint' | translate }}</small>
+    </label>
+
+    <label class="authoring-field">
+      <span>{{ 'auth.management.catalogWorkspace.authoring.localizations.technologies' | translate }}</span>
+      <textarea rows="4" formControlName="technologies"></textarea>
+      <small>{{ 'auth.management.catalogWorkspace.authoring.localizations.listHint' | translate }}</small>
+    </label>
+  </div>
+</ng-template>

@@ -30,6 +30,24 @@ export const ADMIN_ROUTES: Routes = [
         loadComponent: () =>
           import('./catalog-management/pages/catalog-management-page/catalog-management-page.component')
             .then((m) => m.CatalogManagementPageComponent)
+      },
+      {
+        path: `${ADMIN_SECTIONS.catalog.path}/new`,
+        data: {
+          [ADMIN_SECTION_DATA_KEY]: ADMIN_SECTIONS.catalog
+        },
+        loadComponent: () =>
+          import('./catalog-management/pages/catalog-product-form-page/catalog-product-form-page.component')
+            .then((m) => m.CatalogProductFormPageComponent)
+      },
+      {
+        path: `${ADMIN_SECTIONS.catalog.path}/:id/edit`,
+        data: {
+          [ADMIN_SECTION_DATA_KEY]: ADMIN_SECTIONS.catalog
+        },
+        loadComponent: () =>
+          import('./catalog-management/pages/catalog-product-form-page/catalog-product-form-page.component')
+            .then((m) => m.CatalogProductFormPageComponent)
       }
     ]
   }

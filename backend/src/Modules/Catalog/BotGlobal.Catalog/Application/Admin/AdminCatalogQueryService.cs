@@ -9,6 +9,22 @@ public sealed class AdminCatalogQueryService(
     CatalogDbContext dbContext)
     : IAdminCatalogQueryService
 {
+    public async Task<AdminCatalogProductDetailDto?> GetProductAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var product = await dbContext.Products
+            .AsNoTracking()
+            .Include(candidate => candidate.Localizations)
+            .Include(candidate => candidate.Links)
+            .AsSplitQuery()
+            .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+
+        return product is null
+            ? null
+            : AdminCatalogProductMapper.ToDetail(product);
+    }
+
     public async Task<AdminCatalogProductsResponse> GetProductsAsync(
         string? search,
         ProductCategory? category,

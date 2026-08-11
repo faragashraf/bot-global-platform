@@ -34,6 +34,7 @@ public static class CatalogModule
         services.AddSingleton<IMediaUrlResolver, NullMediaUrlResolver>();
 
         services.AddScoped<IAdminCatalogQueryService, AdminCatalogQueryService>();
+        services.AddScoped<IAdminCatalogCommandService, AdminCatalogCommandService>();
 
         return services;
     }

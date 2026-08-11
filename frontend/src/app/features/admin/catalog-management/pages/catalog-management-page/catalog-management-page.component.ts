@@ -7,6 +7,7 @@ import {
 } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { TranslateModule } from '@ngx-translate/core';
 import { finalize } from 'rxjs';
 
@@ -23,19 +24,23 @@ type FeaturedFilter = 'all' | 'featured' | 'standard';
 @Component({
   selector: 'bgp-catalog-management-page',
   standalone: true,
-  imports: [FormsModule, TranslateModule],
+  imports: [FormsModule, RouterLink, TranslateModule],
   templateUrl: './catalog-management-page.component.html',
   styleUrl: './catalog-management-page.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class CatalogManagementPageComponent {
   private readonly catalog = inject(AdminCatalogService);
+  private readonly route = inject(ActivatedRoute);
   readonly language = inject(LanguageService);
 
   readonly products = signal<readonly AdminCatalogProduct[]>([]);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly total = signal(0);
+  readonly saved = signal<'created' | 'updated' | null>(
+    this.readSavedState()
+  );
 
   search = '';
   category: AdminCatalogCategory | '' = '';
@@ -120,5 +125,10 @@ export class CatalogManagementPageComponent {
 
   statusKey(status: AdminPublicationStatus): string {
     return `auth.management.catalogWorkspace.statuses.${status}`;
+  }
+
+  private readSavedState(): 'created' | 'updated' | null {
+    const value = this.route.snapshot.queryParamMap.get('saved');
+    return value === 'created' || value === 'updated' ? value : null;
   }
 }

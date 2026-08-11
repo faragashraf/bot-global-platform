@@ -52,6 +52,36 @@ public sealed class AdminCatalogQueryServiceTests
         Assert.True(product.Featured);
     }
 
+    [Fact]
+    public async Task Detail_returns_complete_bilingual_authoring_data()
+    {
+        await using var context = CreateContext();
+        var product = CreateProduct("draft-detail", ProductCategory.Program);
+        product.ReplaceLinks([
+            new ProductLink(
+                Guid.NewGuid(),
+                product.Id,
+                ProductLinkType.Website,
+                "https://example.com/product",
+                2,
+                "Website",
+                "الموقع")
+        ]);
+        context.Add(product);
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var result = await new AdminCatalogQueryService(context)
+            .GetProductAsync(product.Id);
+
+        Assert.NotNull(result);
+        Assert.Equal("draft-detail EN", result.Localizations.En.Name);
+        Assert.Equal("draft-detail AR", result.Localizations.Ar.Name);
+        Assert.Equal("website", Assert.Single(result.Links).Type);
+        Assert.Equal("Draft", result.PublicationStatus);
+        Assert.Empty(context.ChangeTracker.Entries());
+    }
+
     private static CatalogDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<CatalogDbContext>()

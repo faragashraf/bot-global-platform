@@ -14,11 +14,25 @@
       </p>
     </div>
 
-    <div class="catalog-management__count">
-      <strong>{{ total() }}</strong>
-      <span>{{ 'auth.management.catalogWorkspace.products' | translate }}</span>
+    <div class="catalog-management__header-actions">
+      <a class="catalog-management__new" routerLink="/admin/catalog/new">
+        <i class="pi pi-plus" aria-hidden="true"></i>
+        {{ 'auth.management.catalogWorkspace.actions.new' | translate }}
+      </a>
+
+      <div class="catalog-management__count">
+        <strong>{{ total() }}</strong>
+        <span>{{ 'auth.management.catalogWorkspace.products' | translate }}</span>
+      </div>
     </div>
   </header>
+
+  @if (saved(); as savedState) {
+    <div class="catalog-management__success" role="status">
+      <i class="pi pi-check-circle" aria-hidden="true"></i>
+      {{ ('auth.management.catalogWorkspace.success.' + savedState) | translate }}
+    </div>
+  }
 
   <div
     class="catalog-management__summary"
@@ -161,6 +175,7 @@
             <th>{{ 'auth.management.catalogWorkspace.columns.status' | translate }}</th>
             <th>{{ 'auth.management.catalogWorkspace.columns.featured' | translate }}</th>
             <th>{{ 'auth.management.catalogWorkspace.columns.order' | translate }}</th>
+            <th>{{ 'auth.management.catalogWorkspace.columns.actions' | translate }}</th>
           </tr>
         </thead>
 
@@ -210,6 +225,29 @@
               </td>
 
               <td>{{ product.sortOrder }}</td>
+
+              <td>
+                @if (product.publicationStatus === 'Draft') {
+                  <a
+                    class="catalog-table__edit"
+                    [routerLink]="['/admin/catalog', product.id, 'edit']"
+                    [attr.aria-label]="
+                      ('auth.management.catalogWorkspace.actions.editProduct' | translate)
+                      + ': ' + displayName(product)
+                    "
+                  >
+                    <i class="pi pi-pencil" aria-hidden="true"></i>
+                    <span>{{ 'auth.management.catalogWorkspace.actions.edit' | translate }}</span>
+                  </a>
+                } @else {
+                  <span
+                    class="catalog-table__edit-unavailable"
+                    [attr.aria-label]="'auth.management.catalogWorkspace.actions.editUnavailable' | translate"
+                  >
+                    <i class="pi pi-lock" aria-hidden="true"></i>
+                  </span>
+                }
+              </td>
             </tr>
           }
         </tbody>

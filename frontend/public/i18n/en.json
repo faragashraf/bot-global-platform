@@ -301,12 +301,22 @@
       "catalogWorkspace": {
         "eyebrow": "Catalog administration",
         "title": "Catalog management",
-        "description": "Review every catalog product across draft, published, and archived states before authoring capabilities are introduced.",
+        "description": "Review every catalog product and maintain draft content before publication.",
         "products": "products",
         "summaryLabel": "Catalog summary",
         "tableLabel": "Catalog products",
         "yes": "Yes",
         "no": "No",
+        "actions": {
+          "new": "New product",
+          "edit": "Edit",
+          "editProduct": "Edit product",
+          "editUnavailable": "Only draft products can be edited"
+        },
+        "success": {
+          "created": "Draft product created.",
+          "updated": "Draft product updated."
+        },
         "categories": {
           "app": "Application",
           "game": "Game",
@@ -337,7 +347,8 @@
           "category": "Category",
           "status": "Status",
           "featured": "Featured",
-          "order": "Order"
+          "order": "Order",
+          "actions": "Actions"
         },
         "loading": {
           "title": "Loading catalog",
@@ -352,6 +363,67 @@
         "empty": {
           "title": "No products match",
           "description": "Adjust the filters or reset them to see the complete catalog."
+        },
+        "authoring": {
+          "eyebrow": "Draft authoring",
+          "createTitle": "Create product draft",
+          "editTitle": "Edit product draft",
+          "description": "Maintain the draft identity, bilingual content, ordering, and public links.",
+          "loading": "Loading product draft",
+          "general": {
+            "title": "Product settings",
+            "slug": "Slug",
+            "category": "Category",
+            "sortOrder": "Sort order",
+            "featured": "Featured",
+            "featuredDraft": "Available only after the product is published"
+          },
+          "localizations": {
+            "en": "English content",
+            "ar": "Arabic content",
+            "name": "Name",
+            "shortDescription": "Short description",
+            "description": "Description",
+            "displayStatus": "Display status",
+            "platforms": "Platforms",
+            "technologies": "Technologies",
+            "listHint": "Enter one item per line"
+          },
+          "links": {
+            "title": "Product links",
+            "add": "Add link",
+            "remove": "Remove link",
+            "empty": "No product links have been added.",
+            "type": "Type",
+            "url": "Absolute HTTP(S) URL",
+            "labelEn": "English label",
+            "labelAr": "Arabic label",
+            "sortOrder": "Order"
+          },
+          "linkTypes": {
+            "support": "Support",
+            "privacy": "Privacy",
+            "store": "Store",
+            "download": "Download",
+            "website": "Website"
+          },
+          "actions": {
+            "back": "Back to catalog",
+            "cancel": "Cancel",
+            "saveCreate": "Create draft",
+            "saveEdit": "Save draft",
+            "saving": "Saving"
+          },
+          "errors": {
+            "field": "Enter a valid value.",
+            "request": "The product request is incomplete or malformed.",
+            "forbidden": "Your current session cannot author catalog products.",
+            "notFound": "The requested catalog product no longer exists.",
+            "nonDraft": "Only draft catalog products can be edited here.",
+            "conflict": "This draft conflicts with existing catalog data or is no longer editable.",
+            "validation": "The draft violates one or more catalog rules.",
+            "save": "The draft could not be saved."
+          }
         }
       }
     }

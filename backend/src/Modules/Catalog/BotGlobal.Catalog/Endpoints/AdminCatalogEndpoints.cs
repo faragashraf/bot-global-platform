@@ -28,7 +28,75 @@ public static class AdminCatalogEndpoints
             .ProducesProblem(
                 StatusCodes.Status403Forbidden);
 
+        group.MapGet(
+                "/products/{id:guid}",
+                GetProductAsync)
+            .Produces<AdminCatalogProductDetailDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapPost(
+                "/products",
+                CreateProductAsync)
+            .Produces<AdminCatalogProductDetailDto>(StatusCodes.Status201Created)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesValidationProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapPut(
+                "/products/{id:guid}",
+                UpdateProductAsync)
+            .Produces<AdminCatalogProductDetailDto>(StatusCodes.Status200OK)
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesValidationProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden);
+
         return endpoints;
+    }
+
+    private static async Task<IResult> GetProductAsync(
+        Guid id,
+        [FromServices] IAdminCatalogQueryService queries,
+        CancellationToken cancellationToken)
+    {
+        var product = await queries.GetProductAsync(id, cancellationToken);
+        return product is null
+            ? Results.Problem(
+                statusCode: StatusCodes.Status404NotFound,
+                title: "Catalog product not found",
+                detail: "No catalog product matches the requested identifier.")
+            : Results.Ok(product);
+    }
+
+    private static async Task<IResult> CreateProductAsync(
+        CreateCatalogProductRequest? request,
+        [FromServices] IAdminCatalogCommandService commands,
+        CancellationToken cancellationToken)
+    {
+        var result = await commands.CreateAsync(request, cancellationToken);
+        return result.Failure is null
+            ? Results.Created(
+                $"/api/admin/catalog/products/{result.Product!.Id}",
+                result.Product)
+            : Failure(result.Failure);
+    }
+
+    private static async Task<IResult> UpdateProductAsync(
+        Guid id,
+        UpdateCatalogProductRequest? request,
+        [FromServices] IAdminCatalogCommandService commands,
+        CancellationToken cancellationToken)
+    {
+        var result = await commands.UpdateAsync(id, request, cancellationToken);
+        return result.Failure is null
+            ? Results.Ok(result.Product)
+            : Failure(result.Failure);
     }
 
     private static async Task<IResult> GetProductsAsync(
@@ -130,4 +198,27 @@ public static class AdminCatalogEndpoints
             title: "Invalid admin catalog query",
             detail: detail,
             extensions: new Dictionary<string, object?> { ["parameter"] = parameterName });
+
+    private static IResult Failure(AdminCatalogCommandFailure failure) =>
+        failure.Kind switch
+        {
+            AdminCatalogCommandFailureKind.InvalidRequest => Results.ValidationProblem(
+                new Dictionary<string, string[]> { ["request"] = [failure.Detail] },
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Invalid catalog product request"),
+            AdminCatalogCommandFailureKind.NotFound => Results.Problem(
+                statusCode: StatusCodes.Status404NotFound,
+                title: "Catalog product not found",
+                detail: failure.Detail),
+            AdminCatalogCommandFailureKind.Conflict => Results.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Catalog product conflict",
+                detail: failure.Detail),
+            AdminCatalogCommandFailureKind.Validation => Results.ValidationProblem(
+                new Dictionary<string, string[]> { ["product"] = [failure.Detail] },
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                title: "Catalog product validation failed"),
+            _ => throw new InvalidOperationException(
+                $"Unsupported admin catalog failure kind '{failure.Kind}'.")
+        };
 }
