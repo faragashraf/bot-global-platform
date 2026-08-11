@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
     <ProjectReference Include="..\BuildingBlocks\BotGlobal.Contracts\BotGlobal.Contracts.csproj" />
@@ -12,6 +12,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>846df752-33a4-4477-a65f-0da9f2d65e50</UserSecretsId>
   </PropertyGroup>
 
 </Project>
