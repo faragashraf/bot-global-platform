@@ -180,8 +180,7 @@ namespace BotGlobal.Catalog.Infrastructure.Migrations
                 schema: "catalog",
                 table: "ProductLinks",
                 columns: new[] { "ProductId", "Type", "UrlHash" },
-                unique: true,
-                filter: "[UrlHash] IS NOT NULL");
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "UX_ProductMedia_ProductId_Hero",

@@ -121,7 +121,7 @@ namespace BotGlobal.Catalog.Infrastructure.Migrations
                     b.HasIndex("ProductId", "Type", "UrlHash")
                         .IsUnique()
                         .HasDatabaseName("UX_ProductLinks_ProductId_Type_Url")
-                        .HasFilter("[UrlHash] IS NOT NULL");
+                        ;
 
                     b.ToTable("ProductLinks", "catalog", t =>
                         {
