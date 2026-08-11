@@ -51,6 +51,7 @@ internal sealed class ProductLinkConfiguration : IEntityTypeConfiguration<Produc
 
         builder.HasIndex("ProductId", "Type", "UrlHash")
             .IsUnique()
+            .HasFilter(null)
             .HasDatabaseName("UX_ProductLinks_ProductId_Type_Url");
     }
 }
