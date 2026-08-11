@@ -4,6 +4,8 @@ import { Observable } from 'rxjs';
 
 import {
   AdminCatalogFilters,
+  AdminCatalogProductDetail,
+  AdminCatalogProductWriteRequest,
   AdminCatalogProductsResponse
 } from '../models/admin-catalog.model';
 
@@ -38,6 +40,34 @@ export class AdminCatalogService {
         params,
         withCredentials: true
       }
+    );
+  }
+
+  getProduct(id: string): Observable<AdminCatalogProductDetail> {
+    return this.http.get<AdminCatalogProductDetail>(
+      `/api/admin/catalog/products/${encodeURIComponent(id)}`,
+      { withCredentials: true }
+    );
+  }
+
+  createProduct(
+    request: AdminCatalogProductWriteRequest
+  ): Observable<AdminCatalogProductDetail> {
+    return this.http.post<AdminCatalogProductDetail>(
+      '/api/admin/catalog/products',
+      request,
+      { withCredentials: true }
+    );
+  }
+
+  updateProduct(
+    id: string,
+    request: AdminCatalogProductWriteRequest
+  ): Observable<AdminCatalogProductDetail> {
+    return this.http.put<AdminCatalogProductDetail>(
+      `/api/admin/catalog/products/${encodeURIComponent(id)}`,
+      request,
+      { withCredentials: true }
     );
   }
 }
