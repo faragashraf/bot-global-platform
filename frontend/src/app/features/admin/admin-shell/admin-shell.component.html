@@ -1,0 +1,153 @@
+<div class="management-shell">
+  <aside
+    class="management-sidebar"
+    [class.management-sidebar--open]="mobileNavigationOpen()"
+    [attr.aria-label]="'auth.management.navigationLabel' | translate"
+  >
+    <div class="management-sidebar__brand">
+      <a class="management-brand" routerLink="/admin" (click)="closeMobileNavigation()">
+        <span class="management-brand__symbol" aria-hidden="true">
+          <span></span><span></span>
+        </span>
+        <span class="management-brand__copy">
+          <strong>Bot Global</strong>
+          <small>{{ 'auth.management.brandSuffix' | translate }}</small>
+        </span>
+      </a>
+
+      <button
+        class="management-sidebar__mobile-close"
+        type="button"
+        (click)="closeMobileNavigation()"
+        [attr.aria-label]="'auth.management.closeNavigation' | translate"
+      >
+        <i class="pi pi-times" aria-hidden="true"></i>
+      </button>
+    </div>
+
+    <nav class="management-nav">
+      @for (item of navigation; track item.labelKey) {
+        @if (item.route) {
+          <a
+            class="management-nav__item"
+            [routerLink]="item.route"
+            routerLinkActive="management-nav__item--active"
+            [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
+            (click)="closeMobileNavigation()"
+          >
+            <span class="management-nav__main">
+              <i [class]="item.icon" aria-hidden="true"></i>
+              <span>{{ item.labelKey | translate }}</span>
+            </span>
+          </a>
+        } @else {
+          <span class="management-nav__item management-nav__item--disabled" aria-disabled="true">
+            <span class="management-nav__main">
+              <i [class]="item.icon" aria-hidden="true"></i>
+              <span>{{ item.labelKey | translate }}</span>
+            </span>
+            @if (item.comingSoon) {
+              <small>{{ 'auth.management.comingSoon' | translate }}</small>
+            }
+          </span>
+        }
+      }
+    </nav>
+
+    <div class="management-sidebar__footer">
+      <a routerLink="/" (click)="closeMobileNavigation()">
+        <i class="pi pi-external-link" aria-hidden="true"></i>
+        <span>{{ 'auth.management.backToPlatform' | translate }}</span>
+      </a>
+    </div>
+  </aside>
+
+  @if (mobileNavigationOpen()) {
+    <button
+      class="management-backdrop"
+      type="button"
+      (click)="closeMobileNavigation()"
+      [attr.aria-label]="'auth.management.closeNavigation' | translate"
+    ></button>
+  }
+
+  <div class="management-workspace">
+    <header class="management-topbar">
+      <div class="management-topbar__start">
+        <button
+          class="management-topbar__menu"
+          type="button"
+          (click)="toggleMobileNavigation()"
+          [attr.aria-expanded]="mobileNavigationOpen()"
+          [attr.aria-label]="'auth.management.openNavigation' | translate"
+        >
+          <i class="pi pi-bars" aria-hidden="true"></i>
+        </button>
+
+        <div class="management-topbar__context">
+          <span>{{ 'auth.management.currentSection' | translate }}</span>
+          <strong>{{ 'auth.management.nav.dashboard' | translate }}</strong>
+        </div>
+      </div>
+
+      <div class="management-topbar__actions">
+        <div class="management-theme" role="group" [attr.aria-label]="'auth.management.theme.label' | translate">
+          @for (option of themeOptions; track option) {
+            <button
+              type="button"
+              [class.management-control--active]="theme.preference() === option"
+              [attr.aria-pressed]="theme.preference() === option"
+              (click)="setTheme(option)"
+            >
+              @switch (option) {
+                @case ('system') { <i class="pi pi-desktop" aria-hidden="true"></i> }
+                @case ('light') { <i class="pi pi-sun" aria-hidden="true"></i> }
+                @case ('dark') { <i class="pi pi-moon" aria-hidden="true"></i> }
+              }
+              <span class="management-control__label">
+                {{ ('auth.management.theme.' + option) | translate }}
+              </span>
+            </button>
+          }
+        </div>
+
+        <div class="management-language" role="group" [attr.aria-label]="'auth.management.language.label' | translate">
+          <button
+            type="button"
+            [class.management-control--active]="language.language() === 'en'"
+            [attr.aria-pressed]="language.language() === 'en'"
+            (click)="setLanguage('en')"
+          >EN</button>
+
+          <button
+            type="button"
+            [class.management-control--active]="language.language() === 'ar'"
+            [attr.aria-pressed]="language.language() === 'ar'"
+            (click)="setLanguage('ar')"
+          >AR</button>
+        </div>
+
+        <div class="management-user">
+          <span class="management-user__avatar" aria-hidden="true">{{ initials() }}</span>
+          <span class="management-user__copy">
+            <strong>{{ auth.user()?.displayName }}</strong>
+            <small>{{ auth.user()?.userName }}</small>
+          </span>
+          <button
+            class="management-user__logout"
+            type="button"
+            (click)="logout()"
+            [attr.aria-label]="'auth.management.logout' | translate"
+          >
+            <i class="pi pi-sign-out" aria-hidden="true"></i>
+            <span>{{ 'auth.management.logout' | translate }}</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="management-content">
+      <router-outlet />
+    </main>
+  </div>
+</div>

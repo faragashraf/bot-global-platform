@@ -1,5 +1,4 @@
 import { Routes } from '@angular/router';
-import { adminGuard } from './core/auth/admin.guard';
 import type { PublicCatalogCategory } from './features/catalog/models/catalog.model';
 
 interface CatalogRouteData {
@@ -69,10 +68,9 @@ export const routes: Routes = [
   },
   {
     path: 'admin',
-    canActivate: [adminGuard],
-    loadComponent: () =>
-      import('./features/admin/admin-home/admin-home.component')
-        .then((m) => m.AdminHomeComponent)
+    loadChildren: () =>
+      import('./features/admin/admin.routes')
+        .then((m) => m.ADMIN_ROUTES)
   },
 
   {

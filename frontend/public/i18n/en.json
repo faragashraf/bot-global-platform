@@ -253,6 +253,51 @@
       "welcome": "Signed in as",
       "placeholder": "The secure administration foundation is ready. Catalog management will be added in the next capability.",
       "logout": "Sign out"
+    },
+    "management": {
+      "brandSuffix": "Management Studio",
+      "eyebrow": "Administration",
+      "title": "Management Studio",
+      "navigationLabel": "Management navigation",
+      "openNavigation": "Open management navigation",
+      "closeNavigation": "Close management navigation",
+      "comingSoon": "Coming soon",
+      "backToPlatform": "Back to public platform",
+      "logout": "Sign out",
+      "nav": {
+        "dashboard": "Dashboard",
+        "catalog": "Catalog"
+      },
+      "dashboard": {
+        "eyebrow": "Overview",
+        "title": "Management workspace",
+        "description": "A secure workspace for managing Bot Global platform capabilities. Catalog management will be introduced as the first authoring capability.",
+        "identity": {
+          "label": "Identity",
+          "value": "Administrator session active",
+          "description": "Authentication, secure session restoration, authorization policy, and protected routing are connected."
+        },
+        "catalog": {
+          "label": "Catalog",
+          "value": "Public capability ready",
+          "description": "The public catalog is live through the shared catalog engine and persistence API. Authoring controls are the next capability."
+        },
+        "security": {
+          "label": "Security boundary",
+          "value": "Administrator protected",
+          "description": "Management routes remain behind the Administrator policy and cookie-backed authenticated session."
+        }
+      },
+      "currentSection": "Current section",
+      "theme": {
+        "label": "Theme preference",
+        "system": "System",
+        "light": "Light",
+        "dark": "Dark"
+      },
+      "language": {
+        "label": "Language"
+      }
     }
   }
 }
