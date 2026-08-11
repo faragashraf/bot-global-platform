@@ -1,4 +1,5 @@
 using BotGlobal.Catalog.Application;
+using BotGlobal.Catalog.Application.Admin;
 using BotGlobal.Catalog.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -31,6 +32,8 @@ public static class CatalogModule
                 }));
         services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();
         services.AddSingleton<IMediaUrlResolver, NullMediaUrlResolver>();
+
+        services.AddScoped<IAdminCatalogQueryService, AdminCatalogQueryService>();
 
         return services;
     }

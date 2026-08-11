@@ -6,11 +6,14 @@
   >
     <div class="management-sidebar__brand">
       <a class="management-brand" routerLink="/admin" (click)="closeMobileNavigation()">
-        <span class="management-brand__symbol" aria-hidden="true">
-          <span></span><span></span>
-        </span>
+        <img
+          class="management-brand__mark"
+          src="/brand/bot-global-approved-mark.png"
+          alt=""
+          aria-hidden="true"
+        />
         <span class="management-brand__copy">
-          <strong>Bot Global</strong>
+          <strong>BOT GLOBAL</strong>
           <small>{{ 'auth.management.brandSuffix' | translate }}</small>
         </span>
       </a>
@@ -27,30 +30,18 @@
 
     <nav class="management-nav">
       @for (item of navigation; track item.labelKey) {
-        @if (item.route) {
-          <a
-            class="management-nav__item"
-            [routerLink]="item.route"
-            routerLinkActive="management-nav__item--active"
-            [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
-            (click)="closeMobileNavigation()"
-          >
-            <span class="management-nav__main">
-              <i [class]="item.icon" aria-hidden="true"></i>
-              <span>{{ item.labelKey | translate }}</span>
-            </span>
-          </a>
-        } @else {
-          <span class="management-nav__item management-nav__item--disabled" aria-disabled="true">
-            <span class="management-nav__main">
-              <i [class]="item.icon" aria-hidden="true"></i>
-              <span>{{ item.labelKey | translate }}</span>
-            </span>
-            @if (item.comingSoon) {
-              <small>{{ 'auth.management.comingSoon' | translate }}</small>
-            }
+        <a
+          class="management-nav__item"
+          [routerLink]="item.route"
+          routerLinkActive="management-nav__item--active"
+          [routerLinkActiveOptions]="{ exact: item.exact }"
+          (click)="closeMobileNavigation()"
+        >
+          <span class="management-nav__main">
+            <i [class]="item.icon" aria-hidden="true"></i>
+            <span>{{ item.labelKey | translate }}</span>
           </span>
-        }
+        </a>
       }
     </nav>
 
@@ -86,7 +77,7 @@
 
         <div class="management-topbar__context">
           <span>{{ 'auth.management.currentSection' | translate }}</span>
-          <strong>{{ 'auth.management.nav.dashboard' | translate }}</strong>
+          <strong>{{ currentSectionLabelKey() | translate }}</strong>
         </div>
       </div>
 

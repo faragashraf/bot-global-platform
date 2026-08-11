@@ -1,0 +1,219 @@
+<section class="catalog-management" aria-labelledby="catalog-management-title">
+  <header class="catalog-management__header">
+    <div>
+      <span class="catalog-management__eyebrow">
+        {{ 'auth.management.catalogWorkspace.eyebrow' | translate }}
+      </span>
+
+      <h1 id="catalog-management-title">
+        {{ 'auth.management.catalogWorkspace.title' | translate }}
+      </h1>
+
+      <p>
+        {{ 'auth.management.catalogWorkspace.description' | translate }}
+      </p>
+    </div>
+
+    <div class="catalog-management__count">
+      <strong>{{ total() }}</strong>
+      <span>{{ 'auth.management.catalogWorkspace.products' | translate }}</span>
+    </div>
+  </header>
+
+  <div
+    class="catalog-management__summary"
+    [attr.aria-label]="'auth.management.catalogWorkspace.summaryLabel' | translate"
+  >
+    <article>
+      <span>{{ 'auth.management.catalogWorkspace.statuses.Published' | translate }}</span>
+      <strong>{{ summary().published }}</strong>
+    </article>
+
+    <article>
+      <span>{{ 'auth.management.catalogWorkspace.statuses.Draft' | translate }}</span>
+      <strong>{{ summary().draft }}</strong>
+    </article>
+
+    <article>
+      <span>{{ 'auth.management.catalogWorkspace.statuses.Archived' | translate }}</span>
+      <strong>{{ summary().archived }}</strong>
+    </article>
+  </div>
+
+  <form
+    class="catalog-management__filters"
+    (ngSubmit)="load()"
+    [attr.aria-label]="'auth.management.catalogWorkspace.filters.label' | translate"
+  >
+    <label class="catalog-field catalog-field--search">
+      <span>{{ 'auth.management.catalogWorkspace.filters.search' | translate }}</span>
+      <input
+        type="search"
+        name="search"
+        [(ngModel)]="search"
+        [disabled]="loading()"
+        [placeholder]="'auth.management.catalogWorkspace.filters.searchPlaceholder' | translate"
+      />
+    </label>
+
+    <label class="catalog-field">
+      <span>{{ 'auth.management.catalogWorkspace.filters.category' | translate }}</span>
+      <select name="category" [(ngModel)]="category" [disabled]="loading()">
+        <option value="">
+          {{ 'auth.management.catalogWorkspace.filters.allCategories' | translate }}
+        </option>
+        <option value="app">
+          {{ 'auth.management.catalogWorkspace.categories.app' | translate }}
+        </option>
+        <option value="game">
+          {{ 'auth.management.catalogWorkspace.categories.game' | translate }}
+        </option>
+        <option value="program">
+          {{ 'auth.management.catalogWorkspace.categories.program' | translate }}
+        </option>
+      </select>
+    </label>
+
+    <label class="catalog-field">
+      <span>{{ 'auth.management.catalogWorkspace.filters.status' | translate }}</span>
+      <select name="status" [(ngModel)]="status" [disabled]="loading()">
+        <option value="">
+          {{ 'auth.management.catalogWorkspace.filters.allStatuses' | translate }}
+        </option>
+        <option value="Draft">
+          {{ 'auth.management.catalogWorkspace.statuses.Draft' | translate }}
+        </option>
+        <option value="Published">
+          {{ 'auth.management.catalogWorkspace.statuses.Published' | translate }}
+        </option>
+        <option value="Archived">
+          {{ 'auth.management.catalogWorkspace.statuses.Archived' | translate }}
+        </option>
+      </select>
+    </label>
+
+    <label class="catalog-field">
+      <span>{{ 'auth.management.catalogWorkspace.filters.featured' | translate }}</span>
+      <select name="featured" [(ngModel)]="featured" [disabled]="loading()">
+        <option value="all">
+          {{ 'auth.management.catalogWorkspace.filters.allProducts' | translate }}
+        </option>
+        <option value="featured">
+          {{ 'auth.management.catalogWorkspace.filters.featuredOnly' | translate }}
+        </option>
+        <option value="standard">
+          {{ 'auth.management.catalogWorkspace.filters.standardOnly' | translate }}
+        </option>
+      </select>
+    </label>
+
+    <div class="catalog-management__filter-actions">
+      <button type="submit" [disabled]="loading()">
+        <i class="pi pi-search" aria-hidden="true"></i>
+        {{ 'auth.management.catalogWorkspace.filters.apply' | translate }}
+      </button>
+
+      <button
+        type="button"
+        class="secondary"
+        [disabled]="loading()"
+        (click)="resetFilters()"
+      >
+        <i class="pi pi-filter-slash" aria-hidden="true"></i>
+        {{ 'auth.management.catalogWorkspace.filters.reset' | translate }}
+      </button>
+    </div>
+  </form>
+
+  @if (loading()) {
+    <div class="catalog-state" role="status">
+      <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+      <strong>{{ 'auth.management.catalogWorkspace.loading.title' | translate }}</strong>
+      <span>{{ 'auth.management.catalogWorkspace.loading.description' | translate }}</span>
+    </div>
+  } @else if (error(); as errorKey) {
+    <div class="catalog-state catalog-state--error" role="alert">
+      <i class="pi pi-exclamation-circle" aria-hidden="true"></i>
+      <strong>{{ 'auth.management.catalogWorkspace.errors.title' | translate }}</strong>
+      <span>{{ errorKey | translate }}</span>
+      <button type="button" (click)="load()">
+        {{ 'auth.management.catalogWorkspace.errors.retry' | translate }}
+      </button>
+    </div>
+  } @else if (!hasProducts()) {
+    <div class="catalog-state">
+      <i class="pi pi-inbox" aria-hidden="true"></i>
+      <strong>{{ 'auth.management.catalogWorkspace.empty.title' | translate }}</strong>
+      <span>{{ 'auth.management.catalogWorkspace.empty.description' | translate }}</span>
+    </div>
+  } @else {
+    <div
+      class="catalog-table-wrap"
+      role="region"
+      tabindex="0"
+      [attr.aria-label]="'auth.management.catalogWorkspace.tableLabel' | translate"
+    >
+      <table class="catalog-table">
+        <thead>
+          <tr>
+            <th>{{ 'auth.management.catalogWorkspace.columns.product' | translate }}</th>
+            <th>{{ 'auth.management.catalogWorkspace.columns.category' | translate }}</th>
+            <th>{{ 'auth.management.catalogWorkspace.columns.status' | translate }}</th>
+            <th>{{ 'auth.management.catalogWorkspace.columns.featured' | translate }}</th>
+            <th>{{ 'auth.management.catalogWorkspace.columns.order' | translate }}</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          @for (product of products(); track product.id) {
+            <tr>
+              <td>
+                <div class="catalog-product">
+                  <strong>{{ displayName(product) }}</strong>
+                  <span>{{ product.slug }}</span>
+                  <small>
+                    {{ product.nameEn }}
+                    @if (product.nameAr) {
+                      <span aria-hidden="true"> · </span>
+                      {{ product.nameAr }}
+                    }
+                  </small>
+                </div>
+              </td>
+
+              <td>
+                <span class="catalog-chip">
+                  {{ categoryKey(product.category) | translate }}
+                </span>
+              </td>
+
+              <td>
+                <span
+                  class="catalog-status"
+                  [attr.data-status]="product.publicationStatus"
+                >
+                  {{ statusKey(product.publicationStatus) | translate }}
+                </span>
+              </td>
+
+              <td>
+                @if (product.featured) {
+                  <span class="catalog-featured">
+                    <i class="pi pi-star-fill" aria-hidden="true"></i>
+                    {{ 'auth.management.catalogWorkspace.yes' | translate }}
+                  </span>
+                } @else {
+                  <span class="catalog-muted">
+                    {{ 'auth.management.catalogWorkspace.no' | translate }}
+                  </span>
+                }
+              </td>
+
+              <td>{{ product.sortOrder }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>
