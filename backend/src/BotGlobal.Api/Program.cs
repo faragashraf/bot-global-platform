@@ -23,6 +23,7 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapCatalogEndpoints();
+app.MapAdminCatalogEndpoints();
 app.MapIdentityModuleEndpoints();
 
 await app.InitializeIdentityAsync();
