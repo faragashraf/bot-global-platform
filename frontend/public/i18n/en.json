@@ -297,6 +297,62 @@
       },
       "language": {
         "label": "Language"
+      },
+      "catalogWorkspace": {
+        "eyebrow": "Catalog administration",
+        "title": "Catalog management",
+        "description": "Review every catalog product across draft, published, and archived states before authoring capabilities are introduced.",
+        "products": "products",
+        "summaryLabel": "Catalog summary",
+        "tableLabel": "Catalog products",
+        "yes": "Yes",
+        "no": "No",
+        "categories": {
+          "app": "Application",
+          "game": "Game",
+          "program": "Program"
+        },
+        "statuses": {
+          "Draft": "Draft",
+          "Published": "Published",
+          "Archived": "Archived"
+        },
+        "filters": {
+          "label": "Catalog filters",
+          "search": "Search",
+          "searchPlaceholder": "Name or slug",
+          "category": "Category",
+          "allCategories": "All categories",
+          "status": "Publication status",
+          "allStatuses": "All statuses",
+          "featured": "Featured",
+          "allProducts": "All products",
+          "featuredOnly": "Featured only",
+          "standardOnly": "Standard only",
+          "apply": "Apply",
+          "reset": "Reset"
+        },
+        "columns": {
+          "product": "Product",
+          "category": "Category",
+          "status": "Status",
+          "featured": "Featured",
+          "order": "Order"
+        },
+        "loading": {
+          "title": "Loading catalog",
+          "description": "Reading the complete administration catalog."
+        },
+        "errors": {
+          "title": "Catalog unavailable",
+          "load": "The administration catalog could not be loaded.",
+          "forbidden": "Your current session does not have catalog administration access.",
+          "retry": "Retry"
+        },
+        "empty": {
+          "title": "No products match",
+          "description": "Adjust the filters or reset them to see the complete catalog."
+        }
       }
     }
   }

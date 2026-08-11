@@ -6,6 +6,7 @@
 .management-shell {
   --management-sidebar-width: 17rem;
   --management-topbar-height: 4.75rem;
+  --management-sidebar-closed-translate: -105%;
   min-height: 100dvh;
   background: var(--bgp-page);
   color: var(--bgp-text);
@@ -47,29 +48,22 @@
   text-decoration: none;
 }
 
-.management-brand__symbol {
-  position: relative;
-  display: grid;
-  width: 2.4rem;
-  height: 2.4rem;
+.management-brand__mark {
+  width: 2.7rem;
+  height: 2.7rem;
   flex: 0 0 auto;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid var(--bgp-border);
-  border-radius: .85rem;
-  background: linear-gradient(135deg, var(--bgp-blue), var(--bgp-violet));
+  object-fit: contain;
+  transform: scale(1.08);
+  filter:
+    drop-shadow(0 0 7px color-mix(in srgb, var(--bgp-cyan) 22%, transparent))
+    drop-shadow(0 0 12px color-mix(in srgb, var(--bgp-blue) 12%, transparent));
 }
 
-.management-brand__symbol span {
-  position: absolute;
-  width: 1.05rem;
-  height: .28rem;
-  border-radius: 999px;
-  background: #fff;
+:host-context(.bgp-dark-mode) .management-brand__mark {
+  filter:
+    drop-shadow(0 0 7px color-mix(in srgb, var(--bgp-cyan) 38%, transparent))
+    drop-shadow(0 0 15px color-mix(in srgb, var(--bgp-blue) 24%, transparent));
 }
-
-.management-brand__symbol span:first-child { transform: translateY(-.22rem); }
-.management-brand__symbol span:last-child { transform: translateY(.22rem); }
 
 .management-brand__copy,
 .management-user__copy,
@@ -82,11 +76,6 @@
 .management-topbar__context span {
   color: var(--bgp-text-muted);
   font-size: .7rem;
-}
-
-.management-sidebar__mobile-close,
-.management-topbar__menu {
-  display: none;
 }
 
 .management-nav {
@@ -226,6 +215,11 @@
   cursor: pointer;
 }
 
+.management-sidebar__mobile-close,
+.management-topbar__menu {
+  display: none;
+}
+
 .management-theme button:hover,
 .management-language button:hover,
 .management-user__logout:hover,
@@ -286,16 +280,15 @@
 @media (max-width: 900px) {
   .management-sidebar {
     width: min(19rem, 86vw);
-    transform: translateX(-105%);
+    transform: translateX(var(--management-sidebar-closed-translate));
     box-shadow: var(--bgp-shadow-soft);
   }
 
-  :host-context([dir='rtl']) .management-sidebar {
-    transform: translateX(105%);
+  :host-context([dir='rtl']) .management-shell {
+    --management-sidebar-closed-translate: 105%;
   }
 
-  .management-sidebar--open,
-  :host-context([dir='rtl']) .management-sidebar--open {
+  .management-sidebar--open {
     transform: translateX(0);
   }
 

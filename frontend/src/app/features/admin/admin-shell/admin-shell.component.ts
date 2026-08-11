@@ -12,8 +12,9 @@ import {
   RouterLinkActive,
   RouterOutlet
 } from '@angular/router';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { TranslateModule } from '@ngx-translate/core';
-import { filter } from 'rxjs';
+import { filter, map, startWith } from 'rxjs';
 
 import { AuthService } from '../../../core/auth/auth.service';
 import {
@@ -24,14 +25,11 @@ import {
   ThemePreference,
   ThemeService
 } from '../../../core/theme/theme.service';
-
-interface AdminNavigationItem {
-  readonly labelKey: string;
-  readonly icon: string;
-  readonly route?: string;
-  readonly exact?: boolean;
-  readonly comingSoon?: boolean;
-}
+import {
+  ADMIN_NAVIGATION,
+  ADMIN_SECTIONS,
+  AdminSection
+} from '../admin-navigation';
 
 @Component({
   selector: 'bgp-admin-shell',
@@ -49,20 +47,16 @@ export class AdminShellComponent {
   private readonly router = inject(Router);
 
   readonly mobileNavigationOpen = signal(false);
+  readonly navigation = ADMIN_NAVIGATION;
 
-  readonly navigation: readonly AdminNavigationItem[] = [
-    {
-      labelKey: 'auth.management.nav.dashboard',
-      icon: 'pi pi-home',
-      route: '/admin',
-      exact: true
-    },
-    {
-      labelKey: 'auth.management.nav.catalog',
-      icon: 'pi pi-th-large',
-      comingSoon: true
-    }
-  ];
+  readonly currentSectionLabelKey = toSignal(
+    this.router.events.pipe(
+      filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+      startWith(null),
+      map(() => this.activeSection().labelKey)
+    ),
+    { initialValue: ADMIN_SECTIONS.dashboard.labelKey }
+  );
 
   readonly themeOptions: readonly ThemePreference[] = [
     'system',
@@ -84,7 +78,10 @@ export class AdminShellComponent {
 
   constructor() {
     this.router.events
-      .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
+      .pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        takeUntilDestroyed()
+      )
       .subscribe(() => this.mobileNavigationOpen.set(false));
   }
 
@@ -107,5 +104,20 @@ export class AdminShellComponent {
   async logout(): Promise<void> {
     await this.auth.logout();
     await this.router.navigateByUrl('/login');
+  }
+
+  private activeSection(): AdminSection {
+    const currentPath = this.router.url
+      .split(/[?#]/, 1)[0]
+      .replace(/\/$/, '');
+
+    return [...ADMIN_NAVIGATION]
+      .sort((left, right) => right.route.length - left.route.length)
+      .find((section) =>
+        section.exact
+          ? currentPath === section.route
+          : currentPath === section.route ||
+            currentPath.startsWith(`${section.route}/`)
+      ) ?? ADMIN_SECTIONS.dashboard;
   }
 }
