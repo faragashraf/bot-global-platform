@@ -1,17 +1,29 @@
-<main class="admin-page">
-  <section>
-    <span>{{ 'auth.admin.eyebrow' | translate }}</span>
-    <h1>{{ 'auth.admin.title' | translate }}</h1>
+<section class="management-dashboard" aria-labelledby="management-dashboard-title">
+  <header class="management-dashboard__header">
+    <span>{{ 'auth.management.dashboard.eyebrow' | translate }}</span>
+    <h1 id="management-dashboard-title">
+      {{ 'auth.management.dashboard.title' | translate }}
+    </h1>
+    <p>{{ 'auth.management.dashboard.description' | translate }}</p>
+  </header>
 
-    <p>
-      {{ 'auth.admin.welcome' | translate }}
-      <strong>{{ auth.user()?.displayName }}</strong>
-    </p>
+  <div class="management-dashboard__grid">
+    <article>
+      <span>{{ 'auth.management.dashboard.identity.label' | translate }}</span>
+      <strong>{{ 'auth.management.dashboard.identity.value' | translate }}</strong>
+      <p>{{ 'auth.management.dashboard.identity.description' | translate }}</p>
+    </article>
 
-    <p>{{ 'auth.admin.placeholder' | translate }}</p>
+    <article>
+      <span>{{ 'auth.management.dashboard.catalog.label' | translate }}</span>
+      <strong>{{ 'auth.management.dashboard.catalog.value' | translate }}</strong>
+      <p>{{ 'auth.management.dashboard.catalog.description' | translate }}</p>
+    </article>
 
-    <button type="button" (click)="logout()">
-      {{ 'auth.admin.logout' | translate }}
-    </button>
-  </section>
-</main>
+    <article>
+      <span>{{ 'auth.management.dashboard.security.label' | translate }}</span>
+      <strong>{{ 'auth.management.dashboard.security.value' | translate }}</strong>
+      <p>{{ 'auth.management.dashboard.security.description' | translate }}</p>
+    </article>
+  </div>
+</section>
