@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\src\BuildingBlocks\BotGlobal.Contracts\BotGlobal.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Modules\Catalog\BotGlobal.Catalog\BotGlobal.Catalog.csproj" />
     <ProjectReference Include="..\..\src\Modules\Identity\BotGlobal.Identity\BotGlobal.Identity.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Communication\BotGlobal.Communication\BotGlobal.Communication.csproj" />
   </ItemGroup>
 
 </Project>

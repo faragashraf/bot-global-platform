@@ -6,6 +6,7 @@
     <ProjectReference Include="..\Modules\Identity\BotGlobal.Identity\BotGlobal.Identity.csproj" />
     <ProjectReference Include="..\Modules\Notifications\BotGlobal.Notifications\BotGlobal.Notifications.csproj" />
     <ProjectReference Include="..\Modules\Realtime\BotGlobal.Realtime\BotGlobal.Realtime.csproj" />
+    <ProjectReference Include="..\Modules\Communication\BotGlobal.Communication\BotGlobal.Communication.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
