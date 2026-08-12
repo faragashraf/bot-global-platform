@@ -3,6 +3,7 @@ using BotGlobal.Communication.Application.Abstractions;
 using BotGlobal.Communication.Contracts.Calls;
 using BotGlobal.Communication.Hubs;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BotGlobal.UnitTests.Communication;
@@ -88,7 +89,22 @@ public sealed class CommunicationFoundationTests
     {
         var services = new ServiceCollection();
 
-        services.AddCommunicationModule();
+        var configuration =
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:Communication"] =
+                            "Server=localhost;"
+                            + "Database=CommunicationFoundationTests;"
+                            + "User Id=test;"
+                            + "Password=NotUsed;"
+                            + "Encrypt=False;"
+                            + "TrustServerCertificate=True"
+                    })
+                .Build();
+
+        services.AddCommunicationModule(configuration);
 
         return services.BuildServiceProvider();
     }

@@ -1,3 +1,4 @@
+using BotGlobal.Communication.Application.Abstractions;
 using BotGlobal.Communication.Contracts.Calls;
 using BotGlobal.Communication.Contracts.Messaging;
 using BotGlobal.Communication.Contracts.Presence;
@@ -18,4 +19,8 @@ public interface ICommunicationClient
     Task WebRtcOffer(WebRtcOfferEvent offer);
     Task WebRtcAnswer(WebRtcAnswerEvent answer);
     Task IceCandidate(IceCandidateEvent candidate);
+
+    Task RealtimeTestMessageReceived(
+        RealtimeTestMessage message);
+
 }

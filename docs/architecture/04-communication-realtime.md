@@ -135,3 +135,53 @@ Until persistence exists:
 
 This safe-deny posture is intentional and must remain until the persistence
 slice introduces authoritative membership and preference data.
+
+## Persistence model
+
+The approved pre-migration Communication persistence design is documented in:
+
+`docs/architecture/05-communication-persistence.md`
+
+Realtime and persistence remain separate concerns inside the same Communication
+capability. `CommunicationHub` does not own EF entities or database behavior.
+
+## Realtime transport verification endpoint
+
+A temporary authenticated HTTP endpoint is available for end-to-end transport
+verification:
+
+```text
+POST /api/communication/test/send-to-user
+```
+
+Request:
+
+```json
+{
+  "targetUserId": "<SignalR UserIdentifier>",
+  "text": "hello"
+}
+```
+
+The endpoint derives the sender identity from the authenticated HTTP principal.
+Clients cannot provide a trusted sender id.
+
+The endpoint calls `ICommunicationDelivery`, whose SignalR implementation uses:
+
+```text
+IHubContext<CommunicationHub, ICommunicationClient>
+    -> Clients.User(targetUserId)
+    -> RealtimeTestMessageReceived
+```
+
+This test event is intentionally non-persisted. Its purpose is to prove:
+
+```text
+Authenticated HTTP request
+    -> Communication application boundary
+    -> typed SignalR delivery
+    -> target connected user
+```
+
+It is not the production chat-message endpoint. Persistent messaging is the next
+capability after transport verification.
