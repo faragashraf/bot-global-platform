@@ -1,3 +1,4 @@
+using BotGlobal.Communication;
 using BotGlobal.Identity;
 using BotGlobal.Catalog;
 using BotGlobal.Catalog.Endpoints;
@@ -10,6 +11,8 @@ builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
 builder.Services.AddCatalogModule(builder.Configuration);
 builder.Services.AddIdentityModule(builder.Configuration);
+
+builder.Services.AddCommunicationModule();
 
 var app = builder.Build();
 
@@ -27,6 +30,8 @@ app.MapAdminCatalogEndpoints();
 app.MapIdentityModuleEndpoints();
 
 await app.InitializeIdentityAsync();
+
+app.MapCommunicationModule();
 
 app.Run();
 
