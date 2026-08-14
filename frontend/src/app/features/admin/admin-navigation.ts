@@ -22,10 +22,18 @@ export const ADMIN_SECTIONS = {
     labelKey: 'auth.management.nav.catalog',
     icon: 'pi pi-th-large',
     exact: false
+  },
+  platformClients: {
+    path: 'platform-clients',
+    route: '/admin/platform-clients',
+    labelKey: 'auth.management.nav.platformClients',
+    icon: 'pi pi-shield',
+    exact: false
   }
 } as const satisfies Record<string, AdminSection>;
 
 export const ADMIN_NAVIGATION: readonly AdminSection[] = [
   ADMIN_SECTIONS.dashboard,
-  ADMIN_SECTIONS.catalog
+  ADMIN_SECTIONS.catalog,
+  ADMIN_SECTIONS.platformClients
 ];

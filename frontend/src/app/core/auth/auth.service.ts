@@ -2,6 +2,8 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
+import { API_BASE_URL, buildApiUrl } from '../config/api-base-url';
+
 import {
   ADMINISTRATOR_ROLE,
   AuthenticatedUser,
@@ -10,6 +12,8 @@ import {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
+  private readonly apiBaseUrl = inject(API_BASE_URL);
+
   private readonly http = inject(HttpClient);
 
   private readonly userState = signal<AuthenticatedUser | null>(null);
@@ -32,7 +36,7 @@ export class AuthService {
 
     try {
       const user = await firstValueFrom(
-        this.http.get<AuthenticatedUser>('/api/identity/me', {
+        this.http.get<AuthenticatedUser>(buildApiUrl(this.apiBaseUrl, '/api/identity/me'), {
           withCredentials: true
         })
       );
@@ -58,7 +62,7 @@ export class AuthService {
     try {
       await firstValueFrom(
         this.http.post<void>(
-          '/api/identity/login',
+          buildApiUrl(this.apiBaseUrl, '/api/identity/login'),
           request,
           { withCredentials: true }
         )
@@ -82,7 +86,7 @@ export class AuthService {
     try {
       await firstValueFrom(
         this.http.post<void>(
-          '/api/identity/logout',
+          buildApiUrl(this.apiBaseUrl, '/api/identity/logout'),
           {},
           { withCredentials: true }
         )

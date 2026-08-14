@@ -1,0 +1,384 @@
+<section class="platform-clients">
+  <header class="page-header">
+    <div class="page-heading">
+      <span class="eyebrow">
+        {{ 'auth.management.platformClients.eyebrow' | translate }}
+      </span>
+
+      <h1>
+        {{ 'auth.management.platformClients.title' | translate }}
+      </h1>
+
+      <p>
+        {{ 'auth.management.platformClients.description' | translate }}
+      </p>
+    </div>
+
+    <button
+      type="button"
+      class="btn btn--primary"
+      (click)="openCreate()"
+    >
+      <i class="pi pi-plus" aria-hidden="true"></i>
+      {{ 'auth.management.platformClients.newClient' | translate }}
+    </button>
+  </header>
+
+  @if (error(); as message) {
+    <section class="notice notice--error" role="alert">
+      <div class="notice__icon">
+        <i class="pi pi-exclamation-circle" aria-hidden="true"></i>
+      </div>
+
+      <div class="notice__body">
+        <strong>{{ message | translate }}</strong>
+      </div>
+
+      <button
+        type="button"
+        class="btn btn--secondary"
+        (click)="load()"
+      >
+        {{ 'auth.management.platformClients.retry' | translate }}
+      </button>
+    </section>
+  }
+
+  @if (loading()) {
+    <section class="empty-state" role="status">
+      <div class="empty-state__icon">
+        <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+      </div>
+
+      <strong>
+        {{ 'auth.management.platformClients.loading' | translate }}
+      </strong>
+    </section>
+  } @else if (!hasClients()) {
+    <section class="empty-state">
+      <div class="empty-state__icon">
+        <i class="pi pi-shield" aria-hidden="true"></i>
+      </div>
+
+      <strong>
+        {{ 'auth.management.platformClients.emptyTitle' | translate }}
+      </strong>
+
+      <p>
+        {{ 'auth.management.platformClients.emptyDescription' | translate }}
+      </p>
+
+      <button
+        type="button"
+        class="btn btn--primary"
+        (click)="openCreate()"
+      >
+        <i class="pi pi-plus" aria-hidden="true"></i>
+        {{ 'auth.management.platformClients.newClient' | translate }}
+      </button>
+    </section>
+  } @else {
+    <section class="table-card">
+      <div class="table-wrap" role="region" tabindex="0">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ 'auth.management.platformClients.columns.client' | translate }}</th>
+              <th>{{ 'auth.management.platformClients.columns.status' | translate }}</th>
+              <th>{{ 'auth.management.platformClients.columns.capabilities' | translate }}</th>
+              <th>{{ 'auth.management.platformClients.columns.credentials' | translate }}</th>
+              <th>{{ 'auth.management.platformClients.columns.created' | translate }}</th>
+              <th></th>
+            </tr>
+          </thead>
+
+          <tbody>
+            @for (client of clients(); track client.id) {
+              <tr>
+                <td>
+                  <div class="client-cell">
+                    <div class="client-cell__icon">
+                      <i class="pi pi-server" aria-hidden="true"></i>
+                    </div>
+
+                    <div class="client-cell__text">
+                      <strong>{{ client.displayName }}</strong>
+                      <code>{{ client.clientKey }}</code>
+                    </div>
+                  </div>
+                </td>
+
+                <td>
+                  <span
+                    class="status-pill"
+                    [attr.data-status]="client.status"
+                  >
+                    {{ client.status }}
+                  </span>
+                </td>
+
+                <td><span class="metric">{{ client.capabilities.length }}</span></td>
+                <td><span class="metric">{{ client.activeCredentialCount }}</span></td>
+                <td>{{ client.createdAtUtc | date:'medium' }}</td>
+                <td class="actions-cell">
+                  <button type="button" class="btn btn--secondary btn--compact" (click)="requestRotate(client)">
+                    <i class="pi pi-refresh" aria-hidden="true"></i>
+                    {{ 'auth.management.platformClients.lifecycle.rotate' | translate }}
+                  </button>
+                </td>
+              </tr>
+
+              @if (client.credentials.length > 0) {
+                <tr class="credential-row">
+                  <td colspan="6">
+                    <div class="credentials-list">
+                      @for (credential of client.credentials; track credential.id) {
+                        <div class="credential-item">
+                          <div class="credential-item__meta">
+                            <i class="pi pi-key" aria-hidden="true"></i>
+                            <code>{{ credential.id }}</code>
+                            <span class="credential-state" [class.credential-state--active]="credential.isUsable">
+                              {{ (credential.isUsable ? 'auth.management.platformClients.lifecycle.credentialActive' : 'auth.management.platformClients.lifecycle.credentialRevoked') | translate }}
+                            </span>
+                          </div>
+                          <div class="credential-item__actions">
+                            <time>{{ credential.createdAtUtc | date:'medium' }}</time>
+                            @if (credential.isUsable) {
+                              <button type="button" class="btn btn--danger btn--compact" [disabled]="revokingCredentialId() === credential.id" (click)="revokeCredential(client, credential.id)">
+                                <i class="pi" [class.pi-spin]="revokingCredentialId() === credential.id" [class.pi-spinner]="revokingCredentialId() === credential.id" [class.pi-ban]="revokingCredentialId() !== credential.id" aria-hidden="true"></i>
+                                {{ 'auth.management.platformClients.lifecycle.revoke' | translate }}
+                              </button>
+                            }
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+
+  @if (createOpen()) {
+    <div class="dialog-backdrop" (click)="closeCreate()">
+      <section
+        class="dialog"
+        role="dialog"
+        aria-modal="true"
+        (click)="$event.stopPropagation()"
+      >
+        <header class="dialog__header">
+          <div>
+            <span class="eyebrow">
+              {{ 'auth.management.platformClients.create.eyebrow' | translate }}
+            </span>
+
+            <h2>
+              {{ 'auth.management.platformClients.create.title' | translate }}
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            class="icon-btn"
+            (click)="closeCreate()"
+            [disabled]="saving()"
+          >
+            <i class="pi pi-times" aria-hidden="true"></i>
+          </button>
+        </header>
+
+        <form class="form" (ngSubmit)="create()">
+          <label class="field">
+            <span class="field__label">
+              {{ 'auth.management.platformClients.create.clientKey' | translate }}
+            </span>
+
+            <div class="input-shell">
+              <i class="pi pi-key" aria-hidden="true"></i>
+
+              <input
+                name="clientKey"
+                [(ngModel)]="clientKey"
+                autocomplete="off"
+                [placeholder]="'auth.management.platformClients.create.clientKeyPlaceholder' | translate"
+                [disabled]="saving()"
+                required
+              />
+            </div>
+          </label>
+
+          <label class="field">
+            <span class="field__label">
+              {{ 'auth.management.platformClients.create.displayName' | translate }}
+            </span>
+
+            <div class="input-shell">
+              <i class="pi pi-tag" aria-hidden="true"></i>
+
+              <input
+                name="displayName"
+                [(ngModel)]="displayName"
+                autocomplete="off"
+                [placeholder]="'auth.management.platformClients.create.displayNamePlaceholder' | translate"
+                [disabled]="saving()"
+                required
+              />
+            </div>
+          </label>
+
+          <label class="field">
+            <span class="field__label">
+              {{ 'auth.management.platformClients.create.capabilities' | translate }}
+            </span>
+
+            <textarea
+              name="capabilities"
+              [(ngModel)]="capabilitiesText"
+              rows="6"
+              [disabled]="saving()"
+            ></textarea>
+
+            <small>
+              {{ 'auth.management.platformClients.create.capabilitiesHint' | translate }}
+            </small>
+          </label>
+
+          <footer class="dialog__footer">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              (click)="closeCreate()"
+              [disabled]="saving()"
+            >
+              {{ 'auth.management.platformClients.create.cancel' | translate }}
+            </button>
+
+            <button
+              type="submit"
+              class="btn btn--primary"
+              [disabled]="saving()"
+            >
+              @if (saving()) {
+                <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+                {{ 'auth.management.platformClients.create.saving' | translate }}
+              } @else {
+                <i class="pi pi-plus" aria-hidden="true"></i>
+                {{ 'auth.management.platformClients.create.submit' | translate }}
+              }
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  }
+
+  @if (selectedClientForRotation(); as rotationClient) {
+    <div class="dialog-backdrop" (click)="cancelRotate()">
+      <section class="dialog" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+        <header class="dialog__header">
+          <div>
+            <span class="eyebrow">{{ 'auth.management.platformClients.secret.eyebrow' | translate }}</span>
+            <h2>{{ 'auth.management.platformClients.lifecycle.rotateTitle' | translate }}</h2>
+          </div>
+          <button type="button" class="icon-btn" [disabled]="rotating()" (click)="cancelRotate()">
+            <i class="pi pi-times" aria-hidden="true"></i>
+          </button>
+        </header>
+        <div class="warning-box">
+          <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+          <span>{{ 'auth.management.platformClients.lifecycle.rotateWarning' | translate }}</span>
+        </div>
+        <div class="secret-client">
+          <strong>{{ rotationClient.displayName }}</strong>
+          <code>{{ rotationClient.clientKey }}</code>
+        </div>
+        <footer class="dialog__footer">
+          <button type="button" class="btn btn--secondary" [disabled]="rotating()" (click)="cancelRotate()">
+            {{ 'auth.management.platformClients.create.cancel' | translate }}
+          </button>
+          <button type="button" class="btn btn--primary" [disabled]="rotating()" (click)="rotateCredential(rotationClient)">
+            @if (rotating()) { <i class="pi pi-spin pi-spinner" aria-hidden="true"></i> } @else { <i class="pi pi-refresh" aria-hidden="true"></i> }
+            {{ 'auth.management.platformClients.lifecycle.rotateConfirm' | translate }}
+          </button>
+        </footer>
+      </section>
+    </div>
+  }
+
+  @if (createdClient(); as created) {
+    <div class="dialog-backdrop">
+      <section
+        class="dialog dialog--secret"
+        role="dialog"
+        aria-modal="true"
+      >
+        <header class="dialog__header">
+          <div>
+            <span class="eyebrow">
+              {{ 'auth.management.platformClients.secret.eyebrow' | translate }}
+            </span>
+
+            <h2>
+              {{ 'auth.management.platformClients.secret.title' | translate }}
+            </h2>
+          </div>
+        </header>
+
+        <div class="warning-box">
+          <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+
+          <span>
+            {{ 'auth.management.platformClients.secret.warning' | translate }}
+          </span>
+        </div>
+
+        <div class="secret-client">
+          <strong>{{ created.displayName }}</strong>
+          <code>{{ created.clientKey }}</code>
+        </div>
+
+        <div class="secret-box">
+          <code>{{ created.clientSecret }}</code>
+
+          <button
+            type="button"
+            class="btn btn--secondary"
+            (click)="copySecret()"
+          >
+            <i
+              class="pi"
+              [class.pi-copy]="!copied()"
+              [class.pi-check]="copied()"
+              aria-hidden="true"
+            ></i>
+
+            {{
+              (
+                copied()
+                  ? 'auth.management.platformClients.secret.copied'
+                  : 'auth.management.platformClients.secret.copy'
+              )
+                | translate
+            }}
+          </button>
+        </div>
+
+        <footer class="dialog__footer">
+          <button
+            type="button"
+            class="btn btn--primary"
+            (click)="closeSecret()"
+          >
+            <i class="pi pi-check" aria-hidden="true"></i>
+            {{ 'auth.management.platformClients.secret.saved' | translate }}
+          </button>
+        </footer>
+      </section>
+    </div>
+  }
+</section>

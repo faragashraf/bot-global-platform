@@ -131,3 +131,95 @@ database. Migration application remains an explicit deployment/bootstrap step.
 
 For a future independent instance, only configuration/database targets change;
 the PlatformClients domain/application code remains the same.
+
+## Generic machine authentication runtime
+
+Platform clients authenticate using:
+
+```text
+X-Platform-Client-Key
+X-Platform-Client-Secret
+```
+
+The authentication scheme is generic and does not know Connect V2 or Pairing.
+
+Successful authentication creates machine claims:
+
+```text
+platform_client_id
+platform_client_key
+platform_client_capability
+```
+
+Capability authorization is generic. Example capabilities include:
+
+```text
+pairing:create
+pairing:status
+communication:publish
+notifications:publish
+```
+
+Diagnostic endpoints:
+
+```text
+GET /api/platform-clients/probe/whoami
+GET /api/platform-clients/probe/capability
+```
+
+Both require valid PlatformClient authentication and the
+`platform-clients:probe` capability.
+
+No real client is provisioned by this slice. Provisioning/rotation remains a
+separate controlled capability.
+
+## Administrative client provisioning
+
+Platform clients are created by authorized human administrators through the
+same reusable provisioning capability that a future Admin UI will call.
+
+Initial endpoint:
+
+```text
+POST /api/admin/platform-clients
+```
+
+This endpoint requires the human `Administrator` role.
+
+Example request:
+
+```json
+{
+  "clientKey": "organization-gateway",
+  "displayName": "Organization Gateway",
+  "capabilities": [
+    "platform-clients:probe",
+    "pairing:create",
+    "pairing:status"
+  ]
+}
+```
+
+The caller does not choose the secret.
+
+The platform:
+
+```text
+creates PlatformClient
+    -> grants requested capabilities
+    -> generates 256-bit client secret
+    -> persists only SecretHash
+    -> returns plaintext ClientSecret once
+```
+
+The plaintext secret cannot be read back later because it is never persisted.
+
+The Admin UI uses the same application capability for client creation and
+listing. It can rotate a client secret by generating a new one-time plaintext
+secret and revoking currently usable old credentials. It can also revoke an
+individual credential. Listing never returns plaintext secrets or secret hashes.
+
+Remaining lifecycle management gaps:
+
+- enable/disable client management;
+- capability management after creation.
