@@ -33,7 +33,7 @@
 h1,
 h2 {
   margin: 0.3rem 0 0;
-  color: var(--text-color, #152238);
+  color: var(--bgp-text);
 }
 
 h1 {
@@ -46,7 +46,7 @@ h1 {
 .client-cell code,
 .secret-client code,
 th {
-  color: var(--text-color-secondary, #65738a);
+  color: var(--bgp-text-muted);
 }
 
 .page-heading p {
@@ -63,7 +63,7 @@ th,
 }
 
 .eyebrow {
-  color: var(--primary-color, #2563eb);
+  color: var(--bgp-blue);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -81,8 +81,8 @@ th,
 }
 
 .btn--primary {
-  background: var(--primary-color, #2563eb);
-  color: var(--primary-color-text, #fff);
+  background: var(--bgp-blue);
+  color: #fff;
 }
 
 .btn--secondary,
@@ -90,8 +90,8 @@ th,
 .empty-state,
 .table-card,
 .dialog {
-  border: 1px solid var(--surface-border, #d6deea);
-  background: var(--surface-card, #fff);
+  border: 1px solid var(--bgp-border);
+  background: var(--bgp-surface);
 }
 
 .notice {
@@ -147,7 +147,7 @@ th,
 td {
   padding: 0.9rem 1rem;
   text-align: start;
-  border-bottom: 1px solid var(--surface-border);
+  border-bottom: 1px solid var(--bgp-border);
 }
 
 .client-cell {
@@ -195,7 +195,7 @@ td {
 .dialog__header {
   justify-content: space-between;
   padding-bottom: 1rem;
-  border-bottom: 1px solid var(--surface-border);
+  border-bottom: 1px solid var(--bgp-border);
 }
 
 .dialog__footer {
@@ -209,7 +209,7 @@ td {
   border: 0;
   border-radius: 0.7rem;
   background: transparent;
-  color: var(--text-color-secondary, #65738a);
+  color: var(--bgp-text-muted);
   cursor: pointer;
 }
 
@@ -237,9 +237,9 @@ td {
 .input-shell,
 textarea,
 .secret-box > code {
-  border: 1px solid var(--surface-border, #d6deea);
+  border: 1px solid var(--bgp-border);
   border-radius: 0.75rem;
-  background: var(--surface-ground, #f7f9fc);
+  background: var(--bgp-surface-soft);
 }
 
 .input-shell input {
