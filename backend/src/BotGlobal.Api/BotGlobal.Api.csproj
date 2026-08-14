@@ -8,6 +8,7 @@
     <ProjectReference Include="..\Modules\Realtime\BotGlobal.Realtime\BotGlobal.Realtime.csproj" />
     <ProjectReference Include="..\Modules\Communication\BotGlobal.Communication\BotGlobal.Communication.csproj" />
     <ProjectReference Include="..\Modules\PlatformClients\BotGlobal.PlatformClients\BotGlobal.PlatformClients.csproj" />
+    <ProjectReference Include="..\Modules\Pairing\BotGlobal.Pairing\BotGlobal.Pairing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

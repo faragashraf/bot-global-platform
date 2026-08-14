@@ -23,5 +23,6 @@
     <ProjectReference Include="..\..\src\Modules\Identity\BotGlobal.Identity\BotGlobal.Identity.csproj" />
     <ProjectReference Include="..\..\src\Modules\Communication\BotGlobal.Communication\BotGlobal.Communication.csproj" />
     <ProjectReference Include="..\..\src\Modules\PlatformClients\BotGlobal.PlatformClients\BotGlobal.PlatformClients.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Pairing\BotGlobal.Pairing\BotGlobal.Pairing.csproj" />
   </ItemGroup>
 </Project>

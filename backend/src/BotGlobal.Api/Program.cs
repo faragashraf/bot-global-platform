@@ -4,6 +4,10 @@ using BotGlobal.Identity;
 using BotGlobal.Catalog;
 using BotGlobal.Catalog.Endpoints;
 using BotGlobal.PlatformClients;
+using BotGlobal.PlatformClients.Authentication;
+using BotGlobal.PlatformClients.Authorization;
+using BotGlobal.Pairing;
+using BotGlobal.Pairing.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +24,7 @@ builder.Services.AddIdentityModule(builder.Configuration);
 
 builder.Services.AddCommunicationModule(builder.Configuration);
 builder.Services.AddPlatformClientsModule(builder.Configuration);
+builder.Services.AddPairingModule(builder.Configuration);
 
 var frontendOrigins =
     builder.Configuration
@@ -64,6 +69,7 @@ app.UseCors(FrontendCorsPolicy);
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapControllers();
 app.MapCatalogEndpoints();
@@ -74,6 +80,10 @@ await app.InitializeIdentityAsync();
 
 app.MapCommunicationModule();
 app.MapPlatformClientsModule();
+app.MapPairingModule(
+    new PairingMachineAuthorizationOptions(
+        PlatformClientAuthenticationDefaults.ClientIdClaim,
+        PlatformClientPolicies.Capability));
 
 app.Run();
 
