@@ -266,7 +266,8 @@
       "logout": "Sign out",
       "nav": {
         "dashboard": "Dashboard",
-        "catalog": "Catalog"
+        "catalog": "Catalog",
+        "platformClients": "Platform Clients"
       },
       "dashboard": {
         "eyebrow": "Overview",
@@ -424,6 +425,57 @@
             "validation": "The draft violates one or more catalog rules.",
             "save": "The draft could not be saved."
           }
+        }
+      },
+      "platformClients": {
+        "eyebrow": "Security & integrations",
+        "title": "Platform Clients",
+        "description": "Manage trusted machine and service identities that can call the public platform.",
+        "newClient": "New client",
+        "loading": "Loading platform clients...",
+        "loadError": "Unable to load platform clients.",
+        "retry": "Retry",
+        "emptyTitle": "No platform clients yet",
+        "emptyDescription": "Create the first trusted system identity.",
+        "columns": {
+          "client": "Client",
+          "status": "Status",
+          "capabilities": "Capabilities",
+          "credentials": "Credentials",
+          "created": "Created"
+        },
+        "create": {
+          "eyebrow": "Machine identity",
+          "title": "Create platform client",
+          "clientKey": "Client key",
+          "clientKeyPlaceholder": "organization-gateway",
+          "displayName": "Display name",
+          "displayNamePlaceholder": "Organization Gateway",
+          "capabilities": "Capabilities",
+          "capabilitiesHint": "One capability per line, or separate with commas.",
+          "cancel": "Cancel",
+          "submit": "Create client",
+          "saving": "Creating..."
+        },
+        "secret": {
+          "eyebrow": "One-time credential",
+          "title": "Save this client secret now",
+          "warning": "This secret will not be shown again after you close this dialog.",
+          "copy": "Copy",
+          "copied": "Copied",
+          "saved": "I saved the secret"
+        },
+        "lifecycle": {
+          "rotate": "Rotate secret",
+          "rotateTitle": "Rotate client secret",
+          "rotateWarning": "A new secret will be generated and all currently usable old credentials will be revoked immediately.",
+          "rotateConfirm": "Generate new secret",
+          "revoke": "Revoke credential",
+          "revokeConfirm": "Revoke this credential? This action cannot be undone.",
+          "credentialActive": "Active",
+          "credentialRevoked": "Revoked",
+          "rotateError": "Unable to rotate the client secret.",
+          "revokeError": "Unable to revoke the credential."
         }
       }
     }

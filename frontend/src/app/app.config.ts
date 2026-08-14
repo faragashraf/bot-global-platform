@@ -1,5 +1,8 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
-import { provideHttpClient } from '@angular/common/http';
+import {
+  provideHttpClient,
+  withInterceptors
+} from '@angular/common/http';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideRouter } from '@angular/router';
 import { providePrimeNG } from 'primeng/config';
@@ -11,10 +14,15 @@ import { BotGlobalPreset } from './core/theme/bot-global.preset';
 import { CATALOG_REPOSITORY } from './features/catalog/services/catalog.repository';
 import { HttpCatalogRepository } from './features/catalog/services/http-catalog.repository';
 
+import { apiBaseUrlInterceptor } from './core/http/api-base-url.interceptor';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideHttpClient(),
+    provideHttpClient(
+      withInterceptors([
+        apiBaseUrlInterceptor,
+      ]),
+    ),
     provideAnimationsAsync(),
     provideRouter(routes),
     providePrimeNG({

@@ -266,7 +266,8 @@
       "logout": "تسجيل الخروج",
       "nav": {
         "dashboard": "لوحة التحكم",
-        "catalog": "الكتالوج"
+        "catalog": "الكتالوج",
+        "platformClients": "عملاء المنصة"
       },
       "dashboard": {
         "eyebrow": "نظرة عامة",
@@ -424,6 +425,57 @@
             "validation": "تخالف المسودة قاعدة واحدة أو أكثر من قواعد الكتالوج.",
             "save": "تعذر حفظ المسودة."
           }
+        }
+      },
+      "platformClients": {
+        "eyebrow": "الأمان والتكاملات",
+        "title": "عملاء المنصة",
+        "description": "إدارة هويات الأنظمة والخدمات الموثوقة المسموح لها بالاتصال بالمنصة العامة.",
+        "newClient": "عميل جديد",
+        "loading": "جارٍ تحميل عملاء المنصة...",
+        "loadError": "تعذر تحميل عملاء المنصة.",
+        "retry": "إعادة المحاولة",
+        "emptyTitle": "لا يوجد عملاء للمنصة حتى الآن",
+        "emptyDescription": "أنشئ أول هوية موثوقة لنظام أو خدمة.",
+        "columns": {
+          "client": "العميل",
+          "status": "الحالة",
+          "capabilities": "الصلاحيات",
+          "credentials": "بيانات الاعتماد",
+          "created": "تاريخ الإنشاء"
+        },
+        "create": {
+          "eyebrow": "هوية نظام",
+          "title": "إنشاء عميل للمنصة",
+          "clientKey": "مفتاح العميل",
+          "clientKeyPlaceholder": "organization-gateway",
+          "displayName": "الاسم الظاهر",
+          "displayNamePlaceholder": "Organization Gateway",
+          "capabilities": "الصلاحيات",
+          "capabilitiesHint": "صلاحية واحدة في كل سطر، أو افصل بينها بفاصلة.",
+          "cancel": "إلغاء",
+          "submit": "إنشاء العميل",
+          "saving": "جارٍ الإنشاء..."
+        },
+        "secret": {
+          "eyebrow": "بيانات اعتماد لمرة واحدة",
+          "title": "احفظ سر العميل الآن",
+          "warning": "لن يتم عرض هذا السر مرة أخرى بعد إغلاق هذه النافذة.",
+          "copy": "نسخ",
+          "copied": "تم النسخ",
+          "saved": "تم حفظ السر"
+        },
+        "lifecycle": {
+          "rotate": "تدوير السر",
+          "rotateTitle": "تدوير سر العميل",
+          "rotateWarning": "سيتم إنشاء سر جديد وإلغاء جميع بيانات الاعتماد القديمة الصالحة فورًا.",
+          "rotateConfirm": "توليد سر جديد",
+          "revoke": "إلغاء بيانات الاعتماد",
+          "revokeConfirm": "هل تريد إلغاء بيانات الاعتماد هذه؟ لا يمكن التراجع عن هذا الإجراء.",
+          "credentialActive": "صالحة",
+          "credentialRevoked": "ملغاة",
+          "rotateError": "تعذر تدوير سر العميل.",
+          "revokeError": "تعذر إلغاء بيانات الاعتماد."
         }
       }
     }

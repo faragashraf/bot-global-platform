@@ -48,6 +48,15 @@ export const ADMIN_ROUTES: Routes = [
         loadComponent: () =>
           import('./catalog-management/pages/catalog-product-form-page/catalog-product-form-page.component')
             .then((m) => m.CatalogProductFormPageComponent)
+      },
+      {
+        path: ADMIN_SECTIONS.platformClients.path,
+        data: {
+          [ADMIN_SECTION_DATA_KEY]: ADMIN_SECTIONS.platformClients
+        },
+        loadComponent: () =>
+          import('./platform-clients/pages/platform-clients-page/platform-clients-page.component')
+            .then((m) => m.PlatformClientsPageComponent)
       }
     ]
   }
