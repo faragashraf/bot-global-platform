@@ -2,6 +2,7 @@ using BotGlobal.Communication;
 using BotGlobal.Identity;
 using BotGlobal.Catalog;
 using BotGlobal.Catalog.Endpoints;
+using BotGlobal.PlatformClients;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +16,7 @@ builder.Services.AddCatalogModule(builder.Configuration);
 builder.Services.AddIdentityModule(builder.Configuration);
 
 builder.Services.AddCommunicationModule(builder.Configuration);
+builder.Services.AddPlatformClientsModule(builder.Configuration);
 
 var app = builder.Build();
 

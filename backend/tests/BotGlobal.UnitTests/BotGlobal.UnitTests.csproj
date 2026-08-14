@@ -1,12 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.10" />
@@ -15,17 +13,15 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
-
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\..\src\BuildingBlocks\BotGlobal.SharedKernel\BotGlobal.SharedKernel.csproj" />
     <ProjectReference Include="..\..\src\BuildingBlocks\BotGlobal.Contracts\BotGlobal.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Modules\Catalog\BotGlobal.Catalog\BotGlobal.Catalog.csproj" />
     <ProjectReference Include="..\..\src\Modules\Identity\BotGlobal.Identity\BotGlobal.Identity.csproj" />
     <ProjectReference Include="..\..\src\Modules\Communication\BotGlobal.Communication\BotGlobal.Communication.csproj" />
+    <ProjectReference Include="..\..\src\Modules\PlatformClients\BotGlobal.PlatformClients\BotGlobal.PlatformClients.csproj" />
   </ItemGroup>
-
 </Project>
