@@ -39,3 +39,27 @@ export interface RotatedPlatformClientCredential {
   clientSecret: string;
   createdAtUtc: string;
 }
+
+export type PlatformCapabilityImpact =
+  | 'Low'
+  | 'Medium'
+  | 'High';
+
+export interface PlatformCapabilityDescriptor {
+  capability: string;
+  name: string;
+  description: string;
+  grantEffect: string;
+  revokeEffect: string;
+  impact: PlatformCapabilityImpact;
+}
+
+export interface PlatformClientCapabilityState {
+  clientId: string;
+  clientKey: string;
+  grantedCapabilities: string[];
+}
+
+export interface SetPlatformClientCapabilitiesRequest {
+  capabilities: string[];
+}

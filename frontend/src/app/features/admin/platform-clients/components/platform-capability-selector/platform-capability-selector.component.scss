@@ -1,0 +1,101 @@
+:host {
+  display: block;
+}
+
+.capability-selector {
+  display: grid;
+  gap: 0.875rem;
+}
+
+.capability-card {
+  border: 1px solid var(--surface-border);
+  border-radius: 0.875rem;
+  background: var(--surface-card);
+  padding: 1rem;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.capability-card--selected {
+  border-color: var(--primary-color);
+  background:
+    color-mix(
+      in srgb,
+      var(--primary-color) 5%,
+      var(--surface-card)
+    );
+}
+
+.capability-card__header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+}
+
+.capability-card__identity {
+  display: grid;
+  gap: 0.25rem;
+  cursor: pointer;
+}
+
+.capability-card__identity strong {
+  color: var(--text-color);
+  font-size: 0.95rem;
+}
+
+.capability-card__identity code {
+  color: var(--text-color-secondary);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.capability-card__description {
+  margin:
+    0.75rem
+    0
+    0
+    2.125rem;
+  color: var(--text-color-secondary);
+  line-height: 1.55;
+}
+
+.capability-effects {
+  display: grid;
+  gap: 0.5rem;
+  margin:
+    0.875rem
+    0
+    0
+    2.125rem;
+}
+
+.capability-effect {
+  display: grid;
+  gap: 0.15rem;
+  color: var(--text-color-secondary);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.capability-effect__label {
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .capability-card__header {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .capability-card__header p-tag {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .capability-card__description,
+  .capability-effects {
+    margin-inline-start: 0;
+  }
+}

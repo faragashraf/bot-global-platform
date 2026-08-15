@@ -1,4 +1,8 @@
+using Microsoft.AspNetCore.Authentication;
+using BotGlobal.Pairing.Security;
+using BotGlobal.Contracts.Mobile;
 using Microsoft.AspNetCore.Http;
+using BotGlobal.Communication.Endpoints;
 using BotGlobal.Communication;
 using BotGlobal.Identity;
 using BotGlobal.Catalog;
@@ -10,6 +14,15 @@ using BotGlobal.Pairing;
 using BotGlobal.Pairing.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services
+    .AddAuthentication()
+    .AddScheme<
+        AuthenticationSchemeOptions,
+        MobileDeviceAuthenticationHandler>(
+        MobileDeviceAuthenticationDefaults.Scheme,
+        _ => { });
+
 
 const string FrontendCorsPolicy = "Frontend";
 
@@ -78,7 +91,10 @@ app.MapIdentityModuleEndpoints();
 
 await app.InitializeIdentityAsync();
 
-app.MapCommunicationModule();
+app.MapCommunicationModule(
+    new MobileNotificationMachineAuthorizationOptions(
+        PlatformClientAuthenticationDefaults.ClientIdClaim,
+        PlatformClientPolicies.Capability));
 app.MapPlatformClientsModule();
 app.MapPairingModule(
     new PairingMachineAuthorizationOptions(

@@ -1,3 +1,4 @@
+using BotGlobal.PlatformClients.Application.Capabilities;
 using BotGlobal.PlatformClients.Application.Credentials;
 using BotGlobal.PlatformClients.Application.Queries;
 using BotGlobal.PlatformClients.Application.Provisioning;
@@ -6,6 +7,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 
 namespace BotGlobal.PlatformClients.Endpoints;
+
+public sealed record SetPlatformClientCapabilitiesRequest(
+    IReadOnlyList<string> Capabilities);
+
 
 public sealed record CreatePlatformClientRequest(
     string ClientKey,
@@ -47,6 +52,30 @@ public static class PlatformClientAdminEndpoints
                 RevokeCredentialAsync)
             .WithName("AdminRevokePlatformClientCredential");
 
+        group.MapGet(
+                "/capabilities",
+                GetCapabilityCatalog)
+            .WithName(
+                "AdminGetPlatformCapabilityCatalog")
+            .WithSummary(
+                "List every capability that can be granted to a platform client.");
+
+        group.MapGet(
+                "/{clientId:guid}/capabilities",
+                GetClientCapabilitiesAsync)
+            .WithName(
+                "AdminGetPlatformClientCapabilities")
+            .WithSummary(
+                "Get capabilities currently granted to a platform client.");
+
+        group.MapPut(
+                "/{clientId:guid}/capabilities",
+                SetClientCapabilitiesAsync)
+            .WithName(
+                "AdminSetPlatformClientCapabilities")
+            .WithSummary(
+                "Replace the complete capability selection for a platform client.");
+
         group.MapPost(
                 "/",
                 CreateAsync)
@@ -56,6 +85,73 @@ public static class PlatformClientAdminEndpoints
                 "Create a machine/service client and return its generated secret once.");
 
         return endpoints;
+    }
+
+    private static IResult GetCapabilityCatalog(
+        IPlatformCapabilityCatalog catalog)
+    {
+        return Results.Ok(
+            catalog.GetAll());
+    }
+
+    private static async Task<IResult> GetClientCapabilitiesAsync(
+        Guid clientId,
+        IPlatformClientCapabilityService capabilities,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Results.Ok(
+                await capabilities.GetAsync(
+                    clientId,
+                    cancellationToken));
+        }
+        catch (KeyNotFoundException exception)
+        {
+            return Results.NotFound(
+                new
+                {
+                    message = exception.Message
+                });
+        }
+    }
+
+    private static async Task<IResult> SetClientCapabilitiesAsync(
+        Guid clientId,
+        SetPlatformClientCapabilitiesRequest request,
+        IPlatformClientCapabilityService capabilities,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result =
+                await capabilities.SetAsync(
+                    clientId,
+                    request.Capabilities
+                    ?? Array.Empty<string>(),
+                    cancellationToken);
+
+            return Results.Ok(result);
+        }
+        catch (KeyNotFoundException exception)
+        {
+            return Results.NotFound(
+                new
+                {
+                    message = exception.Message
+                });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    ["capabilities"] =
+                    [
+                        exception.Message
+                    ]
+                });
+        }
     }
 
     private static async Task<IResult> RotateCredentialAsync(

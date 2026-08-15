@@ -1,3 +1,4 @@
+using BotGlobal.PlatformClients.Application.Capabilities;
 using BotGlobal.PlatformClients.Application.Credentials;
 using BotGlobal.PlatformClients.Application.Queries;
 using BotGlobal.PlatformClients.Application.Provisioning;
@@ -70,6 +71,14 @@ public static class PlatformClientsModule
                 PlatformClientAuthenticationDefaults.Scheme,
                 _ => { });
 
+
+        services.AddSingleton<
+            IPlatformCapabilityCatalog,
+            PlatformCapabilityCatalog>();
+
+        services.AddScoped<
+            IPlatformClientCapabilityService,
+            PlatformClientCapabilityService>();
 
         services.AddScoped<
             IPlatformClientProvisioningService,

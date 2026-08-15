@@ -110,6 +110,28 @@ public sealed class PlatformClient
                 grantedAtUtc));
     }
 
+    public void RevokeCapability(string capability)
+    {
+        var normalized =
+            PlatformClientCapability.NormalizeCapability(
+                capability);
+
+        var existing =
+            _capabilities.FirstOrDefault(
+                item =>
+                    string.Equals(
+                        item.Capability,
+                        normalized,
+                        StringComparison.Ordinal));
+
+        if (existing is null)
+        {
+            return;
+        }
+
+        _capabilities.Remove(existing);
+    }
+
     public bool HasCapability(string capability)
     {
         var normalized = PlatformClientCapability.NormalizeCapability(capability);

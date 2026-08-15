@@ -12,9 +12,15 @@ import { finalize } from 'rxjs';
 
 import { PlatformClientsAdminService } from '../../data-access/platform-clients-admin.service';
 import {
+  PlatformClientCapabilityState,
+  PlatformCapabilityDescriptor,
   CreatedPlatformClient,
   PlatformClientListItem,
 } from '../../models/platform-client.models';
+import { DialogModule } from 'primeng/dialog';
+import {
+  PlatformCapabilitySelectorComponent,
+} from '../../components/platform-capability-selector/platform-capability-selector.component';
 
 @Component({
   selector: 'app-platform-clients-page',
@@ -23,6 +29,8 @@ import {
     CommonModule,
     FormsModule,
     TranslatePipe,
+    PlatformCapabilitySelectorComponent,
+    DialogModule,
   ],
   templateUrl:
     './platform-clients-page.component.html',
@@ -61,13 +69,50 @@ export class PlatformClientsPageComponent {
   clientKey = '';
   displayName = '';
 
-  capabilitiesText =
-    'platform-clients:probe\n'
-    + 'pairing:create\n'
-    + 'pairing:status';
+  readonly capabilityCatalog =
+    signal<PlatformCapabilityDescriptor[]>([]);
+
+  readonly capabilityCatalogLoading =
+    signal(false);
+
+  readonly createCapabilities =
+    signal<string[]>([]);
+
+  readonly selectedClientForCapabilities =
+    signal<PlatformClientListItem | null>(null);
+
+  readonly selectedClientCapabilities =
+    signal<string[]>([]);
+
+  readonly capabilityEditorLoading =
+    signal(false);
+
+  readonly capabilityEditorSaving =
+    signal(false);
 
   constructor() {
     this.load();
+    this.loadCapabilityCatalog();
+  }
+
+  loadCapabilityCatalog(): void {
+    this.capabilityCatalogLoading.set(true);
+
+    this.service
+      .getCapabilityCatalog()
+      .pipe(
+        finalize(
+          () => this.capabilityCatalogLoading.set(false),
+        ),
+      )
+      .subscribe({
+        next: (catalog) =>
+          this.capabilityCatalog.set(catalog),
+        error: () =>
+          this.error.set(
+            'Unable to load platform capability catalog.',
+          ),
+      });
   }
 
   load(): void {
@@ -94,10 +139,17 @@ export class PlatformClientsPageComponent {
   openCreate(): void {
     this.clientKey = '';
     this.displayName = '';
-    this.capabilitiesText =
-      'platform-clients:probe\n'
-      + 'pairing:create\n'
-      + 'pairing:status';
+
+    this.createCapabilities.set(
+      this.capabilityCatalog()
+        .filter(
+          (item) =>
+            item.capability === 'platform-clients:probe'
+            || item.capability === 'pairing:create'
+            || item.capability === 'pairing:status',
+        )
+        .map((item) => item.capability),
+    );
 
     this.createOpen.set(true);
   }
@@ -120,10 +172,7 @@ export class PlatformClientsPageComponent {
     }
 
     const capabilities =
-      this.capabilitiesText
-        .split(/[\n,]/)
-        .map((value) => value.trim())
-        .filter(Boolean);
+      this.createCapabilities();
 
     this.saving.set(true);
     this.error.set(null);
@@ -179,6 +228,85 @@ export class PlatformClientsPageComponent {
     this.createdClient.set(null);
     this.copied.set(false);
   }
+  openCapabilities(
+    client: PlatformClientListItem,
+  ): void {
+    this.selectedClientForCapabilities.set(client);
+    this.selectedClientCapabilities.set([]);
+    this.capabilityEditorLoading.set(true);
+    this.error.set(null);
+
+    this.service
+      .getClientCapabilities(client.id)
+      .pipe(
+        finalize(
+          () => this.capabilityEditorLoading.set(false),
+        ),
+      )
+      .subscribe({
+        next: (state: PlatformClientCapabilityState) =>
+          this.selectedClientCapabilities.set(
+            state.grantedCapabilities,
+          ),
+        error: (error) => {
+          this.selectedClientForCapabilities.set(null);
+
+          this.error.set(
+            error?.error?.message
+            ?? 'Unable to load platform client capabilities.',
+          );
+        },
+      });
+  }
+
+  closeCapabilities(): void {
+    if (this.capabilityEditorSaving()) {
+      return;
+    }
+
+    this.selectedClientForCapabilities.set(null);
+    this.selectedClientCapabilities.set([]);
+  }
+
+  saveCapabilities(): void {
+    const client =
+      this.selectedClientForCapabilities();
+
+    if (!client) {
+      return;
+    }
+
+    this.capabilityEditorSaving.set(true);
+    this.error.set(null);
+
+    this.service
+      .setClientCapabilities(
+        client.id,
+        this.selectedClientCapabilities(),
+      )
+      .pipe(
+        finalize(
+          () => this.capabilityEditorSaving.set(false),
+        ),
+      )
+      .subscribe({
+        next: (state) => {
+          this.selectedClientCapabilities.set(
+            state.grantedCapabilities,
+          );
+
+          this.selectedClientForCapabilities.set(null);
+
+          this.load();
+        },
+        error: (error) =>
+          this.error.set(
+            error?.error?.message
+            ?? 'Unable to save platform client capabilities.',
+          ),
+      });
+  }
+
   requestRotate(client: PlatformClientListItem): void {
     this.selectedClientForRotation.set(client);
   }

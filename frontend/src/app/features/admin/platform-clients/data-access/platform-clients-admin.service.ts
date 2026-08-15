@@ -5,8 +5,11 @@ import { Observable } from 'rxjs';
 import {
   CreatePlatformClientRequest,
   CreatedPlatformClient,
+  PlatformCapabilityDescriptor,
+  PlatformClientCapabilityState,
   PlatformClientListItem,
   RotatedPlatformClientCredential,
+  SetPlatformClientCapabilitiesRequest,
 } from '../models/platform-client.models';
 
 @Injectable({ providedIn: 'root' })
@@ -16,6 +19,36 @@ export class PlatformClientsAdminService {
 
   list(): Observable<PlatformClientListItem[]> {
     return this.http.get<PlatformClientListItem[]>(this.resourceUrl);
+  }
+
+
+  getCapabilityCatalog():
+    Observable<PlatformCapabilityDescriptor[]> {
+    return this.http.get<PlatformCapabilityDescriptor[]>(
+      `${this.resourceUrl}/capabilities`,
+    );
+  }
+
+  getClientCapabilities(
+    clientId: string,
+  ): Observable<PlatformClientCapabilityState> {
+    return this.http.get<PlatformClientCapabilityState>(
+      `${this.resourceUrl}/${clientId}/capabilities`,
+    );
+  }
+
+  setClientCapabilities(
+    clientId: string,
+    capabilities: string[],
+  ): Observable<PlatformClientCapabilityState> {
+    const request: SetPlatformClientCapabilitiesRequest = {
+      capabilities,
+    };
+
+    return this.http.put<PlatformClientCapabilityState>(
+      `${this.resourceUrl}/${clientId}/capabilities`,
+      request,
+    );
   }
 
   create(request: CreatePlatformClientRequest): Observable<CreatedPlatformClient> {
