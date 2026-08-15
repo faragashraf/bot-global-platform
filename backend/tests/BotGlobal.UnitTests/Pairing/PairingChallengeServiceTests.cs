@@ -233,9 +233,10 @@ public sealed class PairingChallengeServiceTests
                     await using var context = fixture.CreateContext();
                     var service =
                         new PairingChallengeService(
-                            context,
-                            fixture.TokenService,
-                            fixture.Clock);
+                context,
+                fixture.TokenService,
+                new MobileDeviceCredentialService(),
+                fixture.Clock);
 
                     return await service.ClaimAsync(
                         new ClaimPairingChallengeRequest(
@@ -304,6 +305,7 @@ public sealed class PairingChallengeServiceTests
             new(
                 InitialContext,
                 TokenService,
+                new MobileDeviceCredentialService(),
                 Clock);
 
         public PairingDbContext CreateContext()

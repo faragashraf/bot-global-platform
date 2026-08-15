@@ -11,6 +11,7 @@ namespace BotGlobal.Pairing.Application;
 public sealed partial class PairingChallengeService(
     PairingDbContext dbContext,
     IPairingTokenService tokenService,
+    IMobileDeviceCredentialService deviceCredentialService,
     TimeProvider timeProvider)
     : IPairingChallengeService
 {
@@ -104,6 +105,45 @@ public sealed partial class PairingChallengeService(
             {
                 var completedAtUtc = timeProvider.GetUtcNow();
                 challenge.Complete(device, completedAtUtc);
+
+                var issuedCredential =
+                    deviceCredentialService.Generate();
+
+                var mobileDevice =
+                    await dbContext.Devices
+                        .SingleOrDefaultAsync(
+                            item =>
+                                item.PlatformClientId
+                                    == challenge.PlatformClientId
+                                && item.InstallationId
+                                    == device.InstallationId,
+                            cancellationToken);
+
+                if (mobileDevice is null)
+                {
+                    mobileDevice =
+                        new MobileDevice(
+                            Guid.NewGuid(),
+                            challenge.PlatformClientId,
+                            device.InstallationId,
+                            device.Platform,
+                            device.DeviceName,
+                            device.AppVersion,
+                            issuedCredential.Hash,
+                            completedAtUtc);
+
+                    dbContext.Devices.Add(mobileDevice);
+                }
+                else
+                {
+                    mobileDevice.RotateCredential(
+                        issuedCredential.Hash,
+                        device.Platform,
+                        device.DeviceName,
+                        device.AppVersion,
+                        completedAtUtc);
+                }
+
                 await dbContext.SaveChangesAsync(cancellationToken);
 
                 return new ClaimPairingChallengeResult(
@@ -112,7 +152,10 @@ public sealed partial class PairingChallengeService(
                         challenge.Id,
                         PairingChallengeStatusNames.Completed,
                         challenge.ExpiresAtUtc,
-                        completedAtUtc));
+                        completedAtUtc,
+                        new MobileDevicePairingCredentialResponse(
+                            mobileDevice.Id,
+                            issuedCredential.PlainText)));
             }
             catch (DbUpdateConcurrencyException)
             {

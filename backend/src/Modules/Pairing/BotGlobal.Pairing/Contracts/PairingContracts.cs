@@ -26,11 +26,16 @@ public sealed record ClaimPairingDeviceRequest(
     string? DeviceName,
     string? AppVersion);
 
+public sealed record MobileDevicePairingCredentialResponse(
+    Guid DeviceId,
+    string Credential);
+
 public sealed record ClaimPairingChallengeResponse(
     Guid ChallengeId,
     string Status,
     DateTimeOffset ExpiresAtUtc,
-    DateTimeOffset CompletedAtUtc);
+    DateTimeOffset CompletedAtUtc,
+    MobileDevicePairingCredentialResponse Device);
 
 public sealed record ClaimedMobileDeviceResponse(
     string Platform,
