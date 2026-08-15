@@ -1,0 +1,70 @@
+<div
+  class="capability-selector"
+  role="group"
+  aria-label="Platform client capabilities"
+>
+  <article
+    *ngFor="
+      let item of capabilities();
+      trackBy: trackByCapability
+    "
+    class="capability-card"
+    [class.capability-card--selected]="
+      isSelected(item.capability)
+    "
+  >
+    <div class="capability-card__header">
+      <p-checkbox
+        [binary]="true"
+        [disabled]="disabled()"
+        [ngModel]="isSelected(item.capability)"
+        (onChange)="toggle(item, $event.checked)"
+        [inputId]="'capability-' + item.capability"
+      />
+
+      <label
+        class="capability-card__identity"
+        [for]="'capability-' + item.capability"
+      >
+        <strong>
+          {{ item.name }}
+        </strong>
+
+        <code>
+          {{ item.capability }}
+        </code>
+      </label>
+
+      <p-tag
+        [value]="item.impact"
+        [severity]="impactSeverity(item.impact)"
+      />
+    </div>
+
+    <p class="capability-card__description">
+      {{ item.description }}
+    </p>
+
+    <div class="capability-effects">
+      <div class="capability-effect">
+        <span class="capability-effect__label">
+          When enabled
+        </span>
+
+        <span>
+          {{ item.grantEffect }}
+        </span>
+      </div>
+
+      <div class="capability-effect">
+        <span class="capability-effect__label">
+          When removed
+        </span>
+
+        <span>
+          {{ item.revokeEffect }}
+        </span>
+      </div>
+    </div>
+  </article>
+</div>

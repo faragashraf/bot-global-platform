@@ -1,3 +1,5 @@
+using BotGlobal.Contracts.Mobile;
+using BotGlobal.Pairing.Application.Notifications;
 using System.Threading.RateLimiting;
 using BotGlobal.Pairing.Application;
 using BotGlobal.Pairing.Endpoints;
@@ -50,8 +52,16 @@ public static class PairingModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IPairingTokenService, PairingTokenService>();
         services.AddScoped<IPairingChallengeService, PairingChallengeService>();
+        services.AddScoped<
+            IMobileRecipientResolver,
+            PairingMobileNotificationRecipientResolver>();
+
         services.AddScoped<IMobileDeviceLifecycleService, MobileDeviceLifecycleService>();
         services.AddSingleton<IMobileDeviceCredentialService, MobileDeviceCredentialService>();
+        services.AddScoped<
+            IMobileDeviceAuthenticator,
+            MobileDeviceAuthenticator>();
+
 
         services.AddRateLimiter(
             options =>

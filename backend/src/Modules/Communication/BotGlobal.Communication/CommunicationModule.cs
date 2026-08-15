@@ -1,3 +1,5 @@
+using BotGlobal.Contracts.Mobile;
+using BotGlobal.Communication.Application.MobileNotifications;
 using BotGlobal.Communication.Endpoints;
 using BotGlobal.Communication.Application.Delivery;
 using BotGlobal.Communication.Application.Abstractions;
@@ -49,6 +51,18 @@ public static class CommunicationModule
             ICommunicationDelivery,
             SignalRCommunicationDelivery>();
 
+        services.AddScoped<
+            IMobileNotificationService,
+            MobileNotificationService>();
+
+        services.AddSingleton<
+            IMobileNotificationConnectionRegistry,
+            MobileNotificationConnectionRegistry>();
+
+        services.AddScoped<
+            IMobileNotificationDelivery,
+            SignalRMobileNotificationDelivery>();
+
 
         services.AddSingleton<UserConnectionTracker>();
 
@@ -64,11 +78,19 @@ public static class CommunicationModule
     }
 
     public static IEndpointRouteBuilder MapCommunicationModule(
-        this IEndpointRouteBuilder endpoints)
+        this IEndpointRouteBuilder endpoints,
+        MobileNotificationMachineAuthorizationOptions notificationAuthorization)
     {
-        endpoints.MapHub<CommunicationHub>("/hubs/communications");
+        endpoints.MapHub<CommunicationHub>(
+            "/hubs/communications");
+
+        endpoints.MapHub<MobileNotificationsHub>(
+            MobileNotificationRealtimeContract.HubPath);
 
         endpoints.MapCommunicationTestEndpoints();
+
+        endpoints.MapMobileNotificationEndpoints(
+            notificationAuthorization);
 
         return endpoints;
     }

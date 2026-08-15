@@ -121,7 +121,20 @@
                 <td><span class="metric">{{ client.activeCredentialCount }}</span></td>
                 <td>{{ client.createdAtUtc | date:'medium' }}</td>
                 <td class="actions-cell">
-                  <button type="button" class="btn btn--secondary btn--compact" (click)="requestRotate(client)">
+                              <button
+              type="button"
+              class="icon-button"
+              title="Manage capabilities"
+              aria-label="Manage capabilities"
+              (click)="openCapabilities(client)"
+            >
+              <i
+                class="pi pi-shield"
+                aria-hidden="true"
+              ></i>
+            </button>
+
+<button type="button" class="btn btn--secondary btn--compact" (click)="requestRotate(client)">
                     <i class="pi pi-refresh" aria-hidden="true"></i>
                     {{ 'auth.management.platformClients.lifecycle.rotate' | translate }}
                   </button>
@@ -231,22 +244,25 @@
             </div>
           </label>
 
-          <label class="field">
+          <div class="field">
             <span class="field__label">
               {{ 'auth.management.platformClients.create.capabilities' | translate }}
             </span>
 
-            <textarea
-              name="capabilities"
-              [(ngModel)]="capabilitiesText"
-              rows="6"
-              [disabled]="saving()"
-            ></textarea>
-
-            <small>
-              {{ 'auth.management.platformClients.create.capabilitiesHint' | translate }}
-            </small>
-          </label>
+            @if (capabilityCatalogLoading()) {
+              <div class="capability-loading">
+                <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+                <span>Loading capabilities...</span>
+              </div>
+            } @else {
+              <app-platform-capability-selector
+                [capabilities]="capabilityCatalog()"
+                [selected]="createCapabilities()"
+                [disabled]="saving()"
+                (selectionChange)="createCapabilities.set($event)"
+              />
+            }
+          </div>
 
           <footer class="dialog__footer">
             <button
@@ -382,3 +398,87 @@
     </div>
   }
 </section>
+
+
+<p-dialog
+  header="Manage Capabilities"
+  [visible]="selectedClientForCapabilities() !== null"
+  [modal]="true"
+  [closable]="!capabilityEditorSaving()"
+  [dismissableMask]="!capabilityEditorSaving()"
+  [style]="{ width: 'min(780px, 96vw)' }"
+  (onHide)="closeCapabilities()"
+>
+  @if (selectedClientForCapabilities(); as client) {
+    <div class="capability-editor">
+      <div class="capability-editor__client">
+        <strong>
+          {{ client.displayName }}
+        </strong>
+
+        <code>
+          {{ client.clientKey }}
+        </code>
+      </div>
+
+      @if (capabilityEditorLoading()) {
+        <div class="capability-loading">
+          <i
+            class="pi pi-spin pi-spinner"
+            aria-hidden="true"
+          ></i>
+
+          <span>
+            Loading capabilities...
+          </span>
+        </div>
+      } @else {
+        <app-platform-capability-selector
+          [capabilities]="capabilityCatalog()"
+          [selected]="selectedClientCapabilities()"
+          [disabled]="capabilityEditorSaving()"
+          (selectionChange)="
+            selectedClientCapabilities.set($event)
+          "
+        />
+      }
+
+      <div class="dialog-actions">
+        <button
+          type="button"
+          class="secondary-button"
+          [disabled]="capabilityEditorSaving()"
+          (click)="closeCapabilities()"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          class="primary-button"
+          [disabled]="
+            capabilityEditorLoading()
+            || capabilityEditorSaving()
+          "
+          (click)="saveCapabilities()"
+        >
+          @if (capabilityEditorSaving()) {
+            <i
+              class="pi pi-spin pi-spinner"
+              aria-hidden="true"
+            ></i>
+          } @else {
+            <i
+              class="pi pi-save"
+              aria-hidden="true"
+            ></i>
+          }
+
+          <span>
+            Save Changes
+          </span>
+        </button>
+      </div>
+    </div>
+  }
+</p-dialog>
