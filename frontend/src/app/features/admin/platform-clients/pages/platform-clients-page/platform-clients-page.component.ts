@@ -4,7 +4,7 @@ import {
   Component,
   computed,
   inject,
-  signal,
+  signal
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -47,6 +47,30 @@ export class PlatformClientsPageComponent {
 
   readonly clients =
     signal<PlatformClientListItem[]>([]);
+
+  readonly totalClients =
+    computed(() => this.clients().length);
+
+  readonly activeClients =
+    computed(
+      () =>
+        this.clients().filter(
+          client =>
+            client.status
+              ?.toLowerCase() === 'active',
+        ).length,
+    );
+
+  readonly totalActiveCredentials =
+    computed(
+      () =>
+        this.clients().reduce(
+          (total, client) =>
+            total + client.activeCredentialCount,
+          0,
+        ),
+    );
+
 
   readonly loading = signal(false);
   readonly saving = signal(false);
