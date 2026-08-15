@@ -157,7 +157,9 @@ public sealed class MobileNotificationServiceTests
             return Task.FromResult(
                 new MobileNotificationDeliveryResult(
                     AttemptedDeviceCount: devices.Count,
-                    DeliveredDeviceCount: 0));
+                    DeliveredDeviceCount: 0,
+                    SignalRDeliveredDeviceCount: 0,
+                    FcmDeliveredDeviceCount: 0));
         }
     }
 }

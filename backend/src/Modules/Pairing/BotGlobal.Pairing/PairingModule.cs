@@ -67,6 +67,10 @@ public static class PairingModule
             IMobilePushRegistrationService,
             MobilePushRegistrationService>();
 
+        services.AddScoped<
+            IMobilePushDestinationResolver,
+            MobilePushDestinationResolver>();
+
 
         services.AddRateLimiter(
             options =>

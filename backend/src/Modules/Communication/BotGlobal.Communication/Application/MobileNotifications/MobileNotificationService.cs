@@ -57,11 +57,35 @@ internal sealed class MobileNotificationService(
             notification.NotificationId,
             subjectId,
             devices.Count,
-            result.DeliveredDeviceCount > 0
-                ? "realtime-dispatched"
-                : devices.Count > 0
-                    ? "accepted"
-                    : "no-active-devices");
+            ResolveDeliveryStatus(
+                result,
+                devices.Count));
+    }
+
+    private static string ResolveDeliveryStatus(
+        MobileNotificationDeliveryResult result,
+        int activeDeviceCount)
+    {
+        if (
+            result.SignalRDeliveredDeviceCount > 0
+            && result.FcmDeliveredDeviceCount > 0)
+        {
+            return "mixed-dispatched";
+        }
+
+        if (result.SignalRDeliveredDeviceCount > 0)
+        {
+            return "signalr-dispatched";
+        }
+
+        if (result.FcmDeliveredDeviceCount > 0)
+        {
+            return "fcm-dispatched";
+        }
+
+        return activeDeviceCount > 0
+            ? "accepted"
+            : "no-active-devices";
     }
 
     private static void Validate(
