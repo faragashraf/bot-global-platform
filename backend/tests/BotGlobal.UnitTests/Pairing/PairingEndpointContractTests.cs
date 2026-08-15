@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using BotGlobal.Pairing.Application.PushRegistrations;
 
 namespace BotGlobal.UnitTests.Pairing;
 
@@ -124,6 +125,9 @@ public sealed class PairingEndpointContractTests
     {
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddScoped<IPairingChallengeService, FakePairingChallengeService>();
+        builder.Services.AddScoped<
+            IMobilePushRegistrationService,
+            FakeMobilePushRegistrationService>();
         var app = builder.Build();
 
         app.MapPairingModule(
@@ -167,6 +171,25 @@ public sealed class PairingEndpointContractTests
     private sealed record CapabilityRequirementMarker(
         string Capability)
         : IAuthorizationRequirement;
+
+    private sealed class FakeMobilePushRegistrationService
+        : IMobilePushRegistrationService
+    {
+        public Task<MobilePushRegistrationResult> RegisterAsync(
+            Guid deviceId,
+            RegisterMobilePushRequest request,
+            CancellationToken cancellationToken)
+            => Task.FromResult(
+                new MobilePushRegistrationResult(
+                    deviceId,
+                    request.Provider,
+                    DateTimeOffset.UtcNow));
+
+        public Task InvalidateAllAsync(
+            Guid deviceId,
+            CancellationToken cancellationToken)
+            => Task.CompletedTask;
+    }
 
     private sealed class FakePairingChallengeService
         : IPairingChallengeService
