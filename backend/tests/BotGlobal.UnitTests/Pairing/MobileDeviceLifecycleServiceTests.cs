@@ -33,6 +33,17 @@ public sealed class MobileDeviceLifecycleServiceTests
                 DateTimeOffset.UtcNow);
 
         db.Devices.Add(device);
+
+        var pushRegistration =
+            new MobilePushRegistration(
+                device.Id,
+                "fcm",
+                "test-fcm-registration-token",
+                DateTimeOffset.UtcNow);
+
+        db.PushRegistrations.Add(
+            pushRegistration);
+
         await db.SaveChangesAsync();
 
         var service =
@@ -52,6 +63,13 @@ public sealed class MobileDeviceLifecycleServiceTests
 
         Assert.NotNull(device.RevokedAtUtc);
         Assert.False(device.IsActive);
+
+        Assert.NotNull(
+            pushRegistration.InvalidatedAtUtc);
+
+        Assert.Equal(
+            device.RevokedAtUtc,
+            pushRegistration.InvalidatedAtUtc);
     }
 
     [Fact]

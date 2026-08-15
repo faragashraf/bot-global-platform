@@ -1,3 +1,5 @@
+using BotGlobal.Pairing.Application.PushRegistrations;
+using BotGlobal.Contracts.Mobile;
 using System.Security.Claims;
 using BotGlobal.Pairing.Application;
 using BotGlobal.Pairing.Contracts;
@@ -53,6 +55,59 @@ public static class PairingEndpoints
             .WithName("ClaimPairingChallenge")
             .WithSummary("Complete a pairing challenge from a scanned QR token.");
 
+
+        endpoints.MapPut(
+                "/api/mobile/devices/push-registration",
+                async (
+                    RegisterMobilePushRequest request,
+                    ClaimsPrincipal principal,
+                    IMobilePushRegistrationService service,
+                    CancellationToken cancellationToken) =>
+                {
+                    var rawDeviceId =
+                        principal.FindFirstValue(
+                            MobileDeviceAuthenticationDefaults.DeviceIdClaim);
+
+                    if (!Guid.TryParse(
+                            rawDeviceId,
+                            out var deviceId))
+                    {
+                        return Results.Unauthorized();
+                    }
+
+                    try
+                    {
+                        var result =
+                            await service.RegisterAsync(
+                                deviceId,
+                                request,
+                                cancellationToken);
+
+                        return Results.Ok(result);
+                    }
+                    catch (ArgumentException exception)
+                    {
+                        return Results.ValidationProblem(
+                            new Dictionary<string, string[]>
+                            {
+                                ["request"] = [exception.Message]
+                            });
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        return Results.Unauthorized();
+                    }
+                })
+            .RequireAuthorization(
+                policy =>
+                    policy
+                        .AddAuthenticationSchemes(
+                            MobileDeviceAuthenticationDefaults.Scheme)
+                        .RequireAuthenticatedUser())
+            .WithName("RegisterMobilePush")
+            .WithTags("Mobile Pairing")
+            .WithSummary(
+                "Register or refresh the authenticated device push destination.");
 
         endpoints.MapPost(
                 "/api/mobile/devices/unpair",

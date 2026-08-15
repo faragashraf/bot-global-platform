@@ -1,3 +1,4 @@
+using BotGlobal.Pairing.Application.PushRegistrations;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Pairing.Application.Notifications;
 using System.Threading.RateLimiting;
@@ -61,6 +62,10 @@ public static class PairingModule
         services.AddScoped<
             IMobileDeviceAuthenticator,
             MobileDeviceAuthenticator>();
+
+        services.AddScoped<
+            IMobilePushRegistrationService,
+            MobilePushRegistrationService>();
 
 
         services.AddRateLimiter(

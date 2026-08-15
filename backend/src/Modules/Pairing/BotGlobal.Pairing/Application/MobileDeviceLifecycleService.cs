@@ -36,8 +36,23 @@ public sealed class MobileDeviceLifecycleService(
             return UnpairMobileDeviceOutcome.InvalidCredential;
         }
 
-        device.Revoke(
-            timeProvider.GetUtcNow());
+        var now =
+            timeProvider.GetUtcNow();
+
+        device.Revoke(now);
+
+        var pushRegistrations =
+            await dbContext.PushRegistrations
+                .Where(
+                    registration =>
+                        registration.MobileDeviceId == device.Id
+                        && registration.InvalidatedAtUtc == null)
+                .ToListAsync(cancellationToken);
+
+        foreach (var registration in pushRegistrations)
+        {
+            registration.Invalidate(now);
+        }
 
         await dbContext.SaveChangesAsync(
             cancellationToken);
