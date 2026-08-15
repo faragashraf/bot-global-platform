@@ -35,6 +35,7 @@ public sealed partial class PairingChallengeService(
                     platformClientId,
                     generated.TokenHash,
                     request.CorrelationReference,
+                    request.ExternalSubjectId,
                     utcNow,
                     DefaultChallengeLifetime);
 
@@ -125,6 +126,9 @@ public sealed partial class PairingChallengeService(
                         new MobileDevice(
                             Guid.NewGuid(),
                             challenge.PlatformClientId,
+                            challenge.ExternalSubjectId
+                                ?? throw new InvalidOperationException(
+                                    "New pairing challenge has no external subject identity."),
                             device.InstallationId,
                             device.Platform,
                             device.DeviceName,

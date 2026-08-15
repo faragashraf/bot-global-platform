@@ -9,6 +9,7 @@ public sealed class MobileDevice
     public MobileDevice(
         Guid id,
         Guid platformClientId,
+        string externalSubjectId,
         string installationId,
         string platform,
         string? deviceName,
@@ -16,6 +17,7 @@ public sealed class MobileDevice
         byte[] credentialHash,
         DateTimeOffset createdAtUtc)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(externalSubjectId);
         ArgumentException.ThrowIfNullOrWhiteSpace(installationId);
         ArgumentException.ThrowIfNullOrWhiteSpace(platform);
 
@@ -28,6 +30,7 @@ public sealed class MobileDevice
 
         Id = id;
         PlatformClientId = platformClientId;
+        ExternalSubjectId = externalSubjectId.Trim();
         InstallationId = installationId;
         Platform = platform;
         DeviceName = deviceName;
@@ -40,6 +43,9 @@ public sealed class MobileDevice
     public Guid Id { get; private set; }
 
     public Guid PlatformClientId { get; private set; }
+
+    // Nullable only for devices paired before subject identity was introduced.
+    public string? ExternalSubjectId { get; private set; }
 
     public string InstallationId { get; private set; } = null!;
 

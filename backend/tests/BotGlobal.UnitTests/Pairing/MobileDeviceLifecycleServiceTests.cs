@@ -24,6 +24,7 @@ public sealed class MobileDeviceLifecycleServiceTests
             new MobileDevice(
                 Guid.NewGuid(),
                 Guid.NewGuid(),
+                "connect-user-test-84621",
                 "installation-1",
                 "android",
                 "Samsung",
@@ -69,6 +70,7 @@ public sealed class MobileDeviceLifecycleServiceTests
             new MobileDevice(
                 Guid.NewGuid(),
                 Guid.NewGuid(),
+                "connect-user-test-84621",
                 "installation-2",
                 "android",
                 "Samsung",

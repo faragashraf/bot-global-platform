@@ -106,12 +106,24 @@ public static class PairingEndpoints
                 return Results.Unauthorized();
             }
 
+            if (request is null)
+            {
+                return Results.ValidationProblem(
+                    new Dictionary<string, string[]>
+                    {
+                        ["request"] =
+                        [
+                            "Pairing challenge request is required."
+                        ]
+                    });
+            }
+
             try
             {
                 return Results.Ok(
                     await service.CreateAsync(
                         platformClientId,
-                        request ?? new CreatePairingChallengeRequest(null),
+                        request,
                         cancellationToken));
             }
             catch (ArgumentException exception)
