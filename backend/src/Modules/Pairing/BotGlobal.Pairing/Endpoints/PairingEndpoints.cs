@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
+using BotGlobal.Pairing.Security;
 
 namespace BotGlobal.Pairing.Endpoints;
 
@@ -51,6 +52,42 @@ public static class PairingEndpoints
             .RequireRateLimiting(PairingModule.MobileClaimRateLimitPolicy)
             .WithName("ClaimPairingChallenge")
             .WithSummary("Complete a pairing challenge from a scanned QR token.");
+
+
+        endpoints.MapPost(
+                "/api/mobile/devices/unpair",
+                async (
+                    HttpContext httpContext,
+                    IMobileDeviceLifecycleService deviceLifecycleService,
+                    CancellationToken cancellationToken) =>
+                {
+                    if (!MobileDeviceAuthorization.TryReadCredential(
+                            httpContext.Request.Headers.Authorization,
+                            out var credential))
+                    {
+                        return Results.Unauthorized();
+                    }
+
+                    var outcome =
+                        await deviceLifecycleService.UnpairAsync(
+                            credential,
+                            cancellationToken);
+
+                    return outcome switch
+                    {
+                        UnpairMobileDeviceOutcome.Unpaired =>
+                            Results.NoContent(),
+
+                        UnpairMobileDeviceOutcome.InvalidCredential =>
+                            Results.Unauthorized(),
+
+                        _ =>
+                            Results.Unauthorized()
+                    };
+                })
+            .AllowAnonymous()
+            .WithName("UnpairMobileDevice")
+            .WithTags("Mobile Pairing");
 
         return endpoints;
 

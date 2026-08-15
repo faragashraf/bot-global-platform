@@ -50,6 +50,8 @@ public static class PairingModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IPairingTokenService, PairingTokenService>();
         services.AddScoped<IPairingChallengeService, PairingChallengeService>();
+        services.AddScoped<IMobileDeviceLifecycleService, MobileDeviceLifecycleService>();
+        services.AddSingleton<IMobileDeviceCredentialService, MobileDeviceCredentialService>();
 
         services.AddRateLimiter(
             options =>

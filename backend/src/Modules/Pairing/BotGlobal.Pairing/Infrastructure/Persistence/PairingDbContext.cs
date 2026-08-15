@@ -9,6 +9,8 @@ public sealed class PairingDbContext(
 {
     public DbSet<PairingChallenge> Challenges => Set<PairingChallenge>();
 
+    public DbSet<MobileDevice> Devices => Set<MobileDevice>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(PairingModule.DatabaseSchema);
