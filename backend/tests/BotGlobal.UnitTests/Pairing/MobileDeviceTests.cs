@@ -12,7 +12,7 @@ public sealed class MobileDeviceTests
         var device = new MobileDevice(
             Guid.NewGuid(),
             Guid.NewGuid(),
-            "connect-user-test-84621",
+            "old-connect-user",
             "installation-1",
             "android",
             "Samsung",
@@ -24,7 +24,7 @@ public sealed class MobileDeviceTests
 
         device.RotateCredential(
             Enumerable.Repeat((byte)1, 32).ToArray(),
-            "connect-user-test-84621",
+            "84621",
             "android",
             "Samsung A21s",
             "1.0.2",
@@ -35,5 +35,9 @@ public sealed class MobileDeviceTests
         Assert.Equal(
             "Samsung A21s",
             device.DeviceName);
+
+        Assert.Equal(
+            "84621",
+            device.ExternalSubjectId);
     }
 }

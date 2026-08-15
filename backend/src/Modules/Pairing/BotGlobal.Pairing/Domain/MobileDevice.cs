@@ -74,6 +74,7 @@ public sealed class MobileDevice
         string? appVersion,
         DateTimeOffset pairedAtUtc)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(externalSubjectId);
         ArgumentException.ThrowIfNullOrWhiteSpace(platform);
 
         if (credentialHash is null || credentialHash.Length == 0)
@@ -83,6 +84,7 @@ public sealed class MobileDevice
                 nameof(credentialHash));
         }
 
+        ExternalSubjectId = externalSubjectId.Trim();
         CredentialHash = credentialHash;
         Platform = platform;
         DeviceName = deviceName;
