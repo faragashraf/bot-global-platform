@@ -142,6 +142,9 @@ public sealed partial class PairingChallengeService(
                 {
                     mobileDevice.RotateCredential(
                         issuedCredential.Hash,
+                        challenge.ExternalSubjectId
+                            ?? throw new InvalidOperationException(
+                                "Pairing challenge has no external subject identity."),
                         device.Platform,
                         device.DeviceName,
                         device.AppVersion,
