@@ -1,3 +1,4 @@
+using BotGlobal.Communication.Application.MobileNotifications.Fcm;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Communication.Application.MobileNotifications;
 using BotGlobal.Communication.Endpoints;
@@ -46,6 +47,27 @@ public static class CommunicationModule
                             DatabaseSchema)));
 
         services.AddSignalR();
+        services.Configure<FcmOptions>(
+            configuration.GetSection(
+                FcmOptions.SectionName));
+
+        services.AddSingleton(
+            provider =>
+            {
+                var options =
+                    provider
+                        .GetRequiredService<
+                            Microsoft.Extensions.Options.IOptions<FcmOptions>>()
+                        .Value;
+
+                return FirebaseAdminFactory.CreateMessaging(
+                    options);
+            });
+
+        services.AddSingleton<
+            IFcmPushSender,
+            FirebaseAdminFcmPushSender>();
+
 
         services.AddScoped<
             ICommunicationDelivery,
@@ -60,8 +82,11 @@ public static class CommunicationModule
             MobileNotificationConnectionRegistry>();
 
         services.AddScoped<
-            IMobileNotificationDelivery,
             SignalRMobileNotificationDelivery>();
+
+        services.AddScoped<
+            IMobileNotificationDelivery,
+            CompositeMobileNotificationDelivery>();
 
 
         services.AddSingleton<UserConnectionTracker>();

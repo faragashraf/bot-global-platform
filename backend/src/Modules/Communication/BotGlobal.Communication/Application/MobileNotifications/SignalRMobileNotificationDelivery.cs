@@ -42,6 +42,8 @@ internal sealed class SignalRMobileNotificationDelivery(
 
         return new MobileNotificationDeliveryResult(
             AttemptedDeviceCount: devices.Count,
-            DeliveredDeviceCount: dispatched);
+            DeliveredDeviceCount: dispatched,
+            SignalRDeliveredDeviceCount: dispatched,
+            FcmDeliveredDeviceCount: 0);
     }
 }
