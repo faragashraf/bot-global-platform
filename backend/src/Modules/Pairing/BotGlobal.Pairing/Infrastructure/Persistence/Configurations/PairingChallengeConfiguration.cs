@@ -28,6 +28,9 @@ public sealed class PairingChallengeConfiguration
         builder.Property(challenge => challenge.CorrelationReference)
             .HasMaxLength(PairingChallenge.CorrelationReferenceMaxLength);
 
+        builder.Property(challenge => challenge.ExternalSubjectId)
+            .HasMaxLength(PairingChallenge.ExternalSubjectIdMaxLength);
+
         builder.Property(challenge => challenge.CreatedAtUtc)
             .HasColumnType("datetimeoffset")
             .IsRequired();

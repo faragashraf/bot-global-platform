@@ -69,7 +69,7 @@ public sealed class PairingEndpointContractTests
     }
 
     [Fact]
-    public void Public_create_request_does_not_accept_owner_or_user_identity()
+    public void Machine_authenticated_create_request_accepts_external_subject_identity()
     {
         var properties =
             typeof(CreatePairingChallengeRequest)
@@ -78,7 +78,11 @@ public sealed class PairingEndpointContractTests
                 .ToArray();
 
         Assert.Equal(
-            new[] { nameof(CreatePairingChallengeRequest.CorrelationReference) },
+            new[]
+            {
+                nameof(CreatePairingChallengeRequest.CorrelationReference),
+                nameof(CreatePairingChallengeRequest.ExternalSubjectId)
+            },
             properties);
     }
 

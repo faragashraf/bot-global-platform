@@ -1,7 +1,8 @@
 namespace BotGlobal.Pairing.Contracts;
 
 public sealed record CreatePairingChallengeRequest(
-    string? CorrelationReference);
+    string? CorrelationReference,
+    string ExternalSubjectId);
 
 public sealed record CreatePairingChallengeResponse(
     Guid ChallengeId,

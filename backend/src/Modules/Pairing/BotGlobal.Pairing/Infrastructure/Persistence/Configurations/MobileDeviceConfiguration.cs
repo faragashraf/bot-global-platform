@@ -17,6 +17,9 @@ public sealed class MobileDeviceConfiguration
         builder.Property(x => x.PlatformClientId)
             .IsRequired();
 
+        builder.Property(x => x.ExternalSubjectId)
+            .HasMaxLength(200);
+
         builder.Property(x => x.InstallationId)
             .HasMaxLength(200)
             .IsRequired();
@@ -51,5 +54,15 @@ public sealed class MobileDeviceConfiguration
 
         builder.HasIndex(x => x.CredentialHash)
             .IsUnique();
+
+        builder.HasIndex(
+                x => new
+                {
+                    x.PlatformClientId,
+                    x.ExternalSubjectId,
+                    x.RevokedAtUtc
+                })
+            .HasDatabaseName(
+                "IX_MobileDevices_PlatformClientId_ExternalSubjectId_RevokedAtUtc");
     }
 }

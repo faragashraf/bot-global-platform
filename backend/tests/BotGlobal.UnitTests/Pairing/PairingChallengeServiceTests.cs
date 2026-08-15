@@ -23,7 +23,8 @@ public sealed class PairingChallengeServiceTests
             await fixture.Service.CreateAsync(
                 ownerId,
                 new CreatePairingChallengeRequest(
-                    "connect-request-123"));
+                    "connect-request-123",
+                    "connect-user-test-84621"));
 
         using var verification = fixture.CreateContext();
         var stored = await verification.Challenges.SingleAsync();
@@ -52,7 +53,7 @@ public sealed class PairingChallengeServiceTests
         var created =
             await fixture.Service.CreateAsync(
                 ownerId,
-                new CreatePairingChallengeRequest("reference-1"));
+                new CreatePairingChallengeRequest("reference-1", "connect-user-test-84621"));
 
         var ownerStatus =
             await fixture.Service.GetStatusAsync(
@@ -77,7 +78,7 @@ public sealed class PairingChallengeServiceTests
         var created =
             await fixture.Service.CreateAsync(
                 Guid.NewGuid(),
-                new CreatePairingChallengeRequest(null));
+                new CreatePairingChallengeRequest(null, "connect-user-test-84621"));
 
         fixture.Clock.Advance(TimeSpan.FromMinutes(4));
 
@@ -108,7 +109,7 @@ public sealed class PairingChallengeServiceTests
         var created =
             await fixture.Service.CreateAsync(
                 ownerId,
-                new CreatePairingChallengeRequest("request-42"));
+                new CreatePairingChallengeRequest("request-42", "connect-user-test-84621"));
 
         var claim =
             await fixture.Service.ClaimAsync(
@@ -148,7 +149,7 @@ public sealed class PairingChallengeServiceTests
         var expired =
             await expiredFixture.Service.CreateAsync(
                 Guid.NewGuid(),
-                new CreatePairingChallengeRequest(null));
+                new CreatePairingChallengeRequest(null, "connect-user-test-84621"));
 
         expiredFixture.Clock.Advance(TimeSpan.FromMinutes(4));
 
@@ -164,7 +165,7 @@ public sealed class PairingChallengeServiceTests
         var completed =
             await completedFixture.Service.CreateAsync(
                 Guid.NewGuid(),
-                new CreatePairingChallengeRequest(null));
+                new CreatePairingChallengeRequest(null, "connect-user-test-84621"));
 
         var first =
             await completedFixture.Service.ClaimAsync(
@@ -223,7 +224,7 @@ public sealed class PairingChallengeServiceTests
         var created =
             await fixture.Service.CreateAsync(
                 Guid.NewGuid(),
-                new CreatePairingChallengeRequest(null));
+                new CreatePairingChallengeRequest(null, "connect-user-test-84621"));
 
         var tasks =
             Enumerable

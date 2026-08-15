@@ -12,6 +12,7 @@ public sealed class MobileDeviceTests
         var device = new MobileDevice(
             Guid.NewGuid(),
             Guid.NewGuid(),
+            "connect-user-test-84621",
             "installation-1",
             "android",
             "Samsung",

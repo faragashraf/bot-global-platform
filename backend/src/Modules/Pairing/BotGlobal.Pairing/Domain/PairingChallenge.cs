@@ -10,6 +10,7 @@ public sealed class PairingChallenge
 {
     public const int TokenHashBytes = 32;
     public const int CorrelationReferenceMaxLength = 200;
+    public const int ExternalSubjectIdMaxLength = 200;
     public const int MobilePlatformMaxLength = 20;
     public const int MobileInstallationIdMaxLength = 128;
     public const int MobileDeviceNameMaxLength = 120;
@@ -22,6 +23,7 @@ public sealed class PairingChallenge
         Guid platformClientId,
         byte[] tokenHash,
         string? correlationReference,
+        string externalSubjectId,
         DateTimeOffset createdAtUtc,
         DateTimeOffset expiresAtUtc)
     {
@@ -29,6 +31,7 @@ public sealed class PairingChallenge
         PlatformClientId = platformClientId;
         TokenHash = tokenHash;
         CorrelationReference = correlationReference;
+        ExternalSubjectId = externalSubjectId;
         CreatedAtUtc = createdAtUtc;
         ExpiresAtUtc = expiresAtUtc;
         Status = PairingChallengeStatus.Pending;
@@ -39,6 +42,7 @@ public sealed class PairingChallenge
     public Guid PlatformClientId { get; private set; }
     public byte[] TokenHash { get; private set; } = [];
     public string? CorrelationReference { get; private set; }
+    public string? ExternalSubjectId { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset ExpiresAtUtc { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
@@ -53,6 +57,7 @@ public sealed class PairingChallenge
         Guid platformClientId,
         byte[] tokenHash,
         string? correlationReference,
+        string externalSubjectId,
         DateTimeOffset createdAtUtc,
         TimeSpan lifetime)
     {
@@ -70,6 +75,22 @@ public sealed class PairingChallenge
                 nameof(tokenHash));
         }
 
+        if (string.IsNullOrWhiteSpace(externalSubjectId))
+        {
+            throw new ArgumentException(
+                "External subject id is required.",
+                nameof(externalSubjectId));
+        }
+
+        var normalizedExternalSubjectId = externalSubjectId.Trim();
+
+        if (normalizedExternalSubjectId.Length > ExternalSubjectIdMaxLength)
+        {
+            throw new ArgumentException(
+                "External subject id is too long.",
+                nameof(externalSubjectId));
+        }
+
         if (lifetime <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(
@@ -82,6 +103,7 @@ public sealed class PairingChallenge
             platformClientId,
             tokenHash.ToArray(),
             NormalizeCorrelationReference(correlationReference),
+            normalizedExternalSubjectId,
             createdAtUtc,
             createdAtUtc.Add(lifetime));
     }
