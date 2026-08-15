@@ -452,10 +452,16 @@
           "displayName": "Display name",
           "displayNamePlaceholder": "Organization Gateway",
           "capabilities": "Capabilities",
-          "capabilitiesHint": "One capability per line, or separate with commas.",
+          "capabilitiesHint": "Select only the permissions this client requires.",
           "cancel": "Cancel",
           "submit": "Create client",
-          "saving": "Creating..."
+          "saving": "Creating...",
+          "action": "New client",
+          "subtitle": "Create a machine identity and grant only the access it requires.",
+          "clientKeyHint": "Stable technical identifier used by the application.",
+          "displayNameHint": "Friendly name shown to administrators.",
+          "selected": "selected",
+          "creating": "Creating…"
         },
         "secret": {
           "eyebrow": "One-time credential",
@@ -475,7 +481,23 @@
           "credentialActive": "Active",
           "credentialRevoked": "Revoked",
           "rotateError": "Unable to rotate the client secret.",
-          "revokeError": "Unable to revoke the credential."
+          "revokeError": "Unable to revoke the credential.",
+          "credentialDetails": "Credential details"
+        },
+        "summary": {
+          "clients": "Clients",
+          "active": "Active",
+          "credentials": "Credentials"
+        },
+        "actions": {
+          "manageAccess": "Manage access",
+          "rotateCredential": "Rotate credential",
+          "newPlatformClient": "New platform client",
+          "createAnother": "Create another machine identity"
+        },
+        "capabilities": {
+          "cancel": "Cancel",
+          "save": "Save changes"
         }
       }
     }

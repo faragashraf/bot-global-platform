@@ -445,17 +445,23 @@
           "created": "تاريخ الإنشاء"
         },
         "create": {
-          "eyebrow": "هوية نظام",
-          "title": "إنشاء عميل للمنصة",
+          "eyebrow": "هوية آلية",
+          "title": "إنشاء عميل منصة",
           "clientKey": "مفتاح العميل",
           "clientKeyPlaceholder": "organization-gateway",
           "displayName": "الاسم الظاهر",
           "displayNamePlaceholder": "Organization Gateway",
           "capabilities": "الصلاحيات",
-          "capabilitiesHint": "صلاحية واحدة في كل سطر، أو افصل بينها بفاصلة.",
+          "capabilitiesHint": "حدد فقط الصلاحيات التي يحتاج إليها هذا العميل.",
           "cancel": "إلغاء",
           "submit": "إنشاء العميل",
-          "saving": "جارٍ الإنشاء..."
+          "saving": "جارٍ الإنشاء...",
+          "action": "عميل جديد",
+          "subtitle": "أنشئ هوية آلية وامنحها فقط الصلاحيات التي تحتاج إليها.",
+          "clientKeyHint": "معرّف تقني ثابت يستخدمه التطبيق.",
+          "displayNameHint": "اسم واضح يظهر للمسؤولين.",
+          "selected": "محددة",
+          "creating": "جارٍ الإنشاء…"
         },
         "secret": {
           "eyebrow": "بيانات اعتماد لمرة واحدة",
@@ -475,7 +481,23 @@
           "credentialActive": "صالحة",
           "credentialRevoked": "ملغاة",
           "rotateError": "تعذر تدوير سر العميل.",
-          "revokeError": "تعذر إلغاء بيانات الاعتماد."
+          "revokeError": "تعذر إلغاء بيانات الاعتماد.",
+          "credentialDetails": "تفاصيل بيانات الاعتماد"
+        },
+        "summary": {
+          "clients": "العملاء",
+          "active": "النشطون",
+          "credentials": "بيانات الاعتماد"
+        },
+        "actions": {
+          "manageAccess": "إدارة الوصول",
+          "rotateCredential": "تدوير بيانات الاعتماد",
+          "newPlatformClient": "عميل منصة جديد",
+          "createAnother": "إنشاء هوية آلية جديدة"
+        },
+        "capabilities": {
+          "cancel": "إلغاء",
+          "save": "حفظ التغييرات"
         }
       }
     }
