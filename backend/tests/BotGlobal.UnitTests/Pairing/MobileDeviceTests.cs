@@ -24,6 +24,7 @@ public sealed class MobileDeviceTests
 
         device.RotateCredential(
             Enumerable.Repeat((byte)1, 32).ToArray(),
+            "connect-user-test-84621",
             "android",
             "Samsung A21s",
             "1.0.2",

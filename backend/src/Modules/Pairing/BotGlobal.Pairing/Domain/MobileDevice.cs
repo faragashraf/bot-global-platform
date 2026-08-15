@@ -35,6 +35,7 @@ public sealed class MobileDevice
         Platform = platform;
         DeviceName = deviceName;
         AppVersion = appVersion;
+        ExternalSubjectId = externalSubjectId.Trim();
         CredentialHash = credentialHash;
         CreatedAtUtc = createdAtUtc;
         LastPairedAtUtc = createdAtUtc;
@@ -67,6 +68,7 @@ public sealed class MobileDevice
 
     public void RotateCredential(
         byte[] credentialHash,
+        string externalSubjectId,
         string platform,
         string? deviceName,
         string? appVersion,
