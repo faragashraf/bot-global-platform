@@ -456,7 +456,6 @@ private fun GameplayScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, 
     val local = game.players.firstOrNull { it.membershipId == membershipId }
     val opponent = game.players.firstOrNull { it.membershipId != membershipId }
     val isLocalTurn = game.activePlayerMembershipId == membershipId
-    val winningCells = remember(game.board, game.ruleset) { winningCells(game) }
     Page(scroll = false) {
         PageHeader(text.xoTitle, text.exit, coordinator::exitGame)
         Spacer(Modifier.height(FamilyGamesSpacing.Md))
@@ -475,7 +474,7 @@ private fun GameplayScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, 
             modifier = Modifier.align(Alignment.CenterHorizontally).animateContentSize(),
         )
         Spacer(Modifier.height(FamilyGamesSpacing.Lg))
-        XoBoard(game, winningCells, isLocalTurn && !state.busy, text, coordinator::play)
+        XoBoard(game, isLocalTurn && !state.busy, text, coordinator::play)
         Spacer(Modifier.height(FamilyGamesSpacing.Lg))
         Text(text.voiceUnavailable, color = FamilyGamesColors.Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
     }
@@ -502,7 +501,7 @@ private fun ResultScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, co
         Spacer(Modifier.height(FamilyGamesSpacing.Md))
         Text(result, fontSize = 30.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(FamilyGamesSpacing.Lg))
-        XoBoard(game, winningCells(game), false, text) { _, _ -> }
+        XoBoard(game, false, text) { _, _ -> }
         Spacer(Modifier.weight(1f))
         PrimaryButton(buttonText, requester != membershipId) {
             if (requester == null) coordinator.requestRematch() else coordinator.acceptRematch()
@@ -515,70 +514,61 @@ private fun ResultScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, co
 @Composable
 private fun XoBoard(
     game: GameSessionSnapshot,
-    winningCells: Set<Int>,
     enabled: Boolean,
     text: FamilyGamesStrings,
     onCell: (Int, Int) -> Unit,
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(game.ruleset.boardSize),
-        userScrollEnabled = false,
-        modifier = Modifier.fillMaxWidth().aspectRatio(1f),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        itemsIndexed(game.board) { index, mark ->
-            val scale by animateFloatAsState(if (mark.isBlank()) .94f else 1f)
-            val cellDescription = if (mark.isBlank()) text.boardCellEmpty else text.boardCellMarked(mark.uppercase())
-            Box(
-                Modifier
-                    .aspectRatio(1f)
-                    .graphicsLayer(scaleX = scale, scaleY = scale)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(
-                        when {
-                            index in winningCells -> FamilyGamesColors.Gold.copy(alpha = .28f)
-                            mark == "x" -> FamilyGamesColors.Purple.copy(alpha = .25f)
-                            mark == "o" -> FamilyGamesColors.Coral.copy(alpha = .22f)
-                            else -> FamilyGamesColors.NightSoft
-                        },
+    val surroundingLayoutDirection = LocalLayoutDirection.current
+    val presentation = remember(game.board, game.ruleset, surroundingLayoutDirection) {
+        xoBoardPresentation(
+            board = game.board,
+            boardSize = game.ruleset.boardSize,
+            winLength = game.ruleset.winLength,
+            surroundingLayoutDirection = surroundingLayoutDirection,
+        )
+    }
+    CompositionLocalProvider(LocalLayoutDirection provides presentation.layoutDirection) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(game.ruleset.boardSize),
+            userScrollEnabled = false,
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            itemsIndexed(presentation.cells) { _, cell ->
+                val mark = cell.mark
+                val scale by animateFloatAsState(if (mark.isBlank()) .94f else 1f)
+                val cellDescription = if (mark.isBlank()) text.boardCellEmpty else text.boardCellMarked(mark.uppercase())
+                Box(
+                    Modifier
+                        .aspectRatio(1f)
+                        .graphicsLayer(scaleX = scale, scaleY = scale)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(
+                            when {
+                                cell.index in presentation.winningCellIndexes -> FamilyGamesColors.Gold.copy(alpha = .28f)
+                                mark == "x" -> FamilyGamesColors.Purple.copy(alpha = .25f)
+                                mark == "o" -> FamilyGamesColors.Coral.copy(alpha = .22f)
+                                else -> FamilyGamesColors.NightSoft
+                            },
+                        )
+                        .border(1.dp, FamilyGamesColors.Cream.copy(alpha = .09f), RoundedCornerShape(18.dp))
+                        .clickable(enabled = enabled && mark.isBlank()) {
+                            onCell(cell.row, cell.column)
+                        }
+                        .semantics { contentDescription = cellDescription },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        mark.uppercase(),
+                        fontSize = if (game.ruleset.boardSize == 3) 48.sp else 28.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (mark == "x") FamilyGamesColors.PurpleSoft else FamilyGamesColors.Coral,
                     )
-                    .border(1.dp, FamilyGamesColors.Cream.copy(alpha = .09f), RoundedCornerShape(18.dp))
-                    .clickable(enabled = enabled && mark.isBlank()) {
-                        onCell(index / game.ruleset.boardSize, index % game.ruleset.boardSize)
-                    }
-                    .semantics { contentDescription = cellDescription },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    mark.uppercase(),
-                    fontSize = if (game.ruleset.boardSize == 3) 48.sp else 28.sp,
-                    fontWeight = FontWeight.Black,
-                    color = if (mark == "x") FamilyGamesColors.PurpleSoft else FamilyGamesColors.Coral,
-                )
+                }
             }
         }
     }
-}
-
-private fun winningCells(game: GameSessionSnapshot): Set<Int> {
-    val size = game.ruleset.boardSize
-    val target = game.ruleset.winLength
-    val board = game.board
-    val directions = listOf(0 to 1, 1 to 0, 1 to 1, 1 to -1)
-    for (row in 0 until size) for (column in 0 until size) {
-        val mark = board[row * size + column]
-        if (mark.isBlank()) continue
-        for ((rowStep, columnStep) in directions) {
-            val cells = (0 until target).map { distance ->
-                val nextRow = row + rowStep * distance
-                val nextColumn = column + columnStep * distance
-                if (nextRow in 0 until size && nextColumn in 0 until size) nextRow * size + nextColumn else -1
-            }
-            if (cells.all { it >= 0 && board[it] == mark }) return cells.toSet()
-        }
-    }
-    return emptySet()
 }
 
 @Composable
