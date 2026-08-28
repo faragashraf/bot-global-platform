@@ -13,9 +13,13 @@ Confirm in Play Console that version code `1` has never been uploaded for this a
 
 ## Release connectivity
 
-Debug builds keep their isolated local endpoint override through `familyGamesDebugApiBaseUrl`. Release builds accept only the `familyGamesApiBaseUrl` Gradle property and validate that it is public HTTPS rather than localhost, an emulator address, or a private/LAN address.
+Debug builds keep their isolated local endpoint override through `familyGamesDebugApiBaseUrl`. Release builds use the approved canonical Bot Global API base `https://bgapi.challengershoes.com`; the build validates that it is public HTTPS rather than localhost, an emulator address, or a private/LAN address.
 
-Without that property, an unsigned structural release can still be compiled against the reserved `https://configure-family-games-api.invalid` placeholder. It is not operational for Play testers. A signed build is rejected unless a public HTTPS endpoint is supplied.
+HTTP APIs, invitation resolution, and the `/hubs/games` SignalR route are composed from the same normalized environment base. Release does not enable cleartext traffic.
+
+### Android 6 TLS compatibility blocker
+
+Runtime validation on 2026-08-29 found that the Huawei API 23 device cannot establish the deployed endpoint trust chain. The server presents `bgapi.challengershoes.com → YR1 → Root YR`, with Root YR issued by ISRG Root X1, while that device's system trust store has no ISRG Root X1. Samsung Android 12 connects successfully. Before including API 23 devices in Play testing, configure a publicly trusted server chain compatible with the supported Android range or review an explicit app trust-anchor policy; do not bypass certificate validation.
 
 ## Upload signing
 
@@ -44,11 +48,10 @@ Then build the owner-reviewed upload artifact:
 ```bash
 cd mobile
 ./gradlew \
-  -PfamilyGamesApiBaseUrl=https://approved-public-api.example \
   :FamilyGamesMobile:androidApp:bundleRelease
 ```
 
-The URL above is illustrative only; replace it with the approved Bot Global endpoint. Never commit the key, its passwords, or a local properties file.
+Never commit the key, its passwords, or a local properties file.
 
 ## Permission findings
 

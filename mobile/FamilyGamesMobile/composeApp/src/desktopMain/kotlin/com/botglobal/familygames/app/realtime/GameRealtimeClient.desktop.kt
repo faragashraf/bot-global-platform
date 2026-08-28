@@ -1,5 +1,6 @@
 package com.botglobal.familygames.app.realtime
 
+import com.botglobal.familygames.app.data.FamilyGamesEnvironment
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -14,4 +15,4 @@ private class DesktopRealtimeBoundary : GameRealtimeClient {
     override suspend fun rejoin() = Unit
 }
 
-actual fun createGameRealtimeClient(apiBaseUrl: String): GameRealtimeClient = DesktopRealtimeBoundary()
+actual fun createGameRealtimeClient(environment: FamilyGamesEnvironment): GameRealtimeClient = DesktopRealtimeBoundary()

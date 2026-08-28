@@ -16,10 +16,10 @@ fun releaseSetting(gradlePropertyName: String, environmentName: String): String?
 
 fun requirePublicHttpsEndpoint(value: String) {
     val uri = runCatching { URI(value) }.getOrElse {
-        throw GradleException("familyGamesApiBaseUrl must be a valid public HTTPS URL.")
+        throw GradleException("Release API base URL must be a valid public HTTPS URL.")
     }
     val host = uri.host?.lowercase()
-        ?: throw GradleException("familyGamesApiBaseUrl must include a valid host.")
+        ?: throw GradleException("Release API base URL must include a valid host.")
     val octets = host.split('.').mapNotNull(String::toIntOrNull)
     val isPrivateIpv4 = octets.size == 4 && (
         octets[0] == 10 ||
@@ -37,11 +37,7 @@ fun requirePublicHttpsEndpoint(value: String) {
     }
 }
 
-val releaseApiBaseUrl = providers.gradleProperty("familyGamesApiBaseUrl")
-    .orNull
-    ?.trim()
-    ?.takeIf(String::isNotEmpty)
-    ?.also(::requirePublicHttpsEndpoint)
+val releaseApiBaseUrl = "https://bgapi.challengershoes.com".also(::requirePublicHttpsEndpoint)
 val uploadStoreFile = releaseSetting("familyGamesUploadStoreFile", "LAMMA_UPLOAD_STORE_FILE")
 val uploadStorePassword = releaseSetting("familyGamesUploadStorePassword", "LAMMA_UPLOAD_STORE_PASSWORD")
 val uploadKeyAlias = releaseSetting("familyGamesUploadKeyAlias", "LAMMA_UPLOAD_KEY_ALIAS")
@@ -52,10 +48,6 @@ val uploadSigningConfigured = uploadSigningValues.all { it != null }
 if (uploadSigningValues.any { it != null } && !uploadSigningConfigured) {
     throw GradleException("Upload signing is partially configured. Provide all four Lamma upload signing values.")
 }
-if (uploadSigningConfigured && releaseApiBaseUrl == null) {
-    throw GradleException("A signed release requires familyGamesApiBaseUrl with a public HTTPS endpoint.")
-}
-
 dependencies {
     implementation(projects.familyGamesMobile.composeApp)
     implementation(libs.androidx.activity.compose)
@@ -112,8 +104,7 @@ android {
             if (uploadSigningConfigured) {
                 signingConfig = signingConfigs.getByName("upload")
             }
-            val configuredUrl = releaseApiBaseUrl ?: "https://configure-family-games-api.invalid"
-            buildConfigField("String", "API_BASE_URL", "\"$configuredUrl\"")
+            buildConfigField("String", "API_BASE_URL", "\"$releaseApiBaseUrl\"")
         }
     }
 

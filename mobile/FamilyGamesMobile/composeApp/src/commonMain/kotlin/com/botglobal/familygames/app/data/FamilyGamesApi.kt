@@ -46,7 +46,7 @@ interface FamilyGamesGateway {
 
 class FamilyGamesApi(
     platformClient: HttpClient,
-    private val baseUrl: String,
+    private val environment: FamilyGamesEnvironment,
     private val vault: SessionVault,
 ) : FamilyGamesGateway {
     private val json = Json { ignoreUnknownKeys = true }
@@ -55,7 +55,7 @@ class FamilyGamesApi(
     }
 
     override suspend fun versionPolicy(currentVersion: String, platform: String): AppVersionPolicy =
-        client.get("$baseUrl/api/mobile/family-games/version-policy") {
+        client.get(environment.endpoint("/api/mobile/family-games/version-policy")) {
             accept(ContentType.Application.Json)
             parameter("platform", platform)
             parameter("currentVersion", currentVersion)
@@ -64,19 +64,19 @@ class FamilyGamesApi(
     override suspend fun restore(): MobileSession? = vault.restore()
 
     override suspend fun continueAsGuest(displayName: String): MobileSession =
-        save(client.post("$baseUrl/api/mobile/family-games/identity/guest") {
+        save(client.post(environment.endpoint("/api/mobile/family-games/identity/guest")) {
             jsonRequest()
             setBody(GuestRequest(displayName))
         }.expect())
 
     override suspend fun login(userNameOrEmail: String, password: String): MobileSession =
-        save(client.post("$baseUrl/api/mobile/family-games/identity/login") {
+        save(client.post(environment.endpoint("/api/mobile/family-games/identity/login")) {
             jsonRequest()
             setBody(LoginRequest(userNameOrEmail, password))
         }.expect())
 
     override suspend fun register(request: RegistrationRequest): MobileSession =
-        save(client.post("$baseUrl/api/mobile/family-games/identity/register") {
+        save(client.post(environment.endpoint("/api/mobile/family-games/identity/register")) {
             jsonRequest()
             setBody(request)
         }.expect())
@@ -129,18 +129,18 @@ class FamilyGamesApi(
         dto.toDomain().also { vault.save(it) }
 
     private suspend fun authorizedGet(path: String): HttpResponse =
-        withRefresh { access -> client.get("$baseUrl$path") { authorize(access) } }
+        withRefresh { access -> client.get(environment.endpoint(path)) { authorize(access) } }
 
     private suspend fun authorizedPost(path: String): HttpResponse =
         withRefresh { access ->
-            client.post("$baseUrl$path") {
+            client.post(environment.endpoint(path)) {
                 authorize(access)
             }
         }
 
     private suspend inline fun <reified T> authorizedPost(path: String, body: T): HttpResponse =
         withRefresh { access ->
-            client.post("$baseUrl$path") {
+            client.post(environment.endpoint(path)) {
                 authorize(access)
                 setBody(body)
             }
@@ -150,7 +150,7 @@ class FamilyGamesApi(
         val session = vault.restore() ?: throw ApiException("session_missing", 401, "No mobile session is available.")
         val initial = block(session.accessToken)
         if (initial.status != HttpStatusCode.Unauthorized) return initial
-        val refreshed = client.post("$baseUrl/api/mobile/family-games/identity/refresh") {
+        val refreshed = client.post(environment.endpoint("/api/mobile/family-games/identity/refresh")) {
             jsonRequest()
             setBody(RefreshRequest(session.refreshToken))
         }.expect<MobileSessionDto>()

@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.botglobal.familygames.app.data.FamilyGamesApi
+import com.botglobal.familygames.app.data.FamilyGamesEnvironment
 import com.botglobal.familygames.app.data.GameSessionSnapshot
 import com.botglobal.familygames.app.data.PlayerSnapshot
 import com.botglobal.familygames.app.data.createPlatformHttpClient
@@ -119,8 +120,9 @@ fun FamilyGamesApp(
     },
 ) {
     val scope = rememberCoroutineScope()
+    val environment = remember(apiBaseUrl) { FamilyGamesEnvironment.from(apiBaseUrl) }
     val coordinator = remember(
-        apiBaseUrl,
+        environment,
         sessionVault,
         haptics,
         appVersion,
@@ -130,10 +132,10 @@ fun FamilyGamesApp(
         qrScanner,
         permissions,
     ) {
-        val gateway = FamilyGamesApi(createPlatformHttpClient(), apiBaseUrl.trimEnd('/'), sessionVault)
+        val gateway = FamilyGamesApi(createPlatformHttpClient(), environment, sessionVault)
         FamilyGamesCoordinator(
             gateway,
-            createGameRealtimeClient(apiBaseUrl.trimEnd('/')),
+            createGameRealtimeClient(environment),
             haptics,
             scope,
             appVersion,

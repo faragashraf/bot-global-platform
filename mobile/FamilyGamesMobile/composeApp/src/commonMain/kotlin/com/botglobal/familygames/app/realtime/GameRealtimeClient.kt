@@ -1,5 +1,6 @@
 package com.botglobal.familygames.app.realtime
 
+import com.botglobal.familygames.app.data.FamilyGamesEnvironment
 import com.botglobal.familygames.app.data.GameSessionSnapshot
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
 import kotlinx.coroutines.flow.Flow
@@ -18,4 +19,4 @@ interface GameRealtimeClient {
     suspend fun rejoin()
 }
 
-expect fun createGameRealtimeClient(apiBaseUrl: String): GameRealtimeClient
+expect fun createGameRealtimeClient(environment: FamilyGamesEnvironment): GameRealtimeClient

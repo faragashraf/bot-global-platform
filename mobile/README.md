@@ -31,7 +31,7 @@ The default emulator API URL is `http://10.0.2.2:5062`. A physical-device debug 
   :FamilyGamesMobile:androidApp:assembleDebug
 ```
 
-Release builds require the environment-specific `familyGamesApiBaseUrl` Gradle property. The checked-in invalid placeholder prevents an accidental fabricated production endpoint.
+Release builds use the approved public HTTPS Bot Global API base `https://bgapi.challengershoes.com`. Debug builds remain injectable through `familyGamesDebugApiBaseUrl` for local/LAN development.
 
 Invitation links default to the development-safe `familygames://invite` scheme. Override both the server `FamilyGames:Invitations:DeepLinkBase` and mobile `familyGamesInvitationLinkBase` together only when a verified public HTTPS association is available.
 

@@ -1,5 +1,6 @@
 package com.botglobal.familygames.app.realtime
 
+import com.botglobal.familygames.app.data.FamilyGamesEnvironment
 import com.botglobal.familygames.app.data.GameSessionSnapshot
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
 import com.microsoft.signalr.HubConnection
@@ -19,7 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 
 private class AndroidGameRealtimeClient(
-    private val apiBaseUrl: String,
+    private val environment: FamilyGamesEnvironment,
 ) : GameRealtimeClient {
     private val mutableState = MutableStateFlow(RealtimeConnectionState.Disconnected)
     private val mutableEvents = MutableSharedFlow<GameRealtimeEvent>(extraBufferCapacity = 32)
@@ -37,7 +38,7 @@ private class AndroidGameRealtimeClient(
         tokenProvider = accessToken
         mutableState.value = RealtimeConnectionState.Connecting
         val hub = HubConnectionBuilder
-            .create("$apiBaseUrl/hubs/games")
+            .create(environment.gamesHubUrl)
             .withAccessTokenProvider(
                 Single.defer {
                     val token = kotlinx.coroutines.runBlocking { tokenProvider?.invoke() }
@@ -124,5 +125,5 @@ private class AndroidGameRealtimeClient(
         }
 }
 
-actual fun createGameRealtimeClient(apiBaseUrl: String): GameRealtimeClient =
-    AndroidGameRealtimeClient(apiBaseUrl)
+actual fun createGameRealtimeClient(environment: FamilyGamesEnvironment): GameRealtimeClient =
+    AndroidGameRealtimeClient(environment)
