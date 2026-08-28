@@ -12,6 +12,10 @@ public sealed class IdentityDbContext(
         IdentityRole<Guid>,
         Guid>(options)
 {
+    public DbSet<ApplicationMembership> ApplicationMemberships => Set<ApplicationMembership>();
+
+    public DbSet<MobileApplicationSession> MobileApplicationSessions => Set<MobileApplicationSession>();
+
     protected override void OnModelCreating(
         ModelBuilder builder)
     {
@@ -55,5 +59,8 @@ public sealed class IdentityDbContext(
 
         builder.Entity<IdentityUserToken<Guid>>()
             .ToTable("UserTokens", "identity");
+
+        builder.ApplyConfiguration(new ApplicationMembershipConfiguration());
+        builder.ApplyConfiguration(new MobileApplicationSessionConfiguration());
     }
 }
