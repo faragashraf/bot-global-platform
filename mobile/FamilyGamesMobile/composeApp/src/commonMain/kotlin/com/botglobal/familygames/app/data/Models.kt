@@ -3,6 +3,7 @@ package com.botglobal.familygames.app.data
 import com.botglobal.mobile.platform.identity.ApplicationIdentity
 import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
+import com.botglobal.mobile.platform.invitations.GameInvitation
 import kotlinx.serialization.Serializable
 import com.botglobal.mobile.platform.update.AppVersionPolicy
 
@@ -81,6 +82,36 @@ data class AppVersionPolicyDto(
     )
 }
 @Serializable data class JoinSessionRequest(val joinCode: String)
+@Serializable data class ResolveInvitationRequest(val token: String)
+
+@Serializable
+data class GameInvitationDto(
+    val invitationId: String,
+    val sessionId: String,
+    val gameType: String,
+    val invitationToken: String,
+    val expiresAtUtc: String,
+    val inviterDisplayName: String,
+    val deepLink: String,
+    val joinCode: String? = null,
+) {
+    fun toDomain() = GameInvitation(
+        invitationId = invitationId,
+        sessionReference = sessionId,
+        gameType = gameType,
+        invitationToken = invitationToken,
+        expiresAtUtc = expiresAtUtc,
+        inviterDisplayName = inviterDisplayName,
+        deepLink = deepLink,
+        joinCode = joinCode,
+    )
+}
+
+@Serializable
+data class ResolvedGameInvitationDto(
+    val invitationId: String,
+    val session: GameSessionSnapshot,
+)
 @Serializable data class MoveRequest(
     val sessionId: String,
     val commandId: String,

@@ -14,6 +14,11 @@ interface PermissionController {
     suspend fun requestAfterExplanation(permission: PermissionKind): PermissionState
 }
 
+object UnavailablePermissionController : PermissionController {
+    override suspend fun state(permission: PermissionKind) = PermissionState.Unavailable
+    override suspend fun requestAfterExplanation(permission: PermissionKind) = PermissionState.Unavailable
+}
+
 data class LocationReading(
     val latitude: Double,
     val longitude: Double,

@@ -23,7 +23,8 @@ public sealed class GameSession
         string rulesetKey,
         int maximumPlayers,
         Guid createdByMembershipId,
-        DateTimeOffset createdAtUtc)
+        DateTimeOffset createdAtUtc,
+        string? requiredEntitlement = null)
     {
         Id = id;
         ApplicationKey = Require(applicationKey, nameof(applicationKey), 80);
@@ -34,6 +35,9 @@ public sealed class GameSession
             ? maximumPlayers
             : throw new ArgumentOutOfRangeException(nameof(maximumPlayers));
         CreatedByMembershipId = createdByMembershipId;
+        RequiredEntitlement = string.IsNullOrWhiteSpace(requiredEntitlement)
+            ? null
+            : Require(requiredEntitlement, nameof(requiredEntitlement), 120);
         CreatedAtUtc = createdAtUtc;
         LastActivityAtUtc = createdAtUtc;
         Status = GameSessionStatus.Waiting;
@@ -46,6 +50,7 @@ public sealed class GameSession
     public string RulesetKey { get; private set; } = null!;
     public int MaximumPlayers { get; private set; }
     public Guid CreatedByMembershipId { get; private set; }
+    public string? RequiredEntitlement { get; private set; }
     public GameSessionStatus Status { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset LastActivityAtUtc { get; private set; }

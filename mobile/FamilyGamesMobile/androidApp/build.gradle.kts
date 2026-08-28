@@ -9,7 +9,12 @@ dependencies {
     implementation(projects.familyGamesMobile.composeApp)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.fragment)
+    implementation(libs.compose.foundation)
     implementation(libs.compose.uiToolingPreview)
+    implementation(libs.zxing.core.api23)
+    implementation(libs.zxing.android.embedded) {
+        isTransitive = false
+    }
 }
 
 android {
@@ -23,6 +28,9 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
+        val invitationLinkBase = providers.gradleProperty("familyGamesInvitationLinkBase").orNull
+            ?: "familygames://invite"
+        buildConfigField("String", "INVITATION_LINK_BASE", "\"$invitationLinkBase\"")
     }
 
     buildTypes {

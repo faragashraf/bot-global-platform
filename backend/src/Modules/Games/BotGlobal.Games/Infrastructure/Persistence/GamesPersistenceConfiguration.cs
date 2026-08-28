@@ -1,9 +1,27 @@
+using BotGlobal.Games.Domain.Invitations;
 using BotGlobal.Games.Domain.Sessions;
 using BotGlobal.Games.Domain.Xo;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace BotGlobal.Games.Infrastructure.Persistence;
+
+internal sealed class GameInvitationConfiguration : IEntityTypeConfiguration<GameInvitation>
+{
+    public void Configure(EntityTypeBuilder<GameInvitation> builder)
+    {
+        builder.ToTable("Invitations");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.ApplicationKey).HasMaxLength(80).IsRequired();
+        builder.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
+        builder.HasIndex(x => x.TokenHash).IsUnique();
+        builder.HasIndex(x => new { x.ApplicationKey, x.SessionId, x.ExpiresAtUtc });
+        builder.HasOne<GameSession>()
+            .WithMany()
+            .HasForeignKey(x => x.SessionId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
 
 internal sealed class GameSessionConfiguration : IEntityTypeConfiguration<GameSession>
 {
@@ -15,6 +33,7 @@ internal sealed class GameSessionConfiguration : IEntityTypeConfiguration<GameSe
         builder.Property(x => x.JoinCode).HasMaxLength(12).IsRequired();
         builder.Property(x => x.GameType).HasMaxLength(40).IsRequired();
         builder.Property(x => x.RulesetKey).HasMaxLength(80).IsRequired();
+        builder.Property(x => x.RequiredEntitlement).HasMaxLength(120);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
         builder.HasIndex(x => new { x.ApplicationKey, x.JoinCode }).IsUnique();
         builder.HasIndex(x => new { x.ApplicationKey, x.LastActivityAtUtc });

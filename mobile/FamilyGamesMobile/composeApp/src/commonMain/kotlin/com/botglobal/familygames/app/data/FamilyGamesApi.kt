@@ -2,6 +2,7 @@ package com.botglobal.familygames.app.data
 
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.identity.SessionVault
+import com.botglobal.mobile.platform.invitations.GameInvitation
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -34,6 +35,8 @@ interface FamilyGamesGateway {
     suspend fun activeSession(): GameSessionSnapshot?
     suspend fun createSession(rulesetKey: String): GameSessionSnapshot
     suspend fun joinSession(code: String): GameSessionSnapshot
+    suspend fun createInvitation(sessionId: String): GameInvitation
+    suspend fun resolveInvitation(token: String): GameSessionSnapshot
     suspend fun ready(sessionId: String): GameSessionSnapshot
     suspend fun rejoin(sessionId: String): GameSessionSnapshot
     suspend fun move(request: MoveRequest): GameSessionSnapshot
@@ -95,6 +98,17 @@ class FamilyGamesApi(
 
     override suspend fun joinSession(code: String): GameSessionSnapshot =
         authorizedPost("/api/games/sessions/join", JoinSessionRequest(code.trim().uppercase())).expect()
+
+    override suspend fun createInvitation(sessionId: String): GameInvitation =
+        authorizedPost("/api/games/sessions/$sessionId/invitations")
+            .expect<GameInvitationDto>()
+            .toDomain()
+
+    override suspend fun resolveInvitation(token: String): GameSessionSnapshot =
+        authorizedPost(
+            "/api/games/invitations/resolve",
+            ResolveInvitationRequest(token.trim()),
+        ).expect<ResolvedGameInvitationDto>().session
 
     override suspend fun ready(sessionId: String): GameSessionSnapshot =
         authorizedPost("/api/games/sessions/$sessionId/ready").expect()

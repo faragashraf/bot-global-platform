@@ -36,9 +36,17 @@ The mobile stale guard orders snapshots by `(matchNumber, version)`: a rematch m
 
 XO board geometry is locale-invariant. Compose RTL remains active for Arabic navigation and text, while the board creates a local LTR layout boundary around the server's row-major coordinates. No locale-dependent DTO or index transformation is permitted.
 
+## Game invitations
+
+Game invitations are a generic Games capability rather than an XO rule. An authenticated session participant requests a short-lived invitation; the server returns the raw opaque token once and stores only its SHA-256 hash. Resolution derives application membership from authenticated claims, then validates application scope, expiry, active status, session joinability, entitlement, and participation before the existing authoritative join service admits the player. A successful resolution consumes the token, and creating a replacement revokes prior active invitations for that session.
+
+The shared mobile layer owns the locale-invariant invitation link codec and localized share-message formatter. Family Games state resolves links through the backend and accepts only the returned authoritative session snapshot. Android owns native QR rendering/scanning, the system share sheet, incoming intent handling, and the just-in-time camera permission launcher. No XO domain type references camera, QR, sharing, or deep-link APIs.
+
+Development uses `familygames://invite/{opaqueToken}`. `FamilyGames:Invitations:DeepLinkBase` on the server and the `familyGamesInvitationLinkBase` Gradle property form the environment boundary for a future associated HTTPS domain. App Links/Universal Links must not be claimed until the public association files and platform configuration are deployed.
+
 ## Reusable capability boundaries
 
-- `mobile/shared`: identity/session vault, biometrics, semantic haptics, permissions, location, notifications/inbox, realtime lifecycle, update decisions, semantic entitlements, billing provider, and WebRTC/ICE voice-room contracts.
+- `mobile/shared`: identity/session vault, biometrics, semantic haptics, permissions, location, invitations/link parsing/share contracts, notifications/inbox, realtime lifecycle, update decisions, semantic entitlements, billing provider, and WebRTC/ICE voice-room contracts.
 - `mobile/FamilyGamesMobile/composeApp`: Family Games navigation/state, API DTOs, game realtime adapter, localization, design system, and screens.
 - `mobile/FamilyGamesMobile/androidApp`: Android process/activity, API build configuration, deep-link manifest, and native platform construction.
 - iOS: the same framework compiles for device/simulator. Swift must provide the native Keychain/session and app shell integrations; APNs, StoreKit, permissions, and native WebRTC remain platform adapters rather than shared business code.

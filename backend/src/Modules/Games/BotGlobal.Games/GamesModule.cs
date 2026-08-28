@@ -1,4 +1,5 @@
 using BotGlobal.Games.Application.Entitlements;
+using BotGlobal.Games.Application.Invitations;
 using BotGlobal.Games.Application.Sessions;
 using BotGlobal.Games.Application.Startup;
 using BotGlobal.Games.Endpoints;
@@ -35,8 +36,19 @@ public static class GamesModule
         services.AddSignalR(options => options.EnableDetailedErrors = false);
         services.Configure<FamilyGamesVersionPolicyOptions>(
             configuration.GetSection(FamilyGamesVersionPolicyOptions.SectionName));
+        services.AddOptions<GameInvitationOptions>()
+            .Bind(configuration.GetSection(GameInvitationOptions.SectionName))
+            .Validate(
+                value => value.LifetimeMinutes is >= 1 and <= 1440,
+                "Family Games invitation lifetime must be between 1 and 1440 minutes.")
+            .Validate(
+                value => Uri.TryCreate(value.DeepLinkBase, UriKind.Absolute, out var link) &&
+                    (link.Scheme == "familygames" || link.Scheme == Uri.UriSchemeHttps),
+                "Family Games invitation deep links require the familygames or HTTPS scheme.")
+            .ValidateOnStart();
         services.AddSingleton<ApplicationVersionPolicyReader>();
         services.AddScoped<IGameSessionService, GameSessionService>();
+        services.AddScoped<IGameInvitationService, GameInvitationService>();
         services.AddScoped<IGameEntitlementAuthorizer, FreeGameEntitlementAuthorizer>();
         services.AddScoped<IGameNotificationPublisher, DeferredGameNotificationPublisher>();
         services.AddScoped<IGameRealtimeNotifier, GameRealtimeNotifier>();

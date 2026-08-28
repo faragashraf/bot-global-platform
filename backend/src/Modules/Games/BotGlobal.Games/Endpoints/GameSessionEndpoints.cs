@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Games.Application.Invitations;
 using BotGlobal.Games.Application.Sessions;
 using BotGlobal.Games.Application.Startup;
 using Microsoft.AspNetCore.Builder;
@@ -92,10 +93,27 @@ internal static class GameSessionEndpoints
             CancellationToken cancellationToken) =>
             ToResult(await service.AcceptRematchAsync(ToIdentity(principal), sessionId, cancellationToken)));
 
+        group.MapPost("/{sessionId:guid}/invitations", async (
+            Guid sessionId,
+            ClaimsPrincipal principal,
+            IGameInvitationService service,
+            CancellationToken cancellationToken) =>
+            ToResult(await service.CreateAsync(ToIdentity(principal), sessionId, cancellationToken)));
+
+        endpoints.MapPost(
+                "/api/games/invitations/resolve",
+                async (
+                    ResolveGameInvitationRequest request,
+                    ClaimsPrincipal principal,
+                    IGameInvitationService service,
+                    CancellationToken cancellationToken) =>
+                    ToResult(await service.ResolveAsync(ToIdentity(principal), request, cancellationToken)))
+            .RequireAuthorization(ApplicationIdentityPolicies.For(BotGlobalApplications.FamilyGames));
+
         return endpoints;
     }
 
-    private static IResult ToResult(GameCommandResult<GameSessionSnapshot> result) =>
+    private static IResult ToResult<T>(GameCommandResult<T> result) =>
         result.Succeeded
             ? Results.Json(result.Value, statusCode: result.StatusCode)
             : Results.Problem(

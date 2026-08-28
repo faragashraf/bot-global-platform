@@ -7,9 +7,25 @@ import com.botglobal.familygames.app.data.MoveRequest
 import com.botglobal.familygames.app.data.RegistrationRequest
 import com.botglobal.familygames.app.realtime.GameRealtimeClient
 import com.botglobal.mobile.platform.device.HapticEvent
+import com.botglobal.mobile.platform.device.PermissionController
+import com.botglobal.mobile.platform.device.PermissionKind
+import com.botglobal.mobile.platform.device.PermissionState
+import com.botglobal.mobile.platform.device.UnavailablePermissionController
 import com.botglobal.mobile.platform.device.SemanticHaptics
 import com.botglobal.mobile.platform.identity.MobileSession
+import com.botglobal.mobile.platform.invitations.GameInvitation
+import com.botglobal.mobile.platform.invitations.InvitationLinkCodec
+import com.botglobal.mobile.platform.invitations.InvitationLinkResult
+import com.botglobal.mobile.platform.invitations.InvitationMessageLanguage
+import com.botglobal.mobile.platform.invitations.InvitationShareFormatter
+import com.botglobal.mobile.platform.invitations.PlatformShareCapability
+import com.botglobal.mobile.platform.invitations.QrScanResult
+import com.botglobal.mobile.platform.invitations.QrScannerCapability
+import com.botglobal.mobile.platform.invitations.UnavailablePlatformShare
+import com.botglobal.mobile.platform.invitations.UnavailableQrScanner
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
+import com.botglobal.mobile.platform.update.UpdateMode
+import com.botglobal.mobile.platform.update.UpdatePolicyEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,8 +35,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.random.Random
-import com.botglobal.mobile.platform.update.UpdateMode
-import com.botglobal.mobile.platform.update.UpdatePolicyEngine
 
 enum class AppScreen {
     Startup,
@@ -50,6 +64,9 @@ data class FamilyGamesUiState(
     val optionalUpdateVisible: Boolean = false,
     val updateMessage: String? = null,
     val storeDestination: String? = null,
+    val invitation: GameInvitation? = null,
+    val cameraExplanationVisible: Boolean = false,
+    val pendingInvitationToken: String? = null,
 )
 
 class FamilyGamesCoordinator(
@@ -59,6 +76,10 @@ class FamilyGamesCoordinator(
     private val scope: CoroutineScope,
     private val currentVersion: String = "0.1.0",
     private val platform: String = "android",
+    private val invitationLinks: InvitationLinkCodec = InvitationLinkCodec("familygames://invite"),
+    private val platformShare: PlatformShareCapability = UnavailablePlatformShare,
+    private val qrScanner: QrScannerCapability = UnavailableQrScanner,
+    private val permissions: PermissionController = UnavailablePermissionController,
 ) {
     private val mutableState = MutableStateFlow(FamilyGamesUiState())
     val state: StateFlow<FamilyGamesUiState> = mutableState.asStateFlow()
@@ -99,6 +120,7 @@ class FamilyGamesCoordinator(
         }
 
         mutableState.update { it.copy(mobileSession = restored) }
+        if (resolvePendingInvitationIfAvailable()) return@launchAction
         val active = runCatching { gateway.activeSession() }.getOrNull()
         if (active == null) {
             mutableState.update { it.copy(screen = AppScreen.Home) }
@@ -113,18 +135,21 @@ class FamilyGamesCoordinator(
         val session = gateway.continueAsGuest(displayName.trim())
         mutableState.update { it.copy(mobileSession = session, screen = AppScreen.Home) }
         haptics.perform(HapticEvent.Success)
+        resolvePendingInvitationIfAvailable()
     }
 
     fun signIn(userNameOrEmail: String, password: String) = launchAction {
         val session = gateway.login(userNameOrEmail.trim(), password)
         mutableState.update { it.copy(mobileSession = session, screen = AppScreen.Home) }
         haptics.perform(HapticEvent.Success)
+        resolvePendingInvitationIfAvailable()
     }
 
     fun register(userName: String, email: String, displayName: String, password: String) = launchAction {
         val session = gateway.register(RegistrationRequest(userName, email, displayName, password))
         mutableState.update { it.copy(mobileSession = session, screen = AppScreen.Home) }
         haptics.perform(HapticEvent.Success)
+        resolvePendingInvitationIfAvailable()
     }
 
     fun showSignIn() = navigate(AppScreen.SignIn)
@@ -154,6 +179,88 @@ class FamilyGamesCoordinator(
         val snapshot = gateway.joinSession(code)
         onAuthoritativeSnapshot(snapshot)
         connectRealtime(snapshot.sessionId)
+    }
+
+    fun showInvitation() = launchAction {
+        val invitation = gateway.createInvitation(requireGame().sessionId)
+        mutableState.update { it.copy(invitation = invitation) }
+        haptics.perform(HapticEvent.LightImpact)
+    }
+
+    fun dismissInvitation() {
+        mutableState.update { it.copy(invitation = null) }
+    }
+
+    fun shareInvitation(gameName: String) {
+        val invitation = mutableState.value.invitation ?: return
+        val language = when (mutableState.value.language) {
+            AppLanguage.Arabic -> InvitationMessageLanguage.Arabic
+            AppLanguage.English -> InvitationMessageLanguage.English
+        }
+        if (platformShare.share(
+                InvitationShareFormatter.format(
+                    language,
+                    gameName,
+                    invitation.deepLink,
+                    invitation.joinCode,
+                ),
+            )
+        ) {
+            haptics.perform(HapticEvent.ImportantAction)
+        } else {
+            mutableState.update { it.copy(errorCode = "share_unavailable") }
+            haptics.perform(HapticEvent.Warning)
+        }
+    }
+
+    fun showCameraExplanation() {
+        mutableState.update { it.copy(cameraExplanationVisible = true, errorCode = null) }
+    }
+
+    fun dismissCameraExplanation() {
+        mutableState.update { it.copy(cameraExplanationVisible = false) }
+    }
+
+    fun confirmCameraAndScan(scanPrompt: String) = launchAction {
+        mutableState.update { it.copy(cameraExplanationVisible = false) }
+        val currentPermission = permissions.state(PermissionKind.Camera)
+        val permission = if (currentPermission == PermissionState.Granted) {
+            currentPermission
+        } else {
+            permissions.requestAfterExplanation(PermissionKind.Camera)
+        }
+        if (permission != PermissionState.Granted) {
+            mutableState.update { it.copy(errorCode = "camera_permission_denied") }
+            haptics.perform(HapticEvent.Warning)
+            return@launchAction
+        }
+
+        when (val scan = qrScanner.scan(scanPrompt)) {
+            is QrScanResult.Recognized -> {
+                haptics.perform(HapticEvent.Selection)
+                resolveInvitationCandidate(scan.content)
+            }
+            QrScanResult.Cancelled -> Unit
+            QrScanResult.Unavailable -> {
+                mutableState.update { it.copy(errorCode = "qr_scanner_unavailable") }
+                haptics.perform(HapticEvent.Warning)
+            }
+        }
+    }
+
+    fun handleInvitationLink(candidate: String) {
+        val token = parseInvitationToken(candidate) ?: return
+        if (mutableState.value.mobileSession == null) {
+            mutableState.update {
+                it.copy(
+                    pendingInvitationToken = token,
+                    screen = if (it.screen == AppScreen.Startup) it.screen else AppScreen.Welcome,
+                    errorCode = null,
+                )
+            }
+            return
+        }
+        launchAction { resolveInvitation(token) }
     }
 
     fun ready() = launchAction {
@@ -229,7 +336,7 @@ class FamilyGamesCoordinator(
 
     fun exitGame() = launchAction {
         realtime.stop()
-        mutableState.update { it.copy(game = null, screen = AppScreen.Home) }
+        mutableState.update { it.copy(game = null, invitation = null, screen = AppScreen.Home) }
     }
 
     fun logout() = launchAction {
@@ -295,6 +402,51 @@ class FamilyGamesCoordinator(
             mutableState.update { it.copy(errorCode = "recovery_failed") }
             haptics.perform(HapticEvent.Error)
         }
+    }
+
+    private suspend fun resolveInvitationCandidate(candidate: String) {
+        val token = parseInvitationToken(candidate) ?: return
+        if (mutableState.value.mobileSession == null) {
+            mutableState.update {
+                it.copy(
+                    pendingInvitationToken = token,
+                    screen = AppScreen.Welcome,
+                    errorCode = null,
+                )
+            }
+            return
+        }
+        resolveInvitation(token)
+    }
+
+    private fun parseInvitationToken(candidate: String): String? =
+        when (val parsed = invitationLinks.parse(candidate)) {
+            is InvitationLinkResult.Valid -> parsed.token
+            InvitationLinkResult.Invalid -> {
+                mutableState.update { it.copy(errorCode = "invitation_invalid") }
+                haptics.perform(HapticEvent.Error)
+                null
+            }
+        }
+
+    private suspend fun resolvePendingInvitationIfAvailable(): Boolean {
+        val token = mutableState.value.pendingInvitationToken ?: return false
+        resolveInvitation(token)
+        return true
+    }
+
+    private suspend fun resolveInvitation(token: String) {
+        val snapshot = gateway.resolveInvitation(token)
+        mutableState.update {
+            it.copy(
+                pendingInvitationToken = null,
+                invitation = null,
+                errorCode = null,
+            )
+        }
+        onAuthoritativeSnapshot(snapshot)
+        connectRealtime(snapshot.sessionId)
+        haptics.perform(HapticEvent.Success)
     }
 
     private fun onAuthoritativeSnapshot(

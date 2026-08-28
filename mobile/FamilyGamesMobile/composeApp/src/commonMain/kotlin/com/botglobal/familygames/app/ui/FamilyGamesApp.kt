@@ -35,6 +35,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -70,6 +71,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.botglobal.familygames.app.data.FamilyGamesApi
 import com.botglobal.familygames.app.data.GameSessionSnapshot
 import com.botglobal.familygames.app.data.PlayerSnapshot
@@ -79,8 +81,16 @@ import com.botglobal.familygames.app.state.AppLanguage
 import com.botglobal.familygames.app.state.AppScreen
 import com.botglobal.familygames.app.state.FamilyGamesCoordinator
 import com.botglobal.familygames.app.state.FamilyGamesUiState
+import com.botglobal.mobile.platform.device.PermissionController
 import com.botglobal.mobile.platform.device.SemanticHaptics
+import com.botglobal.mobile.platform.device.UnavailablePermissionController
 import com.botglobal.mobile.platform.identity.SessionVault
+import com.botglobal.mobile.platform.invitations.GameInvitation
+import com.botglobal.mobile.platform.invitations.InvitationLinkCodec
+import com.botglobal.mobile.platform.invitations.PlatformShareCapability
+import com.botglobal.mobile.platform.invitations.QrScannerCapability
+import com.botglobal.mobile.platform.invitations.UnavailablePlatformShare
+import com.botglobal.mobile.platform.invitations.UnavailableQrScanner
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -94,9 +104,32 @@ fun FamilyGamesApp(
     platform: String = "android",
     openExternalUrl: (String) -> Unit = {},
     foregroundEvents: Flow<Unit> = emptyFlow(),
+    invitationLinks: Flow<String> = emptyFlow(),
+    invitationLinkBase: String = "familygames://invite",
+    platformShare: PlatformShareCapability = UnavailablePlatformShare,
+    qrScanner: QrScannerCapability = UnavailableQrScanner,
+    permissions: PermissionController = UnavailablePermissionController,
+    invitationQr: @Composable (String, String, Modifier) -> Unit = { _, description, modifier ->
+        Box(
+            modifier
+                .background(Color.White)
+                .semantics { contentDescription = description },
+            contentAlignment = Alignment.Center,
+        ) { Text("QR", color = Color.Black, fontSize = 36.sp, fontWeight = FontWeight.Black) }
+    },
 ) {
     val scope = rememberCoroutineScope()
-    val coordinator = remember(apiBaseUrl, sessionVault, haptics) {
+    val coordinator = remember(
+        apiBaseUrl,
+        sessionVault,
+        haptics,
+        appVersion,
+        platform,
+        invitationLinkBase,
+        platformShare,
+        qrScanner,
+        permissions,
+    ) {
         val gateway = FamilyGamesApi(createPlatformHttpClient(), apiBaseUrl.trimEnd('/'), sessionVault)
         FamilyGamesCoordinator(
             gateway,
@@ -105,6 +138,10 @@ fun FamilyGamesApp(
             scope,
             appVersion,
             platform,
+            InvitationLinkCodec(invitationLinkBase),
+            platformShare,
+            qrScanner,
+            permissions,
         )
     }
     val state by coordinator.state.collectAsState()
@@ -114,6 +151,9 @@ fun FamilyGamesApp(
     LaunchedEffect(coordinator) { coordinator.startup() }
     LaunchedEffect(coordinator, foregroundEvents) {
         foregroundEvents.collect { coordinator.resumeAfterForeground() }
+    }
+    LaunchedEffect(coordinator, invitationLinks) {
+        invitationLinks.collect(coordinator::handleInvitationLink)
     }
     DisposableEffect(coordinator) {
         onDispose(coordinator::dispose)
@@ -152,6 +192,22 @@ fun FamilyGamesApp(
                         ErrorBanner(text.error(state.errorCode))
                     }
                     if (state.busy) LoadingOverlay(text.loading)
+                    state.invitation?.let { invitation ->
+                        InvitationSurface(
+                            text = text,
+                            invitation = invitation,
+                            invitationQr = invitationQr,
+                            onShare = { coordinator.shareInvitation(text.xoTitle) },
+                            onDismiss = coordinator::dismissInvitation,
+                        )
+                    }
+                    if (state.cameraExplanationVisible) {
+                        CameraExplanationDialog(
+                            text,
+                            { coordinator.confirmCameraAndScan(text.scanInvitationPrompt) },
+                            coordinator::dismissCameraExplanation,
+                        )
+                    }
                 }
             }
         }
@@ -421,6 +477,11 @@ private fun CreateJoinScreen(text: FamilyGamesStrings, coordinator: FamilyGamesC
             enabled = code.length == 6,
             modifier = Modifier.fillMaxWidth().height(54.dp),
         ) { Text(text.joinGame, fontWeight = FontWeight.Bold) }
+        Spacer(Modifier.height(FamilyGamesSpacing.Md))
+        OutlinedButton(
+            onClick = coordinator::showCameraExplanation,
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+        ) { Text(text.scanQr, fontWeight = FontWeight.Bold) }
     }
 }
 
@@ -447,6 +508,12 @@ private fun LobbyScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, coo
         if (game.players.size < 2) {
             Spacer(Modifier.height(FamilyGamesSpacing.Lg))
             Text(text.waitingOpponent, color = FamilyGamesColors.Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
+            Spacer(Modifier.height(FamilyGamesSpacing.Md))
+            OutlinedButton(
+                onClick = coordinator::showInvitation,
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+            ) { Text(text.invitePlayer, fontWeight = FontWeight.Bold) }
         }
         Spacer(Modifier.weight(1f))
         ConnectionPill(
@@ -461,6 +528,67 @@ private fun LobbyScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, coo
             local?.isReady != true && state.connection == RealtimeConnectionState.Connected,
         ) { coordinator.ready() }
     }
+}
+
+@Composable
+private fun InvitationSurface(
+    text: FamilyGamesStrings,
+    invitation: GameInvitation,
+    invitationQr: @Composable (String, String, Modifier) -> Unit,
+    onShare: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = FamilyGamesColors.NightSoft),
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(FamilyGamesSpacing.Lg),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(text.invitationTitle, fontSize = 26.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+                Text(text.invitationSubtitle, color = FamilyGamesColors.Muted, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(FamilyGamesSpacing.Lg))
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    invitationQr(
+                        invitation.deepLink,
+                        text.invitationQrDescription,
+                        Modifier.size(220.dp).clip(RoundedCornerShape(18.dp)),
+                    )
+                }
+                Spacer(Modifier.height(FamilyGamesSpacing.Lg))
+                invitation.joinCode?.let { joinCode ->
+                    Text(text.joinCode, color = FamilyGamesColors.Muted)
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Text(joinCode, fontSize = 32.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp)
+                    }
+                    Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+                }
+                Text(text.inviteExpiresSoon, color = FamilyGamesColors.Gold, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(FamilyGamesSpacing.Lg))
+                PrimaryButton(text.shareInvitation, true, onShare)
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(text.close) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CameraExplanationDialog(
+    text: FamilyGamesStrings,
+    onContinue: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text.cameraTitle, fontWeight = FontWeight.Black) },
+        text = { Text(text.cameraReason) },
+        confirmButton = { TextButton(onClick = onContinue) { Text(text.continueCamera) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(text.cancel) } },
+    )
 }
 
 @Composable

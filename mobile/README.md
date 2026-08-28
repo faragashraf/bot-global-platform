@@ -33,6 +33,8 @@ The default emulator API URL is `http://10.0.2.2:5062`. A physical-device debug 
 
 Release builds require the environment-specific `familyGamesApiBaseUrl` Gradle property. The checked-in invalid placeholder prevents an accidental fabricated production endpoint.
 
+Invitation links default to the development-safe `familygames://invite` scheme. Override both the server `FamilyGames:Invitations:DeepLinkBase` and mobile `familyGamesInvitationLinkBase` together only when a verified public HTTPS association is available.
+
 ## Platform capability status
 
 - Identity: guest, login, registration, logout, refresh, restoration, and upgrade-compatible models are implemented against central backend identity.
@@ -42,6 +44,7 @@ Release builds require the environment-specific `familyGamesApiBaseUrl` Gradle p
 - Haptics: semantic Android implementation; UI never vibrates directly.
 - Biometrics: shared contract and Android biometric/device-credential gate. It unlocks an existing session only; enablement preferences are a later slice.
 - Permissions/location: centralized least-privilege contracts; Family Games does not request location.
+- Invitations: shared locale-invariant link/message contracts, server-issued opaque tokens, Android QR scanning/rendering, incoming deep links, and the native system share sheet are implemented. Camera permission is requested only after the player selects scanning and confirms the explanation.
 - Notifications: semantic inbox/push/foreground contracts are present. FCM/APNs product registration is intentionally not configured without production projects/credentials.
 - Updates: shared decision engine plus server-owned Android/iOS version policy and required/optional UI.
 - Entitlements/billing: semantic entitlement engine and provider boundaries; free classic XO is not blocked by billing.

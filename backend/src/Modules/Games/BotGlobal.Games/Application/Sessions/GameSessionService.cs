@@ -60,7 +60,8 @@ internal sealed class GameSessionService(
             ruleset.Key,
             ruleset.PlayerCount,
             identity.MembershipId,
-            now);
+            now,
+            ruleset.RequiredEntitlement);
         session.AddPlayer(identity.MembershipId, identity.DisplayName, now);
         var state = new XoSessionState(session.Id, ruleset);
         dbContext.Sessions.Add(session);
@@ -95,6 +96,11 @@ internal sealed class GameSessionService(
         }
 
         var (session, state, moves) = loaded.Value;
+        if (!await entitlements.IsAllowedAsync(identity.MembershipId, session.RequiredEntitlement, cancellationToken))
+        {
+            return Fail("entitlement_required", "The requested game mode is not included in this membership.", 403);
+        }
+
         var alreadyJoined = session.Players.Any(x => x.MembershipId == identity.MembershipId);
         try
         {
@@ -112,7 +118,19 @@ internal sealed class GameSessionService(
             return Fail("session_not_joinable", "The session is full or has already started.", 409);
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            logger.LogWarning(
+                "Concurrent join rejected for membership {MembershipId} in session {SessionId}",
+                identity.MembershipId,
+                session.Id);
+            return Fail("session_not_joinable", "The session is full or has already started.", 409);
+        }
+
         var snapshot = BuildSnapshot(session, state, moves, identity.MembershipId);
         logger.LogInformation(
             "Membership {MembershipId} joined game session {SessionId}",

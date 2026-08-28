@@ -14,6 +14,12 @@ import com.botglobal.mobile.platform.identity.ApplicationIdentity
 import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
+import com.botglobal.mobile.platform.invitations.GameInvitation
+import com.botglobal.mobile.platform.invitations.QrScanResult
+import com.botglobal.mobile.platform.invitations.QrScannerCapability
+import com.botglobal.mobile.platform.device.PermissionController
+import com.botglobal.mobile.platform.device.PermissionKind
+import com.botglobal.mobile.platform.device.PermissionState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -239,6 +245,96 @@ class FamilyGamesCoordinatorTests {
         coordinator.dispose()
     }
 
+    @Test
+    fun host_can_create_reusable_invitation_presentation_state() = runTest {
+        val gateway = FakeGateway(restored = mobileSession, active = game())
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.showInvitation()
+        advanceUntilIdle()
+
+        assertEquals("invite-1", coordinator.state.value.invitation?.invitationId)
+        assertEquals("ABC123", coordinator.state.value.invitation?.joinCode)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun valid_deep_link_resolves_authoritatively_and_opens_joined_lobby() = runTest {
+        val gateway = FakeGateway(restored = mobileSession, resolvedInvitation = game())
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.handleInvitationLink("familygames://invite/AbCdEf0123456789_opaque-token")
+        advanceUntilIdle()
+
+        assertEquals("AbCdEf0123456789_opaque-token", gateway.resolvedToken)
+        assertEquals(AppScreen.Lobby, coordinator.state.value.screen)
+        assertEquals("session-1", coordinator.state.value.game?.sessionId)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun invalid_qr_never_reaches_backend_and_exposes_semantic_error() = runTest {
+        val gateway = FakeGateway(restored = mobileSession)
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.handleInvitationLink("https://attacker.invalid/invite/token")
+        advanceUntilIdle()
+
+        assertEquals(null, gateway.resolvedToken)
+        assertEquals("invitation_invalid", coordinator.state.value.errorCode)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun cold_start_invitation_is_retained_until_secure_session_restoration() = runTest {
+        val gateway = FakeGateway(restored = mobileSession, resolvedInvitation = game())
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+
+        coordinator.handleInvitationLink("familygames://invite/AbCdEf0123456789_opaque-token")
+        coordinator.startup()
+        advanceUntilIdle()
+
+        assertEquals("AbCdEf0123456789_opaque-token", gateway.resolvedToken)
+        assertEquals(null, coordinator.state.value.pendingInvitationToken)
+        assertEquals(AppScreen.Lobby, coordinator.state.value.screen)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun camera_permission_is_requested_only_after_explanation_confirmation() = runTest {
+        val gateway = FakeGateway(restored = mobileSession, resolvedInvitation = game())
+        val permissions = RecordingCameraPermission()
+        val scanner = RecognizingScanner("familygames://invite/AbCdEf0123456789_opaque-token")
+        val coordinator = FamilyGamesCoordinator(
+            gateway = gateway,
+            realtime = FakeRealtime(),
+            haptics = SilentHaptics,
+            scope = this,
+            qrScanner = scanner,
+            permissions = permissions,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.showCameraExplanation()
+        assertEquals(0, permissions.requests)
+        assertEquals(true, coordinator.state.value.cameraExplanationVisible)
+
+        coordinator.confirmCameraAndScan("Scan invitation")
+        advanceUntilIdle()
+
+        assertEquals(1, permissions.requests)
+        assertEquals(1, scanner.scans)
+        assertEquals("AbCdEf0123456789_opaque-token", gateway.resolvedToken)
+        coordinator.dispose()
+    }
+
     private class FakeGateway(
         private val restored: MobileSession? = null,
         private val active: GameSessionSnapshot? = null,
@@ -246,10 +342,12 @@ class FamilyGamesCoordinatorTests {
         private val policy: AppVersionPolicy? = null,
         private val rejoinResult: GameSessionSnapshot? = null,
         private val moveError: ApiException? = null,
+        private val resolvedInvitation: GameSessionSnapshot? = null,
     ) : FamilyGamesGateway {
         var lastMove: MoveRequest? = null
         var rejoinCalls: Int = 0
         var guestCalls: Int = 0
+        var resolvedToken: String? = null
         override suspend fun versionPolicy(currentVersion: String, platform: String) =
             policy ?: AppVersionPolicy(currentVersion, currentVersion, currentVersion)
         override suspend fun restore() = restored
@@ -263,6 +361,20 @@ class FamilyGamesCoordinatorTests {
         override suspend fun activeSession() = active
         override suspend fun createSession(rulesetKey: String) = game()
         override suspend fun joinSession(code: String) = game()
+        override suspend fun createInvitation(sessionId: String) = GameInvitation(
+            invitationId = "invite-1",
+            sessionReference = sessionId,
+            gameType = "xo",
+            invitationToken = "AbCdEf0123456789_opaque-token",
+            expiresAtUtc = "2099-01-01T00:10:00Z",
+            inviterDisplayName = "Player",
+            deepLink = "familygames://invite/AbCdEf0123456789_opaque-token",
+            joinCode = "ABC123",
+        )
+        override suspend fun resolveInvitation(token: String): GameSessionSnapshot {
+            resolvedToken = token
+            return resolvedInvitation ?: game()
+        }
         override suspend fun ready(sessionId: String) = game(status = "started")
         override suspend fun rejoin(sessionId: String): GameSessionSnapshot {
             rejoinCalls++
@@ -298,6 +410,23 @@ class FamilyGamesCoordinatorTests {
     private class RecordingHaptics : SemanticHaptics {
         val events = mutableListOf<HapticEvent>()
         override fun perform(event: HapticEvent) { events += event }
+    }
+
+    private class RecordingCameraPermission : PermissionController {
+        var requests = 0
+        override suspend fun state(permission: PermissionKind) = PermissionState.Unknown
+        override suspend fun requestAfterExplanation(permission: PermissionKind): PermissionState {
+            requests++
+            return PermissionState.Granted
+        }
+    }
+
+    private class RecognizingScanner(private val content: String) : QrScannerCapability {
+        var scans = 0
+        override suspend fun scan(prompt: String): QrScanResult {
+            scans++
+            return QrScanResult.Recognized(content)
+        }
     }
 
     companion object {
