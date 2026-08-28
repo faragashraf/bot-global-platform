@@ -7,6 +7,12 @@ import kotlin.test.assertFalse
 
 class FamilyGamesLocalizationTests {
     @Test
+    fun product_name_is_lamma_in_both_supported_languages() {
+        assertEquals("لَمّة", strings(AppLanguage.Arabic).appName)
+        assertEquals("Lamma", strings(AppLanguage.English).appName)
+    }
+
+    @Test
     fun connection_and_recovery_messages_exist_in_both_languages() {
         val arabic = strings(AppLanguage.Arabic)
         val english = strings(AppLanguage.English)

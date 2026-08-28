@@ -1,8 +1,59 @@
+import java.net.URI
+import org.gradle.api.GradleException
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeCompiler)
+}
+
+fun releaseSetting(gradlePropertyName: String, environmentName: String): String? =
+    providers.gradleProperty(gradlePropertyName)
+        .orElse(providers.environmentVariable(environmentName))
+        .orNull
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+
+fun requirePublicHttpsEndpoint(value: String) {
+    val uri = runCatching { URI(value) }.getOrElse {
+        throw GradleException("familyGamesApiBaseUrl must be a valid public HTTPS URL.")
+    }
+    val host = uri.host?.lowercase()
+        ?: throw GradleException("familyGamesApiBaseUrl must include a valid host.")
+    val octets = host.split('.').mapNotNull(String::toIntOrNull)
+    val isPrivateIpv4 = octets.size == 4 && (
+        octets[0] == 10 ||
+            octets[0] == 127 ||
+            octets[0] == 192 && octets[1] == 168 ||
+            octets[0] == 172 && octets[1] in 16..31 ||
+            octets[0] == 169 && octets[1] == 254
+        )
+    val isDevelopmentHost = host == "localhost" ||
+        host == "10.0.2.2" ||
+        host.endsWith(".local") ||
+        isPrivateIpv4
+    if (uri.scheme != "https" || isDevelopmentHost) {
+        throw GradleException("Release API configuration must use a public HTTPS endpoint.")
+    }
+}
+
+val releaseApiBaseUrl = providers.gradleProperty("familyGamesApiBaseUrl")
+    .orNull
+    ?.trim()
+    ?.takeIf(String::isNotEmpty)
+    ?.also(::requirePublicHttpsEndpoint)
+val uploadStoreFile = releaseSetting("familyGamesUploadStoreFile", "LAMMA_UPLOAD_STORE_FILE")
+val uploadStorePassword = releaseSetting("familyGamesUploadStorePassword", "LAMMA_UPLOAD_STORE_PASSWORD")
+val uploadKeyAlias = releaseSetting("familyGamesUploadKeyAlias", "LAMMA_UPLOAD_KEY_ALIAS")
+val uploadKeyPassword = releaseSetting("familyGamesUploadKeyPassword", "LAMMA_UPLOAD_KEY_PASSWORD")
+val uploadSigningValues = listOf(uploadStoreFile, uploadStorePassword, uploadKeyAlias, uploadKeyPassword)
+val uploadSigningConfigured = uploadSigningValues.all { it != null }
+
+if (uploadSigningValues.any { it != null } && !uploadSigningConfigured) {
+    throw GradleException("Upload signing is partially configured. Provide all four Lamma upload signing values.")
+}
+if (uploadSigningConfigured && releaseApiBaseUrl == null) {
+    throw GradleException("A signed release requires familyGamesApiBaseUrl with a public HTTPS endpoint.")
 }
 
 dependencies {
@@ -25,12 +76,23 @@ android {
         applicationId = "com.botglobal.familygames"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = libs.versions.lamma.versionCode.get().toInt()
+        versionName = libs.versions.lamma.versionName.get()
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         val invitationLinkBase = providers.gradleProperty("familyGamesInvitationLinkBase").orNull
             ?: "familygames://invite"
         buildConfigField("String", "INVITATION_LINK_BASE", "\"$invitationLinkBase\"")
+    }
+
+    signingConfigs {
+        if (uploadSigningConfigured) {
+            create("upload") {
+                storeFile = rootProject.file(uploadStoreFile!!)
+                storePassword = uploadStorePassword
+                keyAlias = uploadKeyAlias
+                keyPassword = uploadKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -47,8 +109,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            val configuredUrl = providers.gradleProperty("familyGamesApiBaseUrl").orNull
-                ?: "https://configure-family-games-api.invalid"
+            if (uploadSigningConfigured) {
+                signingConfig = signingConfigs.getByName("upload")
+            }
+            val configuredUrl = releaseApiBaseUrl ?: "https://configure-family-games-api.invalid"
             buildConfigField("String", "API_BASE_URL", "\"$configuredUrl\"")
         }
     }
