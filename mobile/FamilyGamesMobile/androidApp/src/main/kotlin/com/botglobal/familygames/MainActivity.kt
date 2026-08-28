@@ -8,8 +8,11 @@ import androidx.fragment.app.FragmentActivity
 import com.botglobal.familygames.app.platform.AndroidSecureSessionVault
 import com.botglobal.familygames.app.platform.AndroidSemanticHaptics
 import com.botglobal.familygames.app.ui.FamilyGamesApp
+import kotlinx.coroutines.flow.MutableSharedFlow
 
 class MainActivity : FragmentActivity() {
+    private val foregroundEvents = MutableSharedFlow<Unit>(replay = 1)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val vault = AndroidSecureSessionVault(applicationContext)
@@ -24,7 +27,13 @@ class MainActivity : FragmentActivity() {
                 openExternalUrl = { destination ->
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(destination)))
                 },
+                foregroundEvents = foregroundEvents,
             )
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        foregroundEvents.tryEmit(Unit)
     }
 }

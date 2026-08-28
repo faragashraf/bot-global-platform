@@ -44,6 +44,7 @@ data class FamilyGamesUiState(
     val mobileSession: MobileSession? = null,
     val game: GameSessionSnapshot? = null,
     val connection: RealtimeConnectionState = RealtimeConnectionState.Disconnected,
+    val recoveredFromInterruption: Boolean = false,
     val busy: Boolean = false,
     val errorCode: String? = null,
     val optionalUpdateVisible: Boolean = false,
@@ -63,6 +64,9 @@ class FamilyGamesCoordinator(
     val state: StateFlow<FamilyGamesUiState> = mutableState.asStateFlow()
     private var realtimeEventsJob: Job? = null
     private var realtimeStateJob: Job? = null
+    private var actionJob: Job? = null
+    private var realtimeHasConnected = false
+    private var realtimeWasInterrupted = false
 
     fun startup() = launchAction {
         val update = runCatching {
@@ -164,17 +168,26 @@ class FamilyGamesCoordinator(
             haptics.perform(HapticEvent.Warning)
             return@launchAction
         }
-        val result = gateway.move(
-            MoveRequest(
-                game.sessionId,
-                commandId(),
-                row,
-                column,
-                game.version,
-            ),
-        )
+        val result = try {
+            gateway.move(
+                MoveRequest(
+                    game.sessionId,
+                    commandId(),
+                    row,
+                    column,
+                    game.version,
+                ),
+            )
+        } catch (error: ApiException) {
+            if (error.code !in AuthoritativeRefreshErrors) throw error
+            val recovered = gateway.rejoin(game.sessionId)
+            onAuthoritativeSnapshot(recovered, recoveredFromInterruption = true)
+            mutableState.update { it.copy(errorCode = error.code) }
+            haptics.perform(HapticEvent.Warning)
+            return@launchAction
+        }
         onAuthoritativeSnapshot(result)
-        haptics.perform(if (result.status == "completed") HapticEvent.Success else HapticEvent.GameEvent)
+        if (result.status != "completed") haptics.perform(HapticEvent.GameEvent)
     }
 
     fun requestRematch() = launchAction {
@@ -190,7 +203,28 @@ class FamilyGamesCoordinator(
     fun retryRealtime() = launchAction {
         val sessionId = requireGame().sessionId
         connectRealtime(sessionId)
-        onAuthoritativeSnapshot(gateway.rejoin(sessionId))
+        onAuthoritativeSnapshot(
+            gateway.rejoin(sessionId),
+            recoveredFromInterruption = true,
+        )
+    }
+
+    fun resumeAfterForeground() {
+        val sessionId = mutableState.value.game?.sessionId ?: return
+        if (mutableState.value.screen !in GameScreens) return
+        launchAction {
+            val snapshot = try {
+                realtime.rejoin()
+                gateway.rejoin(sessionId)
+            } catch (_: Throwable) {
+                connectRealtime(sessionId)
+                gateway.rejoin(sessionId)
+            }
+            onAuthoritativeSnapshot(
+                snapshot,
+                recoveredFromInterruption = true,
+            )
+        }
     }
 
     fun exitGame() = launchAction {
@@ -205,8 +239,11 @@ class FamilyGamesCoordinator(
     }
 
     fun dispose() {
+        actionJob?.cancel()
         realtimeEventsJob?.cancel()
         realtimeStateJob?.cancel()
+        realtimeHasConnected = false
+        realtimeWasInterrupted = false
         scope.launch { realtime.stop() }
     }
 
@@ -222,29 +259,91 @@ class FamilyGamesCoordinator(
         }
         realtimeStateJob = scope.launch {
             realtime.connectionState.collectLatest { connection ->
-                mutableState.update { it.copy(connection = connection) }
+                when (connection) {
+                    RealtimeConnectionState.Reconnecting,
+                    RealtimeConnectionState.Failed,
+                    -> if (realtimeHasConnected) realtimeWasInterrupted = true
+                    else -> Unit
+                }
+                mutableState.update {
+                    it.copy(
+                        connection = connection,
+                        recoveredFromInterruption = if (connection == RealtimeConnectionState.Connected) {
+                            it.recoveredFromInterruption
+                        } else {
+                            false
+                        },
+                    )
+                }
+                if (connection == RealtimeConnectionState.Connected) {
+                    if (realtimeWasInterrupted) recoverAuthoritativeState(sessionId)
+                    realtimeHasConnected = true
+                    realtimeWasInterrupted = false
+                }
             }
         }
         realtime.start(sessionId) { gateway.restore()?.accessToken }
     }
 
-    private fun onAuthoritativeSnapshot(snapshot: GameSessionSnapshot) {
+    private suspend fun recoverAuthoritativeState(sessionId: String) {
+        try {
+            onAuthoritativeSnapshot(
+                gateway.rejoin(sessionId),
+                recoveredFromInterruption = true,
+            )
+        } catch (_: Throwable) {
+            mutableState.update { it.copy(errorCode = "recovery_failed") }
+            haptics.perform(HapticEvent.Error)
+        }
+    }
+
+    private fun onAuthoritativeSnapshot(
+        snapshot: GameSessionSnapshot,
+        recoveredFromInterruption: Boolean = false,
+    ) {
         val current = mutableState.value.game
-        if (current != null && current.sessionId == snapshot.sessionId && snapshot.version < current.version) return
+        if (current != null && current.sessionId == snapshot.sessionId) {
+            if (snapshot.matchNumber < current.matchNumber) return
+            if (snapshot.matchNumber == current.matchNumber && snapshot.version < current.version) return
+        }
         val screen = when (snapshot.status) {
             "completed" -> AppScreen.Result
             "started" -> AppScreen.Gameplay
             else -> AppScreen.Lobby
         }
-        mutableState.update { it.copy(game = snapshot, screen = screen, errorCode = null) }
+        emitGameFeedback(current, snapshot)
+        mutableState.update {
+            it.copy(
+                game = snapshot,
+                screen = screen,
+                errorCode = null,
+                recoveredFromInterruption = recoveredFromInterruption,
+            )
+        }
+    }
+
+    private fun emitGameFeedback(current: GameSessionSnapshot?, snapshot: GameSessionSnapshot) {
+        if (current == null || current.sessionId != snapshot.sessionId) return
+        if (snapshot.matchNumber == current.matchNumber && snapshot.version <= current.version) return
+        val localMembershipId = mutableState.value.mobileSession?.identity?.membershipId
+        when {
+            snapshot.status == "completed" && snapshot.matchStatus == "draw" ->
+                haptics.perform(HapticEvent.LightImpact)
+            snapshot.status == "completed" && snapshot.winnerMembershipId == localMembershipId ->
+                haptics.perform(HapticEvent.Success)
+            snapshot.status == "completed" -> haptics.perform(HapticEvent.Warning)
+            current.activePlayerMembershipId != localMembershipId &&
+                snapshot.activePlayerMembershipId == localMembershipId ->
+                haptics.perform(HapticEvent.Selection)
+        }
     }
 
     private fun requireGame(): GameSessionSnapshot =
         mutableState.value.game ?: error("game_session_missing")
 
     private fun launchAction(action: suspend () -> Unit) {
-        if (mutableState.value.busy) return
-        scope.launch {
+        if (actionJob?.isActive == true) return
+        actionJob = scope.launch {
             mutableState.update { it.copy(busy = true, errorCode = null) }
             try {
                 action()
@@ -252,7 +351,7 @@ class FamilyGamesCoordinator(
                 mutableState.update { it.copy(errorCode = error.code) }
                 haptics.perform(HapticEvent.Error)
             } catch (error: Throwable) {
-                mutableState.update { it.copy(errorCode = error.message ?: "unexpected_error") }
+                mutableState.update { it.copy(errorCode = "unexpected_error") }
                 haptics.perform(HapticEvent.Error)
             } finally {
                 mutableState.update { it.copy(busy = false) }
@@ -262,5 +361,16 @@ class FamilyGamesCoordinator(
 
     private fun commandId(): String = buildString(32) {
         repeat(32) { append("0123456789abcdef"[Random.nextInt(16)]) }
+    }
+
+    private companion object {
+        val GameScreens = setOf(AppScreen.Lobby, AppScreen.Gameplay, AppScreen.Result)
+        val AuthoritativeRefreshErrors = setOf(
+            "stale_version",
+            "duplicate_command",
+            "concurrent_move",
+            "duplicate_or_concurrent_move",
+            "game_completed",
+        )
     }
 }

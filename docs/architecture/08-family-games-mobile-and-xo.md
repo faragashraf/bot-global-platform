@@ -32,6 +32,10 @@ The server rejects nonparticipants, wrong turns, invalid coordinates, occupied c
 
 The Android session token is restored from Keystore-encrypted storage. Startup then asks for the membership's active persisted game. The shared coordinator reconnects SignalR, invokes `Rejoin`, replaces local state with the authoritative snapshot, and discards older realtime versions. The same sequence runs after bounded SignalR reconnect. UI-only state is not a recovery source.
 
+The mobile stale guard orders snapshots by `(matchNumber, version)`: a rematch may correctly reset its move version while delayed events from an earlier match remain stale. Android foreground events rejoin and fetch authoritative state. Stale, duplicate, or concurrent move responses also trigger an authoritative refresh; the client never applies an optimistic move to conceal a rejection.
+
+XO board geometry is locale-invariant. Compose RTL remains active for Arabic navigation and text, while the board creates a local LTR layout boundary around the server's row-major coordinates. No locale-dependent DTO or index transformation is permitted.
+
 ## Reusable capability boundaries
 
 - `mobile/shared`: identity/session vault, biometrics, semantic haptics, permissions, location, notifications/inbox, realtime lifecycle, update decisions, semantic entitlements, billing provider, and WebRTC/ICE voice-room contracts.

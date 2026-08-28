@@ -48,9 +48,14 @@ private class AndroidGameRealtimeClient(
             .build()
         register(hub)
         connection = hub
-        withContext(Dispatchers.IO) { hub.start().blockingAwait() }
-        mutableState.value = RealtimeConnectionState.Connected
-        rejoin()
+        try {
+            withContext(Dispatchers.IO) { hub.start().blockingAwait() }
+            mutableState.value = RealtimeConnectionState.Connected
+            rejoin()
+        } catch (error: Throwable) {
+            if (connection === hub) mutableState.value = RealtimeConnectionState.Failed
+            throw error
+        }
     }
 
     override suspend fun stop() {

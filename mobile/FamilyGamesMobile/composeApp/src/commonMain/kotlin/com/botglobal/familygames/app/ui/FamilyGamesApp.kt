@@ -82,6 +82,8 @@ import com.botglobal.familygames.app.state.FamilyGamesUiState
 import com.botglobal.mobile.platform.device.SemanticHaptics
 import com.botglobal.mobile.platform.identity.SessionVault
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 @Composable
 fun FamilyGamesApp(
@@ -91,6 +93,7 @@ fun FamilyGamesApp(
     appVersion: String = "0.1.0",
     platform: String = "android",
     openExternalUrl: (String) -> Unit = {},
+    foregroundEvents: Flow<Unit> = emptyFlow(),
 ) {
     val scope = rememberCoroutineScope()
     val coordinator = remember(apiBaseUrl, sessionVault, haptics) {
@@ -109,6 +112,9 @@ fun FamilyGamesApp(
     val direction = if (state.language == AppLanguage.Arabic) LayoutDirection.Rtl else LayoutDirection.Ltr
 
     LaunchedEffect(coordinator) { coordinator.startup() }
+    LaunchedEffect(coordinator, foregroundEvents) {
+        foregroundEvents.collect { coordinator.resumeAfterForeground() }
+    }
     DisposableEffect(coordinator) {
         onDispose(coordinator::dispose)
     }
@@ -443,9 +449,17 @@ private fun LobbyScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, coo
             Text(text.waitingOpponent, color = FamilyGamesColors.Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
         }
         Spacer(Modifier.weight(1f))
-        ConnectionPill(state.connection, text, coordinator::retryRealtime)
+        ConnectionPill(
+            state.connection,
+            state.recoveredFromInterruption,
+            text,
+            coordinator::retryRealtime,
+        )
         Spacer(Modifier.height(FamilyGamesSpacing.Md))
-        PrimaryButton(if (local?.isReady == true) text.readyWaiting else text.ready, local?.isReady != true) { coordinator.ready() }
+        PrimaryButton(
+            if (local?.isReady == true) text.readyWaiting else text.ready,
+            local?.isReady != true && state.connection == RealtimeConnectionState.Connected,
+        ) { coordinator.ready() }
     }
 }
 
@@ -459,7 +473,12 @@ private fun GameplayScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, 
     Page(scroll = false) {
         PageHeader(text.xoTitle, text.exit, coordinator::exitGame)
         Spacer(Modifier.height(FamilyGamesSpacing.Md))
-        ConnectionPill(state.connection, text, coordinator::retryRealtime)
+        ConnectionPill(
+            state.connection,
+            state.recoveredFromInterruption,
+            text,
+            coordinator::retryRealtime,
+        )
         Spacer(Modifier.height(FamilyGamesSpacing.Md))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FamilyGamesSpacing.Sm)) {
             PlayerChip(local, text.you, isLocalTurn, Modifier.weight(1f))
@@ -474,8 +493,22 @@ private fun GameplayScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, 
             modifier = Modifier.align(Alignment.CenterHorizontally).animateContentSize(),
         )
         Spacer(Modifier.height(FamilyGamesSpacing.Lg))
-        XoBoard(game, isLocalTurn && !state.busy, text, coordinator::play)
+        XoBoard(
+            game,
+            isLocalTurn && !state.busy && state.connection == RealtimeConnectionState.Connected,
+            text,
+            coordinator::play,
+        )
         Spacer(Modifier.height(FamilyGamesSpacing.Lg))
+        if (state.connection != RealtimeConnectionState.Connected) {
+            Text(
+                text.actionUnavailableOffline,
+                color = FamilyGamesColors.Gold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+        }
         Text(text.voiceUnavailable, color = FamilyGamesColors.Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
     }
 }
@@ -496,6 +529,12 @@ private fun ResultScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, co
         else -> text.acceptRematch
     }
     Page {
+        ConnectionPill(
+            state.connection,
+            state.recoveredFromInterruption,
+            text,
+            coordinator::retryRealtime,
+        )
         Spacer(Modifier.weight(1f))
         Text(if (game.matchStatus == "draw") "= " else "★", fontSize = 72.sp, color = FamilyGamesColors.Gold, modifier = Modifier.align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(FamilyGamesSpacing.Md))
@@ -503,7 +542,10 @@ private fun ResultScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, co
         Spacer(Modifier.height(FamilyGamesSpacing.Lg))
         XoBoard(game, false, text) { _, _ -> }
         Spacer(Modifier.weight(1f))
-        PrimaryButton(buttonText, requester != membershipId) {
+        PrimaryButton(
+            buttonText,
+            requester != membershipId && state.connection == RealtimeConnectionState.Connected,
+        ) {
             if (requester == null) coordinator.requestRematch() else coordinator.acceptRematch()
         }
         Spacer(Modifier.height(FamilyGamesSpacing.Sm))
@@ -617,9 +659,15 @@ private fun MarkBadge(mark: String) {
 }
 
 @Composable
-private fun ConnectionPill(state: RealtimeConnectionState, text: FamilyGamesStrings, retry: () -> Unit) {
+private fun ConnectionPill(
+    state: RealtimeConnectionState,
+    recoveredFromInterruption: Boolean,
+    text: FamilyGamesStrings,
+    retry: () -> Unit,
+) {
     val (label, color) = when (state) {
-        RealtimeConnectionState.Connected -> text.connected to FamilyGamesColors.Mint
+        RealtimeConnectionState.Connected ->
+            (if (recoveredFromInterruption) text.recovered else text.connected) to FamilyGamesColors.Mint
         RealtimeConnectionState.Connecting -> text.connecting to FamilyGamesColors.Gold
         RealtimeConnectionState.Reconnecting -> text.reconnecting to FamilyGamesColors.Gold
         else -> text.disconnected to FamilyGamesColors.Coral

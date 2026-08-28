@@ -44,6 +44,8 @@ data class FamilyGamesStrings(
     val connected: String,
     val reconnecting: String,
     val disconnected: String,
+    val recovered: String,
+    val actionUnavailableOffline: String,
     val retry: String,
     val voiceUnavailable: String,
     val winner: String,
@@ -60,6 +62,7 @@ data class FamilyGamesStrings(
     val wrongTurn: String,
     val occupiedCell: String,
     val staleState: String,
+    val recoveryFailed: String,
     val entitlementRequired: String,
     val logout: String,
     val language: String,
@@ -118,6 +121,8 @@ private val ArabicStrings = FamilyGamesStrings(
     connected = "متصل",
     reconnecting = "نعيد الاتصال…",
     disconnected = "الاتصال متوقف",
+    recovered = "تم استرجاع اللعبة",
+    actionUnavailableOffline = "اللعب متوقف مؤقتًا لحد ما الاتصال يرجع",
     retry = "إعادة المحاولة",
     voiceUnavailable = "الصوت غير متاح في هذا الوضع",
     winner = "الفائز",
@@ -134,6 +139,7 @@ private val ArabicStrings = FamilyGamesStrings(
     wrongTurn = "استنى دورك.",
     occupiedCell = "المربع مستخدم بالفعل.",
     staleState = "تم تحديث اللعبة. جرّب حركتك من جديد.",
+    recoveryFailed = "تعذر استرجاع اللعبة. تأكد من الاتصال وحاول مرة ثانية.",
     entitlementRequired = "هذا الوضع غير متاح في حسابك حاليًا.",
     logout = "تسجيل الخروج",
     language = "English",
@@ -189,6 +195,8 @@ private val EnglishStrings = FamilyGamesStrings(
     connected = "Connected",
     reconnecting = "Reconnecting…",
     disconnected = "Offline",
+    recovered = "Game recovered",
+    actionUnavailableOffline = "Moves are paused until the connection recovers",
     retry = "Try again",
     voiceUnavailable = "Voice is unavailable in this mode",
     winner = "Winner",
@@ -205,6 +213,7 @@ private val EnglishStrings = FamilyGamesStrings(
     wrongTurn = "Wait for your turn.",
     occupiedCell = "That cell is already occupied.",
     staleState = "The game changed. Try your move again.",
+    recoveryFailed = "The game could not be recovered. Check your connection and try again.",
     entitlementRequired = "This mode is not available for your membership.",
     logout = "Sign out",
     language = "العربية",
@@ -223,7 +232,8 @@ fun FamilyGamesStrings.error(code: String?): String = when (code) {
     "session_not_found", "active_session_not_found" -> sessionNotFound
     "wrong_player" -> wrongTurn
     "occupied_cell" -> occupiedCell
-    "stale_version", "concurrent_move", "duplicate_or_concurrent_move" -> staleState
+    "stale_version", "duplicate_command", "concurrent_move", "duplicate_or_concurrent_move", "game_completed" -> staleState
+    "recovery_failed" -> recoveryFailed
     "entitlement_required" -> entitlementRequired
     else -> genericError
 }
