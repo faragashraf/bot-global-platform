@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Games.Application.Sessions;
+using BotGlobal.Games.Application.Startup;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -11,6 +12,12 @@ internal static class GameSessionEndpoints
 {
     public static IEndpointRouteBuilder MapGameSessionEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet(
+                "/api/mobile/family-games/version-policy",
+                (string platform, string currentVersion, ApplicationVersionPolicyReader reader) =>
+                    Results.Ok(reader.Read(platform, currentVersion)))
+            .AllowAnonymous();
+
         var group = endpoints.MapGroup("/api/games/sessions")
             .RequireAuthorization(ApplicationIdentityPolicies.For(BotGlobalApplications.FamilyGames));
 

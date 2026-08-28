@@ -1,5 +1,6 @@
 using BotGlobal.Games.Application.Entitlements;
 using BotGlobal.Games.Application.Sessions;
+using BotGlobal.Games.Application.Startup;
 using BotGlobal.Games.Endpoints;
 using BotGlobal.Games.Infrastructure.Persistence;
 using BotGlobal.Games.Realtime;
@@ -32,6 +33,9 @@ public static class GamesModule
                     sql.MigrationsHistoryTable(GamesDbContext.MigrationHistoryTable, GamesDbContext.Schema);
                 }));
         services.AddSignalR(options => options.EnableDetailedErrors = false);
+        services.Configure<FamilyGamesVersionPolicyOptions>(
+            configuration.GetSection(FamilyGamesVersionPolicyOptions.SectionName));
+        services.AddSingleton<ApplicationVersionPolicyReader>();
         services.AddScoped<IGameSessionService, GameSessionService>();
         services.AddScoped<IGameEntitlementAuthorizer, FreeGameEntitlementAuthorizer>();
         services.AddScoped<IGameNotificationPublisher, DeferredGameNotificationPublisher>();

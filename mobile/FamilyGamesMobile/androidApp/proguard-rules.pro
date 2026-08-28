@@ -1,0 +1,2 @@
+-keep class com.botglobal.familygames.app.data.** { *; }
+-dontwarn org.slf4j.**
