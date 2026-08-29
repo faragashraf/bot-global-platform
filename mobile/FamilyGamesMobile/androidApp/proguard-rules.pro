@@ -1,2 +1,3 @@
--keep class com.botglobal.familygames.app.data.** { *; }
+-keep class com.botglobal.lamma.app.data.** { *; }
+-keep class com.botglobal.lamma.app.realtime.** { *; }
 -dontwarn org.slf4j.**

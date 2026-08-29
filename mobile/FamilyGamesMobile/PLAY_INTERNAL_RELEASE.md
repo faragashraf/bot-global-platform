@@ -2,7 +2,7 @@
 
 ## Immutable Android identity and version
 
-- Application ID: `com.botglobal.familygames`
+- Application ID: `com.botglobal.lamma`
 - Version name: `0.1.0`
 - Version code: `1`
 - Minimum SDK: 23

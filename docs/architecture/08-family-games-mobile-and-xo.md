@@ -2,7 +2,7 @@
 
 ## Decision
 
-Family Games is the first application inside the repository-owned Bot Global mobile platform. Kotlin Multiplatform and Compose Multiplatform were selected after validating the established `BotGlobalMobile` pattern. Product code uses a new `com.botglobal.familygames` namespace and contains no reference branding, credentials, endpoints, or business behavior.
+Family Games is the first application inside the repository-owned Bot Global mobile platform. Kotlin Multiplatform and Compose Multiplatform were selected after validating the established `BotGlobalMobile` pattern. Product code uses the final `com.botglobal.lamma` application namespace and contains no reference branding, credentials, endpoints, or business behavior.
 
 The backend remains a modular monolith. `BotGlobal.Games` owns generic game sessions, player lifecycle, recovery, semantic notifications, and its capability-specific SignalR hub. XO owns only deterministic board rules and accepted move history. Capability modules do not reference one another; contracts and authenticated claims cross module boundaries through building blocks and API composition.
 

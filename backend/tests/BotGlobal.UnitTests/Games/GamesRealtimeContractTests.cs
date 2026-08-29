@@ -26,5 +26,16 @@ public sealed class GamesRealtimeContractTests
         Assert.Contains("Move", methodNames);
         Assert.Contains("RequestRematch", methodNames);
         Assert.Contains("AcceptRematch", methodNames);
+        Assert.Contains("JoinVoiceRoom", methodNames);
+        Assert.Contains("LeaveVoiceRoom", methodNames);
+        Assert.Contains("VoiceOffer", methodNames);
+        Assert.Contains("VoiceAnswer", methodNames);
+        Assert.Contains("VoiceIceCandidate", methodNames);
+        Assert.Contains("GetVoiceIceConfiguration", methodNames);
+        Assert.Contains("RequestVoice", methodNames);
+        Assert.Contains("AcceptVoice", methodNames);
+        Assert.Contains("DeclineVoice", methodNames);
+        Assert.Contains("CancelVoiceRequest", methodNames);
+        Assert.Contains("EndVoice", methodNames);
     }
 }

@@ -19,7 +19,7 @@ kotlin {
     jvm("desktop")
 
     androidLibrary {
-        namespace = "com.botglobal.familygames.app"
+        namespace = "com.botglobal.lamma.app"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
         compilerOptions.jvmTarget.set(JvmTarget.JVM_11)
@@ -46,6 +46,7 @@ kotlin {
             implementation(libs.androidx.biometric)
             implementation(libs.ktor.client.okhttp)
             implementation("com.microsoft.signalr:signalr:7.0.0")
+            implementation(libs.webrtc.android)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
