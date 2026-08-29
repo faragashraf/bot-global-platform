@@ -8,6 +8,7 @@ import com.botglobal.mobile.platform.voice.VoiceIceConfiguration
 import com.botglobal.mobile.platform.voice.VoiceJoinResult
 import com.botglobal.mobile.platform.voice.VoiceSignal
 import com.botglobal.mobile.platform.voice.VoiceConsentResult
+import com.botglobal.mobile.platform.voice.VoiceConsentAuthoritativeState
 import com.botglobal.mobile.platform.voice.VoiceConsentSignal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -49,6 +50,7 @@ internal interface GameRealtimeTransport {
     suspend fun voiceIceCandidate(roomId: String, generation: Long, candidate: String, sdpMid: String?, sdpMLineIndex: Int) = Unit
     suspend fun voiceMuted(roomId: String, generation: Long, muted: Boolean) = Unit
     suspend fun requestVoice(roomId: String, matchNumber: Int): VoiceConsentResult = error("Voice unavailable")
+    suspend fun voiceConsentState(roomId: String, matchNumber: Int): VoiceConsentAuthoritativeState = error("Voice unavailable")
     suspend fun acceptVoice(roomId: String, matchNumber: Int, requestId: String) = Unit
     suspend fun declineVoice(roomId: String, matchNumber: Int, requestId: String) = Unit
     suspend fun cancelVoiceRequest(roomId: String, matchNumber: Int, requestId: String) = Unit
@@ -109,6 +111,8 @@ internal class ManagedGameRealtimeClient(
         operationMutex.withLock { requireTransport(roomId).voiceMuted(roomId, generation, muted) }
     override suspend fun requestVoice(roomId: String, matchNumber: Int): VoiceConsentResult =
         operationMutex.withLock { requireTransport(roomId).requestVoice(roomId, matchNumber) }
+    override suspend fun voiceConsentState(roomId: String, matchNumber: Int): VoiceConsentAuthoritativeState =
+        operationMutex.withLock { requireTransport(roomId).voiceConsentState(roomId, matchNumber) }
     override suspend fun acceptVoice(roomId: String, matchNumber: Int, requestId: String) =
         operationMutex.withLock { requireTransport(roomId).acceptVoice(roomId, matchNumber, requestId) }
     override suspend fun declineVoice(roomId: String, matchNumber: Int, requestId: String) =

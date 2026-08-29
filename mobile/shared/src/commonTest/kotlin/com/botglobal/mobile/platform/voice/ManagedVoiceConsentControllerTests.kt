@@ -97,6 +97,40 @@ class ManagedVoiceConsentControllerTests {
         assertEquals(VoiceConsentState.IncomingRequest, controller.snapshot.value.state)
     }
 
+    @Test
+    fun restart_reconciliation_discards_stale_local_request_state() = runTest {
+        val signaling = FakeConsentSignaling()
+        val controller = ManagedVoiceConsentController(backgroundScope, signaling)
+        controller.bind("room", 1)
+        controller.request()
+        assertEquals(VoiceConsentState.Requesting, controller.snapshot.value.state)
+
+        signaling.authoritative = VoiceConsentAuthoritativeState(
+            false, "room", 1, "", "", "", "", VoiceConsentState.Idle,
+        )
+        controller.reconcile()
+
+        assertEquals(VoiceConsentState.Idle, controller.snapshot.value.state)
+        assertEquals(null, controller.snapshot.value.requestId)
+    }
+
+    @Test
+    fun authoritative_accepted_request_is_restored_after_relaunch() = runTest {
+        val signaling = FakeConsentSignaling().apply {
+            authoritative = VoiceConsentAuthoritativeState(
+                true, "room", 1, "request-10", "member-a", "member-b",
+                "2099-01-01T00:00:00Z", VoiceConsentState.Accepted,
+            )
+        }
+        val controller = ManagedVoiceConsentController(backgroundScope, signaling)
+        controller.bind("room", 1)
+
+        controller.reconcile()
+
+        assertEquals(VoiceConsentState.Accepted, controller.snapshot.value.state)
+        assertEquals("request-10", controller.snapshot.value.requestId)
+    }
+
     private fun signalRequested(match: Int = 1) = VoiceConsentSignal.Requested(
         "room", match, "request", "member-a", "connection-a", "member-b", "connection-b", "2099-01-01T00:00:00Z",
     )
@@ -106,6 +140,10 @@ class ManagedVoiceConsentControllerTests {
         override val consentSignals = events
         var requests = 0
         var accepts = 0
+        var authoritative = VoiceConsentAuthoritativeState(
+            false, "room", 1, "", "", "", "", VoiceConsentState.Idle,
+        )
+        override suspend fun voiceConsentState(roomId: String, matchNumber: Int) = authoritative
         override suspend fun requestVoice(roomId: String, matchNumber: Int): VoiceConsentResult {
             requests++
             return VoiceConsentResult(roomId, matchNumber, "request", "member-a", "member-b", "2099-01-01T00:00:00Z", requests == 1)

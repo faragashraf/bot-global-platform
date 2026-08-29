@@ -9,6 +9,8 @@ import com.botglobal.mobile.platform.voice.VoiceIcePolicy
 import com.botglobal.mobile.platform.voice.VoiceJoinResult
 import com.botglobal.mobile.platform.voice.VoiceSignal
 import com.botglobal.mobile.platform.voice.VoiceConsentResult
+import com.botglobal.mobile.platform.voice.VoiceConsentAuthoritativeState
+import com.botglobal.mobile.platform.voice.VoiceConsentState
 import com.botglobal.mobile.platform.voice.VoiceConsentSignal
 import com.microsoft.signalr.HubConnection
 import com.microsoft.signalr.HubConnectionBuilder
@@ -108,6 +110,28 @@ private class SignalRGameRealtimeTransport(
             .timeout(OperationTimeoutSeconds, TimeUnit.SECONDS)
             .blockingGet()
             .let { VoiceConsentResult(it.sessionId, it.matchNumber, it.requestId, it.requesterMembershipId, it.recipientMembershipId, it.expiresAtUtc, it.created) }
+    }
+    override suspend fun voiceConsentState(roomId: String, matchNumber: Int): VoiceConsentAuthoritativeState = withContext(Dispatchers.IO) {
+        hub.invoke(VoiceConsentStateResultDto::class.java, "GetVoiceConsentState", roomId, matchNumber)
+            .timeout(OperationTimeoutSeconds, TimeUnit.SECONDS)
+            .blockingGet()
+            .let {
+                VoiceConsentAuthoritativeState(
+                    it.active,
+                    it.sessionId,
+                    it.matchNumber,
+                    it.requestId,
+                    it.requesterMembershipId,
+                    it.recipientMembershipId,
+                    it.expiresAtUtc,
+                    when (it.state) {
+                        "requesting" -> VoiceConsentState.Requesting
+                        "incoming_request" -> VoiceConsentState.IncomingRequest
+                        "accepted" -> VoiceConsentState.Accepted
+                        else -> VoiceConsentState.Idle
+                    },
+                )
+            }
     }
     override suspend fun acceptVoice(roomId: String, matchNumber: Int, requestId: String) =
         invokeVoice("AcceptVoice", VoiceConsentActionDto(roomId, matchNumber, requestId))
@@ -233,6 +257,11 @@ private data class VoiceConsentResultDto(
     val sessionId: String = "", val matchNumber: Int = 0, val requestId: String = "",
     val requesterMembershipId: String = "", val recipientMembershipId: String = "",
     val expiresAtUtc: String = "", val created: Boolean = false,
+)
+private data class VoiceConsentStateResultDto(
+    val active: Boolean = false, val sessionId: String = "", val matchNumber: Int = 0,
+    val requestId: String = "", val requesterMembershipId: String = "",
+    val recipientMembershipId: String = "", val expiresAtUtc: String = "", val state: String = "idle",
 )
 private data class VoiceConsentEventDto(
     val sessionId: String = "", val matchNumber: Int = 0, val requestId: String = "",

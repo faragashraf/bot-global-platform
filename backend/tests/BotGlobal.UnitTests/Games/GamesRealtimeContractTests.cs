@@ -33,6 +33,7 @@ public sealed class GamesRealtimeContractTests
         Assert.Contains("VoiceIceCandidate", methodNames);
         Assert.Contains("GetVoiceIceConfiguration", methodNames);
         Assert.Contains("RequestVoice", methodNames);
+        Assert.Contains("GetVoiceConsentState", methodNames);
         Assert.Contains("AcceptVoice", methodNames);
         Assert.Contains("DeclineVoice", methodNames);
         Assert.Contains("CancelVoiceRequest", methodNames);

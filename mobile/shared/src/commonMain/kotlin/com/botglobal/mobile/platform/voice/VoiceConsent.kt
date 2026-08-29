@@ -34,6 +34,17 @@ data class VoiceConsentResult(
     val created: Boolean,
 )
 
+data class VoiceConsentAuthoritativeState(
+    val active: Boolean,
+    val roomId: String,
+    val matchNumber: Int,
+    val requestId: String,
+    val requesterMembershipId: String,
+    val recipientMembershipId: String,
+    val expiresAtUtc: String,
+    val state: VoiceConsentState,
+)
+
 sealed interface VoiceConsentSignal {
     val roomId: String
     val matchNumber: Int
@@ -77,6 +88,8 @@ sealed interface VoiceConsentSignal {
 
 interface VoiceConsentSignalingTransport {
     val consentSignals: Flow<VoiceConsentSignal>
+    suspend fun voiceConsentState(roomId: String, matchNumber: Int): VoiceConsentAuthoritativeState =
+        VoiceConsentAuthoritativeState(false, roomId, matchNumber, "", "", "", "", VoiceConsentState.Idle)
     suspend fun requestVoice(roomId: String, matchNumber: Int): VoiceConsentResult
     suspend fun acceptVoice(roomId: String, matchNumber: Int, requestId: String)
     suspend fun declineVoice(roomId: String, matchNumber: Int, requestId: String)
@@ -124,6 +137,32 @@ class ManagedVoiceConsentController(
         } catch (error: Throwable) {
             logger("voice consent request failed type=${error::class.simpleName}")
             mutableSnapshot.value = current.copy(state = VoiceConsentState.Unavailable, reason = "voice_request_failed")
+        }
+    }
+
+    suspend fun reconcile() {
+        val before = mutableSnapshot.value
+        val room = before.roomId ?: return
+        val match = before.matchNumber ?: return
+        val authoritative = signaling.voiceConsentState(room, match)
+        if (!isCurrent(room, match)) return
+        val current = mutableSnapshot.value
+        if (current.requestId != before.requestId) {
+            logger("voice consent reconciliation superseded request=${current.requestId}")
+            return
+        }
+        mutableSnapshot.value = if (!authoritative.active) {
+            VoiceConsentSnapshot(roomId = room, matchNumber = match)
+        } else {
+            VoiceConsentSnapshot(
+                state = authoritative.state,
+                roomId = authoritative.roomId,
+                matchNumber = authoritative.matchNumber,
+                requestId = authoritative.requestId,
+                requesterMembershipId = authoritative.requesterMembershipId,
+                recipientMembershipId = authoritative.recipientMembershipId,
+                expiresAtUtc = authoritative.expiresAtUtc,
+            )
         }
     }
 

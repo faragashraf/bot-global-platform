@@ -38,6 +38,11 @@ public sealed class GamesHub(
         {
             foreach (var sessionId in disconnected.Value.SessionIds)
             {
+                foreach (var consent in voiceConsents.Disconnect(sessionId, disconnected.Value.MembershipId))
+                {
+                    await NotifyConsentAfterDisconnect(consent, disconnected.Value.MembershipId,
+                        Context.ConnectionId, CancellationToken.None);
+                }
                 await sessions.SetDisconnectedAsync(
                     disconnected.Value.MembershipId,
                     sessionId,
@@ -127,6 +132,28 @@ public sealed class GamesHub(
     public Task AcceptVoice(VoiceConsentAction action) => CompleteVoiceRequest(action, accepted: true);
     public Task DeclineVoice(VoiceConsentAction action) => CompleteVoiceRequest(action, accepted: false);
 
+    public async Task<VoiceConsentStateResult> GetVoiceConsentState(Guid sessionId, int matchNumber)
+    {
+        var (identity, snapshot) = await RequireVoiceParticipant(sessionId);
+        RequireCurrentMatch(snapshot, matchNumber);
+        VoiceConsentRegistry.Request? current;
+        try { current = voiceConsents.Current(sessionId, matchNumber, identity.MembershipId, timeProvider.GetUtcNow()); }
+        catch (InvalidOperationException error) { throw new HubException($"voice_consent_state_invalid:{error.Message}"); }
+        if (current?.Status == VoiceConsentRegistry.Status.TimedOut)
+        {
+            await SendConsentEvent("VoiceRequestTimedOut", current, "timed_out", Context.ConnectionAborted);
+            current = null;
+        }
+        if (current is null)
+            return new VoiceConsentStateResult(false, sessionId, matchNumber, Guid.Empty,
+                Guid.Empty, Guid.Empty, default, "idle");
+        var state = current.Status == VoiceConsentRegistry.Status.Accepted
+            ? "accepted"
+            : current.RequesterMembershipId == identity.MembershipId ? "requesting" : "incoming_request";
+        return new VoiceConsentStateResult(true, current.SessionId, current.MatchNumber, current.RequestId,
+            current.RequesterMembershipId, current.RecipientMembershipId, current.ExpiresAtUtc, state);
+    }
+
     public async Task EndVoice(VoiceConsentAction action)
     {
         var (identity, snapshot) = await RequireVoiceParticipant(action.SessionId);
@@ -144,7 +171,8 @@ public sealed class GamesHub(
         VoiceConsentRegistry.Request request;
         try { request = voiceConsents.Cancel(action.RequestId, action.SessionId, action.MatchNumber, identity.MembershipId, timeProvider.GetUtcNow()); }
         catch (InvalidOperationException error) { throw new HubException($"voice_request_stale:{error.Message}"); }
-        await SendConsentEvent("VoiceRequestCancelled", request, "cancelled", Context.ConnectionAborted);
+        var (eventName, state) = ConsentCompletion(request.Status);
+        await SendConsentEvent(eventName, request, state, Context.ConnectionAborted);
     }
 
     public async Task VoiceUnavailable(VoiceUnavailableRequest unavailable)
@@ -342,6 +370,33 @@ public sealed class GamesHub(
         if (peer is not null)
             await Clients.Client(peer.ConnectionId).SendAsync("VoicePeerLeft", PeerEvent(departed, peer), cancellationToken);
     }
+
+    private async Task NotifyConsentAfterDisconnect(VoiceConsentRegistry.Request request,
+        Guid disconnectedMembershipId, string disconnectedConnectionId, CancellationToken cancellationToken)
+    {
+        var remoteMembershipId = request.RequesterMembershipId == disconnectedMembershipId
+            ? request.RecipientMembershipId : request.RequesterMembershipId;
+        var remoteConnectionId = connections.ResolveParticipantConnection(request.SessionId, remoteMembershipId);
+        if (remoteConnectionId is null) return;
+        var requesterConnectionId = request.RequesterMembershipId == disconnectedMembershipId
+            ? disconnectedConnectionId : remoteConnectionId;
+        var recipientConnectionId = request.RecipientMembershipId == disconnectedMembershipId
+            ? disconnectedConnectionId : remoteConnectionId;
+        var (eventName, state) = ConsentCompletion(request.Status);
+        var voiceEvent = ConsentEvent(request, requesterConnectionId, recipientConnectionId, state,
+            "participant_disconnected");
+        await Clients.Client(remoteConnectionId).SendAsync(eventName, voiceEvent, cancellationToken);
+        LogConsentRoute(state, voiceEvent);
+    }
+
+    private static (string EventName, string State) ConsentCompletion(VoiceConsentRegistry.Status status) => status switch
+    {
+        VoiceConsentRegistry.Status.Cancelled => ("VoiceRequestCancelled", "cancelled"),
+        VoiceConsentRegistry.Status.Declined => ("VoiceDeclined", "declined"),
+        VoiceConsentRegistry.Status.TimedOut => ("VoiceRequestTimedOut", "timed_out"),
+        VoiceConsentRegistry.Status.Ended => ("VoiceEnded", "ended"),
+        _ => throw new InvalidOperationException($"Voice consent status {status} is not terminal."),
+    };
 
     private static VoicePeerEvent PeerEvent(VoiceConnectionRegistry.Participant subject, VoiceConnectionRegistry.Participant receiver) =>
         new(subject.SessionId, receiver.Generation, subject.MembershipId, subject.ConnectionId,

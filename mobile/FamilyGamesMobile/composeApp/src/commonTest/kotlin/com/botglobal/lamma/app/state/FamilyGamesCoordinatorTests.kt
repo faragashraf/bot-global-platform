@@ -82,10 +82,16 @@ class FamilyGamesCoordinatorTests {
             "session-1", 1, "request-1", membershipId, "connection-a",
             "member-2", "connection-b", "2099-01-01T00:00:00Z",
         ))
+        realtime.emitConsent(VoiceConsentSignal.Accepted(
+            "session-1", 1, "request-1", membershipId, "connection-a",
+            "member-2", "connection-b", "2099-01-01T00:00:00Z",
+        ))
         runCurrent()
         assertEquals(0, permissions.requests)
         assertEquals(0, media.creations)
 
+        coordinator.confirmMicrophoneAndJoinVoice()
+        advanceUntilIdle()
         coordinator.confirmMicrophoneAndJoinVoice()
         advanceUntilIdle()
         assertEquals(1, permissions.requests)

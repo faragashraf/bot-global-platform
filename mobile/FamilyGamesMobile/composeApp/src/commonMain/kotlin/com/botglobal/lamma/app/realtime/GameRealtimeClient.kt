@@ -12,6 +12,7 @@ import com.botglobal.mobile.platform.voice.VoiceIceConfiguration
 import com.botglobal.mobile.platform.voice.VoiceJoinResult
 import com.botglobal.mobile.platform.voice.VoiceSignal
 import com.botglobal.mobile.platform.voice.VoiceConsentResult
+import com.botglobal.mobile.platform.voice.VoiceConsentAuthoritativeState
 import com.botglobal.mobile.platform.voice.VoiceConsentSignal
 import com.botglobal.mobile.platform.voice.VoiceConsentSignalingTransport
 
@@ -33,6 +34,8 @@ interface GameRealtimeClient : VoiceSignalingTransport, VoiceConsentSignalingTra
     override suspend fun iceCandidate(roomId: String, generation: Long, candidate: String, sdpMid: String?, sdpMLineIndex: Int) = Unit
     override suspend fun muted(roomId: String, generation: Long, muted: Boolean) = Unit
     override suspend fun requestVoice(roomId: String, matchNumber: Int): VoiceConsentResult = error("Voice unavailable")
+    override suspend fun voiceConsentState(roomId: String, matchNumber: Int): VoiceConsentAuthoritativeState =
+        VoiceConsentAuthoritativeState(false, roomId, matchNumber, "", "", "", "", com.botglobal.mobile.platform.voice.VoiceConsentState.Idle)
     override suspend fun acceptVoice(roomId: String, matchNumber: Int, requestId: String) = Unit
     override suspend fun declineVoice(roomId: String, matchNumber: Int, requestId: String) = Unit
     override suspend fun cancelVoiceRequest(roomId: String, matchNumber: Int, requestId: String) = Unit

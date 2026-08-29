@@ -12,4 +12,8 @@
 -keep class com.microsoft.signalr.StreamItem { <fields>; }
 -keep class com.microsoft.signalr.PingMessage { <fields>; }
 -keep class com.microsoft.signalr.CloseMessage { <fields>; }
+
+# WebRTC's native JNI_OnLoad resolves this bootstrap class and its methods by
+# their exact names. The upstream AAR does not publish a consumer keep rule.
+-keep class org.jni_zero.JniInit { *; }
 -dontwarn org.slf4j.**

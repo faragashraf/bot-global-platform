@@ -549,6 +549,7 @@ class FamilyGamesCoordinator(
         transportOperationInProgress = true
         try {
             realtime.start(sessionId, source) { gateway.restore()?.accessToken }
+            runCatching { voiceConsent?.reconcile() }
         } finally {
             transportOperationInProgress = false
         }
@@ -676,6 +677,7 @@ class FamilyGamesCoordinator(
                         gateway.rejoin(sessionId)
                     } ?: throw IllegalStateException("Authoritative recovery timed out."),
                 )
+                runCatching { voiceConsent?.reconcile() }
                 return
             } catch (error: CancellationException) {
                 throw error
