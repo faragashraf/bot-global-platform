@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -68,6 +70,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -449,19 +452,71 @@ private fun RulesetCard(title: String, subtitle: String, badge: String, enabled:
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = if (enabled) FamilyGamesColors.NightSoft else FamilyGamesColors.NightSoft.copy(alpha = .55f)),
     ) {
-        Row(Modifier.padding(FamilyGamesSpacing.Lg), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(58.dp).clip(CircleShape).background(if (enabled) FamilyGamesColors.Purple else Color.DarkGray),
-                contentAlignment = Alignment.Center,
-            ) { Text(if (enabled) "3×3" else "5×5", fontWeight = FontWeight.Black) }
-            Spacer(Modifier.width(FamilyGamesSpacing.Md))
-            Column(Modifier.weight(1f)) {
-                Text(title, fontWeight = FontWeight.Bold, fontSize = 19.sp)
-                Text(subtitle, color = FamilyGamesColors.Muted)
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(FamilyGamesSpacing.Lg)) {
+            val statusPlacement = rulesetCardStatusPlacement(maxWidth)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                RulesetModeBadge(if (enabled) "3×3" else "5×5", enabled)
+                Spacer(Modifier.width(FamilyGamesSpacing.Md))
+                when (statusPlacement) {
+                    RulesetCardStatusPlacement.Inline -> Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RulesetDetails(title, subtitle, Modifier.weight(1f))
+                        Spacer(Modifier.width(FamilyGamesSpacing.Md))
+                        RulesetStatus(
+                            badge = badge,
+                            enabled = enabled,
+                            modifier = Modifier.widthIn(max = RulesetCardStatusMaxWidth),
+                        )
+                    }
+
+                    RulesetCardStatusPlacement.Below -> Column(Modifier.weight(1f)) {
+                        RulesetDetails(title, subtitle)
+                        Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+                        RulesetStatus(badge, enabled, Modifier.align(Alignment.End))
+                    }
+                }
             }
-            Text(badge, color = if (enabled) FamilyGamesColors.Mint else FamilyGamesColors.Muted, fontWeight = FontWeight.Bold)
         }
     }
+}
+
+@Composable
+private fun RulesetModeBadge(label: String, enabled: Boolean) {
+    Box(
+        Modifier
+            .size(RulesetCardModeBadgeSize)
+            .clip(CircleShape)
+            .background(if (enabled) FamilyGamesColors.Purple else Color.DarkGray),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, fontWeight = FontWeight.Black, maxLines = 1)
+    }
+}
+
+@Composable
+private fun RulesetDetails(title: String, subtitle: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(
+            text = title,
+            fontWeight = FontWeight.Bold,
+            fontSize = 19.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(text = subtitle, color = FamilyGamesColors.Muted)
+    }
+}
+
+@Composable
+private fun RulesetStatus(badge: String, enabled: Boolean, modifier: Modifier = Modifier) {
+    Text(
+        text = badge,
+        modifier = modifier,
+        color = if (enabled) FamilyGamesColors.Mint else FamilyGamesColors.Muted,
+        fontWeight = FontWeight.Bold,
+    )
 }
 
 @Composable
