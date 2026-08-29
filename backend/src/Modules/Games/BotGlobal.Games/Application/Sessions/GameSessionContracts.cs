@@ -45,7 +45,8 @@ public sealed record GameSessionSnapshot(
     Guid? WinnerMembershipId,
     string MatchStatus,
     Guid? RematchRequestedByMembershipId,
-    DateTimeOffset LastActivityAtUtc);
+    DateTimeOffset LastActivityAtUtc,
+    long Revision);
 
 public sealed record GameCommandResult<T>(
     T? Value,

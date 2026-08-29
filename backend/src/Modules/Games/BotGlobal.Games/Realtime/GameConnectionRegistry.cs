@@ -24,6 +24,17 @@ public sealed class GameConnectionRegistry
         }
     }
 
+    public bool Unjoined(string connectionId, Guid sessionId)
+    {
+        if (!_connections.TryGetValue(connectionId, out var state) ||
+            !state.SessionIds.TryRemove(sessionId, out _))
+        {
+            return false;
+        }
+
+        return RemoveSessionConnection(state.MembershipId, sessionId);
+    }
+
     public (Guid MembershipId, IReadOnlyList<Guid> SessionIds)? Disconnected(string connectionId)
     {
         if (!_connections.TryRemove(connectionId, out var state))
@@ -34,19 +45,29 @@ public sealed class GameConnectionRegistry
         var disconnectedSessions = new List<Guid>();
         foreach (var sessionId in state.SessionIds.Keys)
         {
-            var key = (state.MembershipId, sessionId);
-            var remaining = _sessionConnections.AddOrUpdate(
-                key,
-                0,
-                (_, count) => Math.Max(0, count - 1));
-            if (remaining == 0)
+            if (RemoveSessionConnection(state.MembershipId, sessionId))
             {
-                _sessionConnections.TryRemove(key, out _);
                 disconnectedSessions.Add(sessionId);
             }
         }
 
         return (state.MembershipId, disconnectedSessions);
+    }
+
+    private bool RemoveSessionConnection(Guid membershipId, Guid sessionId)
+    {
+        var key = (membershipId, sessionId);
+        var remaining = _sessionConnections.AddOrUpdate(
+            key,
+            0,
+            (_, count) => Math.Max(0, count - 1));
+        if (remaining != 0)
+        {
+            return false;
+        }
+
+        _sessionConnections.TryRemove(key, out _);
+        return true;
     }
 
     private sealed class ConnectionState(Guid membershipId)

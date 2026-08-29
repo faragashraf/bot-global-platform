@@ -158,6 +158,7 @@ data class GameSessionSnapshot(
     val matchStatus: String,
     val rematchRequestedByMembershipId: String? = null,
     val lastActivityAtUtc: String,
+    val revision: Long = 0,
 )
 
 class ApiException(

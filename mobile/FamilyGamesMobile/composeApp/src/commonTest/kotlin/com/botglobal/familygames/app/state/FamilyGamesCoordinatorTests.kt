@@ -21,17 +21,23 @@ import com.botglobal.mobile.platform.device.PermissionController
 import com.botglobal.mobile.platform.device.PermissionKind
 import com.botglobal.mobile.platform.device.PermissionState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import com.botglobal.familygames.app.data.ApiException
 import com.botglobal.mobile.platform.update.AppVersionPolicy
+import com.botglobal.mobile.platform.realtime.NetworkAvailability
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FamilyGamesCoordinatorTests {
@@ -157,7 +163,345 @@ class FamilyGamesCoordinatorTests {
     }
 
     @Test
-    fun foreground_resume_rejoins_and_refreshes_authoritative_state() = runTest {
+    fun reconnect_completion_recovers_without_foreground_event() = runTest {
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = game(version = 3, status = "started"),
+            rejoinResult = game(version = 8, status = "started", activePlayer = membershipId),
+        )
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(gateway, realtime, SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        runCurrent()
+        realtime.setConnection(RealtimeConnectionState.Connected)
+        advanceUntilIdle()
+
+        assertEquals(1, gateway.rejoinCalls)
+        assertEquals(8, coordinator.state.value.game?.version)
+        assertEquals(RealtimeConnectionState.Connected, coordinator.state.value.connection)
+        assertEquals(true, coordinator.state.value.recoveredFromInterruption)
+        assertNull(coordinator.state.value.errorCode)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun network_restoration_restarts_exhausted_transport_without_foreground_event() = runTest {
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = game(version = 3, status = "started"),
+            rejoinResult = game(version = 8, status = "started", activePlayer = membershipId),
+        )
+        val realtime = FakeRealtime(connectOnStart = true)
+        val network = FakeNetworkAvailability()
+        val coordinator = FamilyGamesCoordinator(
+            gateway,
+            realtime,
+            SilentHaptics,
+            this,
+            networkAvailability = network,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        realtime.setConnection(RealtimeConnectionState.Failed)
+        runCurrent()
+        network.setAvailable(true)
+        advanceUntilIdle()
+
+        assertEquals(2, realtime.startCalls)
+        assertEquals(1, gateway.rejoinCalls)
+        assertEquals(RealtimeConnectionState.Connected, coordinator.state.value.connection)
+        assertEquals(SessionRecoveryState.Recovered, coordinator.state.value.recovery)
+        assertNull(coordinator.state.value.errorCode)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun successful_recovery_clears_an_older_unrecoverable_error() = runTest {
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = game(version = 3, status = "started"),
+            rejoinBehavior = { call ->
+                if (call == 1) throw ApiException("session_not_found", 404, "Gone")
+                game(version = 9, status = "started", activePlayer = membershipId)
+            },
+        )
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(gateway, realtime, SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        runCurrent()
+        realtime.setConnection(RealtimeConnectionState.Connected)
+        advanceUntilIdle()
+        assertEquals("recovery_failed", coordinator.state.value.errorCode)
+
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        runCurrent()
+        realtime.setConnection(RealtimeConnectionState.Connected)
+        advanceUntilIdle()
+
+        assertEquals(2, gateway.rejoinCalls)
+        assertEquals(9, coordinator.state.value.game?.version)
+        assertEquals(RealtimeConnectionState.Connected, coordinator.state.value.connection)
+        assertNull(coordinator.state.value.errorCode)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun stale_failed_attempt_cannot_override_newer_success() = runTest {
+        val firstStarted = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = game(version = 3, status = "started"),
+            rejoinBehavior = { call ->
+                if (call == 1) {
+                    firstStarted.complete(Unit)
+                    withContext(NonCancellable) { releaseFirst.await() }
+                    throw ApiException("session_not_found", 404, "Late failure")
+                }
+                game(version = 10, status = "started", activePlayer = membershipId)
+            },
+        )
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(gateway, realtime, SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        runCurrent()
+        realtime.setConnection(RealtimeConnectionState.Connected)
+        runCurrent()
+        firstStarted.await()
+
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        runCurrent()
+        realtime.setConnection(RealtimeConnectionState.Connected)
+        runCurrent()
+        assertEquals(2, gateway.rejoinCalls)
+        assertEquals(10, coordinator.state.value.game?.version)
+
+        releaseFirst.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(10, coordinator.state.value.game?.version)
+        assertEquals(RealtimeConnectionState.Connected, coordinator.state.value.connection)
+        assertNull(coordinator.state.value.errorCode)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun duplicate_reconnect_callbacks_coalesce_to_one_recovery() = runTest {
+        val releaseRecovery = CompletableDeferred<Unit>()
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = game(version = 3, status = "started"),
+            rejoinBehavior = {
+                releaseRecovery.await()
+                game(version = 6, status = "started")
+            },
+        )
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(gateway, realtime, SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        runCurrent()
+        realtime.setConnection(RealtimeConnectionState.Connected)
+        realtime.setConnection(RealtimeConnectionState.Connected)
+        runCurrent()
+
+        assertEquals(1, gateway.rejoinCalls)
+        coordinator.resumeAfterForeground()
+        runCurrent()
+        assertEquals(1, gateway.rejoinCalls)
+
+        releaseRecovery.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(6, coordinator.state.value.game?.version)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun recovery_force_replaces_a_stale_local_board_with_authoritative_state() = runTest {
+        val stale = game(version = 99, status = "started").copy(
+            board = listOf("x", "", "", "", "", "", "", "", ""),
+        )
+        val authoritative = game(version = 7, status = "started", activePlayer = membershipId).copy(
+            board = listOf("", "", "", "", "o", "", "", "", ""),
+        )
+        val gateway = FakeGateway(restored = mobileSession, active = stale, rejoinResult = authoritative)
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(gateway, realtime, SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        runCurrent()
+        realtime.setConnection(RealtimeConnectionState.Connected)
+        advanceUntilIdle()
+
+        assertEquals(7, coordinator.state.value.game?.version)
+        assertEquals(authoritative.board, coordinator.state.value.game?.board)
+        assertNull(coordinator.state.value.errorCode)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun recovery_publishes_authoritative_completion_while_client_was_offline() = runTest {
+        val completed = game(version = 12, status = "completed").copy(
+            board = listOf("x", "x", "x", "o", "o", "", "", "", ""),
+            matchStatus = "won",
+            winnerMembershipId = membershipId,
+            activePlayerMembershipId = null,
+        )
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = game(version = 4, status = "started"),
+            rejoinResult = completed,
+        )
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(gateway, realtime, SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        runCurrent()
+        realtime.setConnection(RealtimeConnectionState.Connected)
+        advanceUntilIdle()
+
+        assertEquals(AppScreen.Result, coordinator.state.value.screen)
+        assertEquals("completed", coordinator.state.value.game?.status)
+        assertEquals(completed.board, coordinator.state.value.game?.board)
+        assertEquals(membershipId, coordinator.state.value.game?.winnerMembershipId)
+        assertNull(coordinator.state.value.errorCode)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun opponent_disconnect_event_publishes_generic_disconnected_state() = runTest {
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(restored = mobileSession, active = game(status = "started", revision = 10)),
+            realtime,
+            SilentHaptics,
+            this,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.emit(game(status = "started", opponentConnected = false, revision = 11))
+        advanceUntilIdle()
+
+        assertEquals(OpponentConnectionState.Disconnected, coordinator.state.value.opponentConnection)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun opponent_rejoin_event_clears_disconnected_state() = runTest {
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(
+                restored = mobileSession,
+                active = game(status = "started", opponentConnected = false, revision = 20),
+            ),
+            realtime,
+            SilentHaptics,
+            this,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.emit(game(status = "started", opponentConnected = true, revision = 21))
+        advanceUntilIdle()
+
+        assertEquals(OpponentConnectionState.Connected, coordinator.state.value.opponentConnection)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun fast_disconnect_reconnect_does_not_leave_opponent_stuck_disconnected() = runTest {
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(restored = mobileSession, active = game(status = "started", revision = 30)),
+            realtime,
+            SilentHaptics,
+            this,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.emit(game(status = "started", opponentConnected = false, revision = 31))
+        realtime.emit(game(status = "started", opponentConnected = true, revision = 32))
+        advanceUntilIdle()
+
+        assertEquals(OpponentConnectionState.Connected, coordinator.state.value.opponentConnection)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun stale_disconnect_event_cannot_override_newer_reconnected_presence() = runTest {
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(restored = mobileSession, active = game(status = "started", revision = 40)),
+            realtime,
+            SilentHaptics,
+            this,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.emit(game(status = "started", opponentConnected = true, revision = 42))
+        realtime.emit(game(status = "started", opponentConnected = false, revision = 41))
+        advanceUntilIdle()
+
+        assertEquals(42, coordinator.state.value.game?.revision)
+        assertEquals(OpponentConnectionState.Connected, coordinator.state.value.opponentConnection)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun authoritative_rejoin_refresh_replaces_opponent_presence() = runTest {
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = game(status = "started", opponentConnected = false, revision = 50),
+            rejoinResult = game(status = "started", opponentConnected = true, revision = 51),
+        )
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(gateway, realtime, SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        runCurrent()
+        realtime.setConnection(RealtimeConnectionState.Connected)
+        advanceUntilIdle()
+
+        assertEquals(OpponentConnectionState.Connected, coordinator.state.value.opponentConnection)
+        assertEquals(51, coordinator.state.value.game?.revision)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun presence_projection_is_generic_and_independent_of_xo_state() {
+        val futureGame = game(gameType = "future-family-game", opponentConnected = false)
+
+        assertEquals(
+            OpponentConnectionState.Disconnected,
+            futureGame.opponentConnectionState(membershipId),
+        )
+    }
+
+    @Test
+    fun foreground_resume_uses_the_same_authoritative_recovery_owner() = runTest {
         val gateway = FakeGateway(
             restored = mobileSession,
             active = game(version = 3, status = "started"),
@@ -171,9 +515,10 @@ class FamilyGamesCoordinatorTests {
         coordinator.resumeAfterForeground()
         advanceUntilIdle()
 
-        assertEquals(1, realtime.rejoinCalls)
+        assertEquals(0, realtime.rejoinCalls)
         assertEquals(1, gateway.rejoinCalls)
         assertEquals(7, coordinator.state.value.game?.version)
+        assertEquals(SessionRecoveryState.Recovered, coordinator.state.value.recovery)
         assertEquals(true, coordinator.state.value.recoveredFromInterruption)
         coordinator.dispose()
     }
@@ -341,6 +686,7 @@ class FamilyGamesCoordinatorTests {
         private val moveResult: GameSessionSnapshot? = null,
         private val policy: AppVersionPolicy? = null,
         private val rejoinResult: GameSessionSnapshot? = null,
+        private val rejoinBehavior: (suspend (Int) -> GameSessionSnapshot)? = null,
         private val moveError: ApiException? = null,
         private val resolvedInvitation: GameSessionSnapshot? = null,
     ) : FamilyGamesGateway {
@@ -378,6 +724,7 @@ class FamilyGamesCoordinatorTests {
         override suspend fun ready(sessionId: String) = game(status = "started")
         override suspend fun rejoin(sessionId: String): GameSessionSnapshot {
             rejoinCalls++
+            rejoinBehavior?.let { return it(rejoinCalls) }
             return rejoinResult ?: active ?: game()
         }
         override suspend fun move(request: MoveRequest): GameSessionSnapshot {
@@ -389,18 +736,36 @@ class FamilyGamesCoordinatorTests {
         override suspend fun acceptRematch(sessionId: String) = game(status = "started")
     }
 
-    private class FakeRealtime : GameRealtimeClient {
+    private class FakeRealtime(
+        private val connectOnStart: Boolean = false,
+    ) : GameRealtimeClient {
         private val mutableEvents = MutableSharedFlow<GameRealtimeEvent>(extraBufferCapacity = 4)
         private val mutableConnection = MutableStateFlow(RealtimeConnectionState.Connected)
         override val connectionState: StateFlow<RealtimeConnectionState> = mutableConnection
         override val events: Flow<GameRealtimeEvent> = mutableEvents
         var startedSession: String? = null
+        var startCalls: Int = 0
         var rejoinCalls: Int = 0
-        override suspend fun start(sessionId: String, accessToken: suspend () -> String?) { startedSession = sessionId }
+        override suspend fun start(sessionId: String, accessToken: suspend () -> String?) {
+            startCalls++
+            startedSession = sessionId
+            if (connectOnStart) {
+                mutableConnection.value = RealtimeConnectionState.Connecting
+                mutableConnection.value = RealtimeConnectionState.Connected
+            }
+        }
         override suspend fun stop() = Unit
         override suspend fun rejoin() { rejoinCalls++ }
         fun emit(snapshot: GameSessionSnapshot) { mutableEvents.tryEmit(GameRealtimeEvent("GameStateUpdated", snapshot)) }
         fun setConnection(state: RealtimeConnectionState) { mutableConnection.value = state }
+    }
+
+    private class FakeNetworkAvailability : NetworkAvailability {
+        private val mutableChanges = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
+        override val changes: Flow<Boolean> = mutableChanges
+        fun setAvailable(available: Boolean) {
+            mutableChanges.tryEmit(available)
+        }
     }
 
     private object SilentHaptics : SemanticHaptics {
@@ -444,22 +809,26 @@ class FamilyGamesCoordinatorTests {
             status: String = "waiting",
             activePlayer: String? = null,
             matchNumber: Int = 1,
+            gameType: String = "xo",
+            opponentConnected: Boolean = true,
+            revision: Long = 0,
         ) = GameSessionSnapshot(
             sessionId = "session-1",
             joinCode = "ABC123",
-            gameType = "xo",
+            gameType = gameType,
             status = status,
             matchNumber = matchNumber,
             ruleset = RulesetSnapshot("classic-3x3", 3, 3, 2, null, true, false),
             players = listOf(
                 PlayerSnapshot(membershipId, "Player", 0, "x", true, true),
-                PlayerSnapshot("member-2", "Opponent", 1, "o", true, true),
+                PlayerSnapshot("member-2", "Opponent", 1, "o", true, opponentConnected),
             ),
             board = List(9) { "" },
             version = version,
             activePlayerMembershipId = activePlayer,
             matchStatus = "inprogress",
             lastActivityAtUtc = "2099-01-01T00:00:00Z",
+            revision = revision,
         )
     }
 }

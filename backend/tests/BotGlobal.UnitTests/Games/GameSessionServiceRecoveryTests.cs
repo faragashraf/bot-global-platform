@@ -76,19 +76,73 @@ public sealed class GameSessionServiceRecoveryTests
         Assert.Equal("session_not_found", result.ErrorCode);
     }
 
+    [Fact]
+    public async Task Disconnect_and_rejoin_publish_authoritative_generic_presence_snapshots()
+    {
+        var first = Identity("One");
+        var second = Identity("Two");
+        var realtime = new RecordingRealtime();
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 8, 29, 10, 0, 0, TimeSpan.Zero));
+        await using var context = CreateContext(Guid.NewGuid().ToString("N"));
+        var service = CreateService(context, realtime, clock);
+        var created = await service.CreateAsync(
+            first,
+            new CreateGameSessionRequest("classic-3x3"),
+            CancellationToken.None);
+        var sessionId = created.Value!.SessionId;
+        await service.JoinAsync(second, new JoinGameSessionRequest(created.Value.JoinCode), CancellationToken.None);
+        realtime.ConnectionChanges.Clear();
+
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var disconnected = await service.SetDisconnectedAsync(second.MembershipId, sessionId, CancellationToken.None);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var rejoined = await service.RejoinAsync(second, sessionId, CancellationToken.None);
+
+        Assert.True(disconnected.Succeeded);
+        Assert.True(rejoined.Succeeded);
+        Assert.Collection(
+            realtime.ConnectionChanges,
+            snapshot => Assert.False(snapshot.Players.Single(x => x.MembershipId == second.MembershipId).IsConnected),
+            snapshot => Assert.True(snapshot.Players.Single(x => x.MembershipId == second.MembershipId).IsConnected));
+        Assert.True(realtime.ConnectionChanges[1].Revision > realtime.ConnectionChanges[0].Revision);
+    }
+
+    [Fact]
+    public void Fast_transport_replacement_does_not_report_participant_disconnected()
+    {
+        var registry = new BotGlobal.Games.Realtime.GameConnectionRegistry();
+        var member = Guid.NewGuid();
+        var session = Guid.NewGuid();
+        registry.Connected("old", member);
+        registry.Joined("old", session);
+        registry.Connected("new", member);
+        registry.Joined("new", session);
+
+        var oldTransportClosed = registry.Disconnected("old");
+        var newTransportClosed = registry.Disconnected("new");
+
+        Assert.NotNull(oldTransportClosed);
+        Assert.Empty(oldTransportClosed.Value.SessionIds);
+        Assert.NotNull(newTransportClosed);
+        Assert.Equal(session, Assert.Single(newTransportClosed.Value.SessionIds));
+    }
+
     private static GamesDbContext CreateContext(string databaseName) =>
         new(
             new DbContextOptionsBuilder<GamesDbContext>()
                 .UseInMemoryDatabase(databaseName)
                 .Options);
 
-    private static GameSessionService CreateService(GamesDbContext context) =>
+    private static GameSessionService CreateService(
+        GamesDbContext context,
+        IGameRealtimeNotifier? realtime = null,
+        TimeProvider? timeProvider = null) =>
         new(
             context,
             new AllowFreeEntitlements(),
-            new SilentRealtime(),
+            realtime ?? new SilentRealtime(),
             new SilentNotifications(),
-            TimeProvider.System,
+            timeProvider ?? TimeProvider.System,
             NullLogger<GameSessionService>.Instance);
 
     private static ApplicationIdentityDescriptor Identity(string name) =>
@@ -124,5 +178,31 @@ public sealed class GameSessionServiceRecoveryTests
         public Task GameCompletedAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task RematchRequestedAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task RematchAcceptedAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class RecordingRealtime : IGameRealtimeNotifier
+    {
+        public List<GameSessionSnapshot> ConnectionChanges { get; } = [];
+        public Task SessionCreatedAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task PlayerJoinedAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task PlayerReadyAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task GameStartedAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StateUpdatedAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task MoveAcceptedAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task PlayerConnectionChangedAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken)
+        {
+            ConnectionChanges.Add(snapshot);
+            return Task.CompletedTask;
+        }
+        public Task GameCompletedAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task RematchRequestedAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task RematchAcceptedAsync(GameSessionSnapshot snapshot, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class MutableTimeProvider(DateTimeOffset initial) : TimeProvider
+    {
+        private DateTimeOffset _now = initial;
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan duration) => _now += duration;
     }
 }

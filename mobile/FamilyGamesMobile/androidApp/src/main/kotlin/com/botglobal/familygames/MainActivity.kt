@@ -116,6 +116,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         val vault = AndroidSecureSessionVault(applicationContext)
         val haptics = AndroidSemanticHaptics(applicationContext)
+        val networkAvailability = AndroidNetworkAvailability(applicationContext)
         setContent {
             FamilyGamesApp(
                 apiBaseUrl = BuildConfig.API_BASE_URL,
@@ -132,6 +133,7 @@ class MainActivity : FragmentActivity() {
                 platformShare = nativeShare,
                 qrScanner = qrScanner,
                 permissions = permissionController,
+                networkAvailability = networkAvailability,
                 invitationQr = { content, description, modifier ->
                     AndroidInvitationQr(content, description, modifier)
                 },

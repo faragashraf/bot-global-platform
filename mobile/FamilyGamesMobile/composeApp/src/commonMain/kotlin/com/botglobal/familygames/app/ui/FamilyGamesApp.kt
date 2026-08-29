@@ -82,6 +82,7 @@ import com.botglobal.familygames.app.state.AppLanguage
 import com.botglobal.familygames.app.state.AppScreen
 import com.botglobal.familygames.app.state.FamilyGamesCoordinator
 import com.botglobal.familygames.app.state.FamilyGamesUiState
+import com.botglobal.familygames.app.state.OpponentConnectionState
 import com.botglobal.mobile.platform.device.PermissionController
 import com.botglobal.mobile.platform.device.SemanticHaptics
 import com.botglobal.mobile.platform.device.UnavailablePermissionController
@@ -93,6 +94,8 @@ import com.botglobal.mobile.platform.invitations.QrScannerCapability
 import com.botglobal.mobile.platform.invitations.UnavailablePlatformShare
 import com.botglobal.mobile.platform.invitations.UnavailableQrScanner
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
+import com.botglobal.mobile.platform.realtime.NetworkAvailability
+import com.botglobal.mobile.platform.realtime.UnavailableNetworkAvailability
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
@@ -110,6 +113,7 @@ fun FamilyGamesApp(
     platformShare: PlatformShareCapability = UnavailablePlatformShare,
     qrScanner: QrScannerCapability = UnavailableQrScanner,
     permissions: PermissionController = UnavailablePermissionController,
+    networkAvailability: NetworkAvailability = UnavailableNetworkAvailability,
     invitationQr: @Composable (String, String, Modifier) -> Unit = { _, description, modifier ->
         Box(
             modifier
@@ -131,6 +135,7 @@ fun FamilyGamesApp(
         platformShare,
         qrScanner,
         permissions,
+        networkAvailability,
     ) {
         val gateway = FamilyGamesApi(createPlatformHttpClient(), environment, sessionVault)
         FamilyGamesCoordinator(
@@ -144,6 +149,7 @@ fun FamilyGamesApp(
             platformShare,
             qrScanner,
             permissions,
+            networkAvailability,
         )
     }
     val state by coordinator.state.collectAsState()
@@ -524,6 +530,7 @@ private fun LobbyScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, coo
             text,
             coordinator::retryRealtime,
         )
+        OpponentPresenceBanner(state.opponentConnection, text)
         Spacer(Modifier.height(FamilyGamesSpacing.Md))
         PrimaryButton(
             if (local?.isReady == true) text.readyWaiting else text.ready,
@@ -609,6 +616,7 @@ private fun GameplayScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, 
             text,
             coordinator::retryRealtime,
         )
+        OpponentPresenceBanner(state.opponentConnection, text)
         Spacer(Modifier.height(FamilyGamesSpacing.Md))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FamilyGamesSpacing.Sm)) {
             PlayerChip(local, text.you, isLocalTurn, Modifier.weight(1f))
@@ -814,6 +822,28 @@ private fun ConnectionPill(
         Text(label, color = color, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         if (state == RealtimeConnectionState.Disconnected || state == RealtimeConnectionState.Failed) {
             TextButton(onClick = retry) { Text(text.retry) }
+        }
+    }
+}
+
+@Composable
+private fun OpponentPresenceBanner(
+    state: OpponentConnectionState,
+    text: FamilyGamesStrings,
+) {
+    AnimatedVisibility(visible = state == OpponentConnectionState.Disconnected) {
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(top = FamilyGamesSpacing.Sm),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = FamilyGamesColors.Gold.copy(alpha = .14f)),
+        ) {
+            Text(
+                text.opponentDisconnected,
+                modifier = Modifier.fillMaxWidth().padding(FamilyGamesSpacing.Md),
+                color = FamilyGamesColors.Gold,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }

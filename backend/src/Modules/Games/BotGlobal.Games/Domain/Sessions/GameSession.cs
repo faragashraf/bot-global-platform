@@ -104,7 +104,10 @@ public sealed class GameSession
     public void SetConnection(Guid membershipId, bool connected, DateTimeOffset now)
     {
         RequirePlayer(membershipId).SetConnected(connected, now);
-        LastActivityAtUtc = now;
+        // Connection changes are also the ordering revision for generic session
+        // presence events. Keep it strictly monotonic even when a reconnect and
+        // an old connection close are observed in the same clock tick.
+        LastActivityAtUtc = now > LastActivityAtUtc ? now : LastActivityAtUtc.AddTicks(1);
     }
 
     public void Complete(DateTimeOffset now)

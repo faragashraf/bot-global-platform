@@ -46,12 +46,30 @@ public sealed class GamesHub(
     public async Task<GameSessionSnapshot> Rejoin(Guid sessionId)
     {
         var identity = RequireIdentity();
-        var result = await sessions.RejoinAsync(identity, sessionId, Context.ConnectionAborted);
-        var snapshot = RequireSuccess(result);
-        await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(sessionId), Context.ConnectionAborted);
+        // Register the new transport before the authoritative presence update.
+        // If an older connection closes concurrently, the registry therefore
+        // knows that this participant still has a live session connection.
         connections.Joined(Context.ConnectionId, sessionId);
-        await Clients.Caller.SendAsync("GameStateUpdated", snapshot, Context.ConnectionAborted);
-        return snapshot;
+        var markedConnected = false;
+        try
+        {
+            var result = await sessions.RejoinAsync(identity, sessionId, Context.ConnectionAborted);
+            var snapshot = RequireSuccess(result);
+            markedConnected = true;
+            await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(sessionId), Context.ConnectionAborted);
+            await Clients.Caller.SendAsync("GameStateUpdated", snapshot, Context.ConnectionAborted);
+            return snapshot;
+        }
+        catch
+        {
+            var wasLastConnection = connections.Unjoined(Context.ConnectionId, sessionId);
+            if (markedConnected && wasLastConnection)
+            {
+                await sessions.SetDisconnectedAsync(identity.MembershipId, sessionId, CancellationToken.None);
+            }
+
+            throw;
+        }
     }
 
     public async Task<GameSessionSnapshot> Ready(Guid sessionId) =>

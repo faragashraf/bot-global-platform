@@ -24,16 +24,21 @@ import com.botglobal.mobile.platform.invitations.QrScannerCapability
 import com.botglobal.mobile.platform.invitations.UnavailablePlatformShare
 import com.botglobal.mobile.platform.invitations.UnavailableQrScanner
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
+import com.botglobal.mobile.platform.realtime.NetworkAvailability
+import com.botglobal.mobile.platform.realtime.UnavailableNetworkAvailability
 import com.botglobal.mobile.platform.update.UpdateMode
 import com.botglobal.mobile.platform.update.UpdatePolicyEngine
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.random.Random
 
 enum class AppScreen {
@@ -52,12 +57,22 @@ enum class AppScreen {
 
 enum class AppLanguage { Arabic, English }
 
+enum class SessionRecoveryState {
+    Idle,
+    Interrupted,
+    Recovering,
+    Recovered,
+    Unrecoverable,
+}
+
 data class FamilyGamesUiState(
     val screen: AppScreen = AppScreen.Startup,
     val language: AppLanguage = AppLanguage.Arabic,
     val mobileSession: MobileSession? = null,
     val game: GameSessionSnapshot? = null,
     val connection: RealtimeConnectionState = RealtimeConnectionState.Disconnected,
+    val recovery: SessionRecoveryState = SessionRecoveryState.Idle,
+    val opponentConnection: OpponentConnectionState = OpponentConnectionState.Unknown,
     val recoveredFromInterruption: Boolean = false,
     val busy: Boolean = false,
     val errorCode: String? = null,
@@ -80,14 +95,29 @@ class FamilyGamesCoordinator(
     private val platformShare: PlatformShareCapability = UnavailablePlatformShare,
     private val qrScanner: QrScannerCapability = UnavailableQrScanner,
     private val permissions: PermissionController = UnavailablePermissionController,
+    networkAvailability: NetworkAvailability = UnavailableNetworkAvailability,
 ) {
     private val mutableState = MutableStateFlow(FamilyGamesUiState())
     val state: StateFlow<FamilyGamesUiState> = mutableState.asStateFlow()
     private var realtimeEventsJob: Job? = null
     private var realtimeStateJob: Job? = null
+    private var networkAvailabilityJob: Job? = null
+    private var recoveryJob: Job? = null
+    private var transportRestartJob: Job? = null
     private var actionJob: Job? = null
     private var realtimeHasConnected = false
-    private var realtimeWasInterrupted = false
+    private var recoveryRequired = false
+    private var recoveryGeneration = 0L
+    private var realtimeSessionId: String? = null
+    private var transportOperationInProgress = false
+
+    init {
+        networkAvailabilityJob = scope.launch {
+            networkAvailability.changes.collect { available ->
+                if (available) onNetworkAvailable()
+            }
+        }
+    }
 
     fun startup() = launchAction {
         val update = runCatching {
@@ -307,39 +337,46 @@ class FamilyGamesCoordinator(
         haptics.perform(HapticEvent.Success)
     }
 
-    fun retryRealtime() = launchAction {
-        val sessionId = requireGame().sessionId
-        connectRealtime(sessionId)
-        onAuthoritativeSnapshot(
-            gateway.rejoin(sessionId),
-            recoveredFromInterruption = true,
-        )
+    fun retryRealtime() {
+        val sessionId = mutableState.value.game?.sessionId ?: return
+        if (realtime.connectionState.value == RealtimeConnectionState.Connected) {
+            recoveryRequired = true
+            requestAuthoritativeRecovery(sessionId)
+        } else {
+            restartRealtimeTransport(sessionId)
+        }
     }
 
     fun resumeAfterForeground() {
         val sessionId = mutableState.value.game?.sessionId ?: return
         if (mutableState.value.screen !in GameScreens) return
-        launchAction {
-            val snapshot = try {
-                realtime.rejoin()
-                gateway.rejoin(sessionId)
-            } catch (_: Throwable) {
-                connectRealtime(sessionId)
-                gateway.rejoin(sessionId)
-            }
-            onAuthoritativeSnapshot(
-                snapshot,
-                recoveredFromInterruption = true,
-            )
+        if (transportOperationInProgress || recoveryJob?.isActive == true) return
+        if (realtime.connectionState.value == RealtimeConnectionState.Connected) {
+            recoveryRequired = true
+            requestAuthoritativeRecovery(sessionId)
+        } else {
+            restartRealtimeTransport(sessionId)
         }
     }
 
     fun exitGame() = launchAction {
+        resetRecoveryOrchestration()
         realtime.stop()
-        mutableState.update { it.copy(game = null, invitation = null, screen = AppScreen.Home) }
+        mutableState.update {
+            it.copy(
+                game = null,
+                invitation = null,
+                screen = AppScreen.Home,
+                connection = RealtimeConnectionState.Disconnected,
+                recovery = SessionRecoveryState.Idle,
+                recoveredFromInterruption = false,
+                errorCode = null,
+            )
+        }
     }
 
     fun logout() = launchAction {
+        resetRecoveryOrchestration()
         realtime.stop()
         gateway.logout()
         mutableState.value = FamilyGamesUiState(screen = AppScreen.Welcome, language = mutableState.value.language)
@@ -349,8 +386,8 @@ class FamilyGamesCoordinator(
         actionJob?.cancel()
         realtimeEventsJob?.cancel()
         realtimeStateJob?.cancel()
-        realtimeHasConnected = false
-        realtimeWasInterrupted = false
+        networkAvailabilityJob?.cancel()
+        resetRecoveryOrchestration()
         scope.launch { realtime.stop() }
     }
 
@@ -359,49 +396,286 @@ class FamilyGamesCoordinator(
     }
 
     private suspend fun connectRealtime(sessionId: String) {
+        resetRecoveryOrchestration()
+        realtimeSessionId = sessionId
         realtimeEventsJob?.cancel()
         realtimeStateJob?.cancel()
         realtimeEventsJob = scope.launch {
-            realtime.events.collectLatest { event -> onAuthoritativeSnapshot(event.snapshot) }
-        }
-        realtimeStateJob = scope.launch {
-            realtime.connectionState.collectLatest { connection ->
-                when (connection) {
-                    RealtimeConnectionState.Reconnecting,
-                    RealtimeConnectionState.Failed,
-                    -> if (realtimeHasConnected) realtimeWasInterrupted = true
-                    else -> Unit
-                }
-                mutableState.update {
-                    it.copy(
-                        connection = connection,
-                        recoveredFromInterruption = if (connection == RealtimeConnectionState.Connected) {
-                            it.recoveredFromInterruption
-                        } else {
-                            false
-                        },
-                    )
-                }
-                if (connection == RealtimeConnectionState.Connected) {
-                    if (realtimeWasInterrupted) recoverAuthoritativeState(sessionId)
-                    realtimeHasConnected = true
-                    realtimeWasInterrupted = false
+            realtime.events.collect { event ->
+                val accepted = onAuthoritativeSnapshot(event.snapshot)
+                if (accepted &&
+                    recoveryRequired &&
+                    realtime.connectionState.value == RealtimeConnectionState.Connected
+                ) {
+                    completeRecoveryFromAuthoritativeEvent(sessionId)
                 }
             }
         }
-        realtime.start(sessionId) { gateway.restore()?.accessToken }
+        realtimeStateJob = scope.launch {
+            realtime.connectionState.collect { connection ->
+                onRealtimeConnectionState(sessionId, connection)
+            }
+        }
+        transportOperationInProgress = true
+        try {
+            realtime.start(sessionId) { gateway.restore()?.accessToken }
+        } finally {
+            transportOperationInProgress = false
+        }
     }
 
-    private suspend fun recoverAuthoritativeState(sessionId: String) {
-        try {
-            onAuthoritativeSnapshot(
-                gateway.rejoin(sessionId),
-                recoveredFromInterruption = true,
-            )
-        } catch (_: Throwable) {
-            mutableState.update { it.copy(errorCode = "recovery_failed") }
-            haptics.perform(HapticEvent.Error)
+    private fun onRealtimeConnectionState(
+        sessionId: String,
+        connection: RealtimeConnectionState,
+    ) {
+        if (realtimeSessionId != sessionId || mutableState.value.game?.sessionId != sessionId) return
+        when (connection) {
+            RealtimeConnectionState.Connected -> {
+                val needsRecovery = recoveryRequired
+                realtimeHasConnected = true
+                if (needsRecovery) {
+                    mutableState.update {
+                        it.copy(
+                            connection = RealtimeConnectionState.Reconnecting,
+                            recovery = SessionRecoveryState.Recovering,
+                            recoveredFromInterruption = false,
+                            errorCode = null,
+                        )
+                    }
+                    requestAuthoritativeRecovery(sessionId)
+                } else {
+                    mutableState.update {
+                        it.copy(
+                            connection = RealtimeConnectionState.Connected,
+                            recovery = SessionRecoveryState.Idle,
+                            errorCode = null,
+                        )
+                    }
+                }
+            }
+
+            RealtimeConnectionState.Reconnecting,
+            RealtimeConnectionState.Failed,
+            RealtimeConnectionState.Disconnected,
+            -> {
+                if (realtimeHasConnected || recoveryRequired) {
+                    interruptRecovery(connection)
+                } else {
+                    mutableState.update {
+                        it.copy(
+                            connection = connection,
+                            recovery = SessionRecoveryState.Idle,
+                            recoveredFromInterruption = false,
+                        )
+                    }
+                }
+            }
+
+            RealtimeConnectionState.Connecting -> mutableState.update {
+                it.copy(
+                    connection = if (recoveryRequired) {
+                        RealtimeConnectionState.Reconnecting
+                    } else {
+                        RealtimeConnectionState.Connecting
+                    },
+                    recovery = if (recoveryRequired) {
+                        SessionRecoveryState.Interrupted
+                    } else {
+                        SessionRecoveryState.Idle
+                    },
+                    recoveredFromInterruption = false,
+                )
+            }
+
+            RealtimeConnectionState.Unavailable -> mutableState.update {
+                it.copy(
+                    connection = connection,
+                    recovery = SessionRecoveryState.Unrecoverable,
+                    recoveredFromInterruption = false,
+                )
+            }
         }
+    }
+
+    private fun interruptRecovery(connection: RealtimeConnectionState) {
+        recoveryRequired = true
+        invalidateRecoveryAttempt()
+        mutableState.update {
+            it.copy(
+                connection = connection,
+                recovery = SessionRecoveryState.Interrupted,
+                recoveredFromInterruption = false,
+                errorCode = it.errorCode.takeUnless { code -> code == "recovery_failed" },
+            )
+        }
+    }
+
+    private fun requestAuthoritativeRecovery(sessionId: String) {
+        if (realtimeSessionId != sessionId || recoveryJob?.isActive == true) return
+        recoveryRequired = true
+        val attempt = ++recoveryGeneration
+        mutableState.update {
+            it.copy(
+                connection = RealtimeConnectionState.Reconnecting,
+                recovery = SessionRecoveryState.Recovering,
+                recoveredFromInterruption = false,
+                errorCode = null,
+            )
+        }
+        recoveryJob = scope.launch {
+            recoverAuthoritativeState(sessionId, attempt)
+        }
+    }
+
+    private suspend fun recoverAuthoritativeState(sessionId: String, attempt: Long) {
+        RecoveryRetryBackoff.forEachIndexed { index, backoffMillis ->
+            if (!isCurrentRecovery(sessionId, attempt)) return
+            if (backoffMillis > 0) delay(backoffMillis)
+            if (!isCurrentRecovery(sessionId, attempt)) return
+            try {
+                publishRecoverySuccess(
+                    sessionId,
+                    attempt,
+                    withTimeoutOrNull(RecoveryRequestTimeoutMillis) {
+                        gateway.rejoin(sessionId)
+                    } ?: throw IllegalStateException("Authoritative recovery timed out."),
+                )
+                return
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: ApiException) {
+                if (error.code in AuthoritativeUnrecoverableRecoveryErrors) {
+                    publishUnrecoverableRecovery(sessionId, attempt)
+                    return
+                }
+                if (index == RecoveryRetryBackoff.lastIndex) {
+                    publishTransientRecoveryExhausted(sessionId, attempt)
+                    return
+                }
+            } catch (_: Throwable) {
+                if (index == RecoveryRetryBackoff.lastIndex) {
+                    publishTransientRecoveryExhausted(sessionId, attempt)
+                    return
+                }
+            }
+        }
+    }
+
+    private fun publishRecoverySuccess(
+        sessionId: String,
+        attempt: Long,
+        snapshot: GameSessionSnapshot,
+    ) {
+        if (!isCurrentRecovery(sessionId, attempt)) return
+        onAuthoritativeSnapshot(
+            snapshot,
+            recoveredFromInterruption = true,
+            forceReplace = true,
+        )
+        if (!isCurrentRecovery(sessionId, attempt)) return
+        recoveryRequired = false
+        mutableState.update {
+            it.copy(
+                connection = RealtimeConnectionState.Connected,
+                recovery = SessionRecoveryState.Recovered,
+                recoveredFromInterruption = true,
+                errorCode = null,
+            )
+        }
+    }
+
+    private fun publishUnrecoverableRecovery(sessionId: String, attempt: Long) {
+        if (!isCurrentRecovery(sessionId, attempt)) return
+        mutableState.update {
+            it.copy(
+                connection = RealtimeConnectionState.Failed,
+                recovery = SessionRecoveryState.Unrecoverable,
+                recoveredFromInterruption = false,
+                errorCode = "recovery_failed",
+            )
+        }
+        haptics.perform(HapticEvent.Error)
+    }
+
+    private fun publishTransientRecoveryExhausted(sessionId: String, attempt: Long) {
+        if (!isCurrentRecovery(sessionId, attempt)) return
+        mutableState.update {
+            it.copy(
+                connection = RealtimeConnectionState.Failed,
+                recovery = SessionRecoveryState.Interrupted,
+                recoveredFromInterruption = false,
+                errorCode = null,
+            )
+        }
+    }
+
+    private fun completeRecoveryFromAuthoritativeEvent(sessionId: String) {
+        if (realtimeSessionId != sessionId || !recoveryRequired) return
+        recoveryRequired = false
+        invalidateRecoveryAttempt()
+        mutableState.update {
+            it.copy(
+                connection = RealtimeConnectionState.Connected,
+                recovery = SessionRecoveryState.Recovered,
+                recoveredFromInterruption = true,
+                errorCode = null,
+            )
+        }
+    }
+
+    private fun restartRealtimeTransport(sessionId: String) {
+        if (transportOperationInProgress || transportRestartJob?.isActive == true) return
+        recoveryRequired = true
+        transportRestartJob = scope.launch {
+            transportOperationInProgress = true
+            try {
+                realtime.start(sessionId) { gateway.restore()?.accessToken }
+            } catch (_: Throwable) {
+                if (realtimeSessionId == sessionId) {
+                    mutableState.update {
+                        it.copy(
+                            connection = RealtimeConnectionState.Failed,
+                            recovery = SessionRecoveryState.Interrupted,
+                            recoveredFromInterruption = false,
+                            errorCode = null,
+                        )
+                    }
+                }
+            } finally {
+                transportOperationInProgress = false
+            }
+        }
+    }
+
+    private fun onNetworkAvailable() {
+        val sessionId = realtimeSessionId ?: return
+        if (!recoveryRequired) return
+        when (realtime.connectionState.value) {
+            RealtimeConnectionState.Reconnecting,
+            RealtimeConnectionState.Failed,
+            RealtimeConnectionState.Disconnected,
+            -> restartRealtimeTransport(sessionId)
+            else -> Unit
+        }
+    }
+
+    private fun isCurrentRecovery(sessionId: String, attempt: Long): Boolean =
+        realtimeSessionId == sessionId && recoveryGeneration == attempt
+
+    private fun invalidateRecoveryAttempt() {
+        recoveryGeneration++
+        recoveryJob?.cancel()
+        recoveryJob = null
+    }
+
+    private fun resetRecoveryOrchestration() {
+        invalidateRecoveryAttempt()
+        transportRestartJob?.cancel()
+        transportRestartJob = null
+        realtimeHasConnected = false
+        recoveryRequired = false
+        realtimeSessionId = null
+        transportOperationInProgress = false
     }
 
     private suspend fun resolveInvitationCandidate(candidate: String) {
@@ -452,11 +726,16 @@ class FamilyGamesCoordinator(
     private fun onAuthoritativeSnapshot(
         snapshot: GameSessionSnapshot,
         recoveredFromInterruption: Boolean = false,
-    ) {
+        forceReplace: Boolean = false,
+    ): Boolean {
         val current = mutableState.value.game
-        if (current != null && current.sessionId == snapshot.sessionId) {
-            if (snapshot.matchNumber < current.matchNumber) return
-            if (snapshot.matchNumber == current.matchNumber && snapshot.version < current.version) return
+        if (!forceReplace && current != null && current.sessionId == snapshot.sessionId) {
+            if (snapshot.matchNumber < current.matchNumber) return false
+            if (snapshot.matchNumber == current.matchNumber && snapshot.version < current.version) return false
+            if (snapshot.matchNumber == current.matchNumber &&
+                snapshot.version == current.version &&
+                isOlderSessionRevision(snapshot, current)
+            ) return false
         }
         val screen = when (snapshot.status) {
             "completed" -> AppScreen.Result
@@ -468,10 +747,20 @@ class FamilyGamesCoordinator(
             it.copy(
                 game = snapshot,
                 screen = screen,
+                opponentConnection = snapshot.opponentConnectionState(it.mobileSession?.identity?.membershipId),
                 errorCode = null,
                 recoveredFromInterruption = recoveredFromInterruption,
             )
         }
+        return true
+    }
+
+    private fun isOlderSessionRevision(
+        candidate: GameSessionSnapshot,
+        current: GameSessionSnapshot,
+    ): Boolean = when {
+        candidate.revision > 0 && current.revision > 0 -> candidate.revision < current.revision
+        else -> candidate.lastActivityAtUtc < current.lastActivityAtUtc
     }
 
     private fun emitGameFeedback(current: GameSessionSnapshot?, snapshot: GameSessionSnapshot) {
@@ -524,5 +813,14 @@ class FamilyGamesCoordinator(
             "duplicate_or_concurrent_move",
             "game_completed",
         )
+        val AuthoritativeUnrecoverableRecoveryErrors = setOf(
+            "session_not_found",
+            "active_session_not_found",
+            "session_not_joinable",
+            "not_participant",
+            "application_context_invalid",
+        )
+        val RecoveryRetryBackoff = listOf(0L, 500L, 1_000L, 2_000L)
+        const val RecoveryRequestTimeoutMillis = 6_000L
     }
 }

@@ -321,11 +321,19 @@ internal sealed class GameSessionService(
         return GameCommandResult<GameSessionSnapshot>.Success(snapshot);
     }
 
-    public Task<GameCommandResult<GameSessionSnapshot>> RejoinAsync(
+    public async Task<GameCommandResult<GameSessionSnapshot>> RejoinAsync(
         ApplicationIdentityDescriptor identity,
         Guid sessionId,
-        CancellationToken cancellationToken) =>
-        GetAndProjectAsync(identity, sessionId, setConnected: true, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var result = await GetAndProjectAsync(identity, sessionId, setConnected: true, cancellationToken);
+        if (result.Succeeded && result.Value is not null)
+        {
+            await realtime.PlayerConnectionChangedAsync(result.Value, cancellationToken);
+        }
+
+        return result;
+    }
 
     public async Task<GameCommandResult<GameSessionSnapshot>> SetDisconnectedAsync(
         Guid membershipId,
@@ -526,7 +534,8 @@ internal sealed class GameSessionService(
             state.WinnerMembershipId,
             state.MatchStatus.ToString().ToLowerInvariant(),
             session.RematchRequestedByMembershipId,
-            session.LastActivityAtUtc);
+            session.LastActivityAtUtc,
+            session.LastActivityAtUtc.UtcDateTime.Ticks);
     }
 
     private static XoEngine Replay(
