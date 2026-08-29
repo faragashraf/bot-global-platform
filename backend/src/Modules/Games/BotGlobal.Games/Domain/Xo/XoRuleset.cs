@@ -51,7 +51,7 @@ public sealed record XoRuleset
     public bool VoiceEnabled { get; }
     public string? RequiredEntitlement { get; }
 
-    public static XoRuleset Classic => new("classic-3x3", 3, 3);
+    public static XoRuleset Classic => new("classic-3x3", 3, 3, voiceEnabled: true);
     public static XoRuleset Extended => new(
         "extended-5x5-win4",
         5,

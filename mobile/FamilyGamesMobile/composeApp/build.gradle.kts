@@ -46,6 +46,7 @@ kotlin {
             implementation(libs.androidx.biometric)
             implementation(libs.ktor.client.okhttp)
             implementation("com.microsoft.signalr:signalr:7.0.0")
+            implementation(libs.webrtc.android)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)

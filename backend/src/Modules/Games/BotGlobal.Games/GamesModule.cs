@@ -5,11 +5,13 @@ using BotGlobal.Games.Application.Startup;
 using BotGlobal.Games.Endpoints;
 using BotGlobal.Games.Infrastructure.Persistence;
 using BotGlobal.Games.Realtime;
+using BotGlobal.Games.Realtime.Voice;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace BotGlobal.Games;
 
@@ -53,6 +55,20 @@ public static class GamesModule
         services.AddScoped<IGameNotificationPublisher, DeferredGameNotificationPublisher>();
         services.AddScoped<IGameRealtimeNotifier, GameRealtimeNotifier>();
         services.AddSingleton<GameConnectionRegistry>();
+        services.AddSingleton<VoiceConnectionRegistry>();
+        services.AddSingleton<VoiceConsentRegistry>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddOptions<VoiceIceOptions>()
+            .Bind(configuration.GetSection(VoiceIceOptions.SectionName))
+            .Validate(x => x.CredentialLifetimeMinutes is >= 5 and <= 1440,
+                "Voice ICE credential lifetime must be between 5 and 1440 minutes.")
+            .ValidateOnStart();
+        services.AddSingleton<IVoiceIceConfigurationProvider, VoiceIceConfigurationProvider>();
+        services.AddOptions<VoiceConsentOptions>()
+            .Bind(configuration.GetSection(VoiceConsentOptions.SectionName))
+            .Validate(x => x.RequestLifetimeSeconds is >= 5 and <= 120,
+                "Voice consent request lifetime must be between 5 and 120 seconds.")
+            .ValidateOnStart();
         return services;
     }
 

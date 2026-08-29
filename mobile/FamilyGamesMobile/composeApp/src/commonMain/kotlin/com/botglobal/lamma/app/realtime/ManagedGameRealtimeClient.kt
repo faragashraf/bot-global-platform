@@ -4,6 +4,11 @@ import com.botglobal.lamma.app.data.GameSessionSnapshot
 import com.botglobal.mobile.platform.realtime.NetworkAvailabilitySnapshot
 import com.botglobal.mobile.platform.realtime.NetworkAvailabilityState
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
+import com.botglobal.mobile.platform.voice.VoiceIceConfiguration
+import com.botglobal.mobile.platform.voice.VoiceJoinResult
+import com.botglobal.mobile.platform.voice.VoiceSignal
+import com.botglobal.mobile.platform.voice.VoiceConsentResult
+import com.botglobal.mobile.platform.voice.VoiceConsentSignal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -27,6 +32,8 @@ internal data class GameRealtimeTransportConfiguration(
 
 internal interface GameRealtimeTransportListener {
     fun onEvent(name: String, snapshot: GameSessionSnapshot)
+    fun onVoiceSignal(signal: VoiceSignal)
+    fun onVoiceConsentSignal(signal: VoiceConsentSignal) = Unit
     fun onClosed()
 }
 
@@ -34,6 +41,19 @@ internal interface GameRealtimeTransport {
     suspend fun connectAndRejoin()
     suspend fun rejoin()
     suspend fun dispose()
+    suspend fun voiceIceConfiguration(roomId: String): VoiceIceConfiguration = error("Voice unavailable")
+    suspend fun joinVoice(roomId: String, generation: Long): VoiceJoinResult = error("Voice unavailable")
+    suspend fun leaveVoice(roomId: String, generation: Long) = Unit
+    suspend fun voiceOffer(roomId: String, generation: Long, sessionDescription: String) = Unit
+    suspend fun voiceAnswer(roomId: String, generation: Long, sessionDescription: String) = Unit
+    suspend fun voiceIceCandidate(roomId: String, generation: Long, candidate: String, sdpMid: String?, sdpMLineIndex: Int) = Unit
+    suspend fun voiceMuted(roomId: String, generation: Long, muted: Boolean) = Unit
+    suspend fun requestVoice(roomId: String, matchNumber: Int): VoiceConsentResult = error("Voice unavailable")
+    suspend fun acceptVoice(roomId: String, matchNumber: Int, requestId: String) = Unit
+    suspend fun declineVoice(roomId: String, matchNumber: Int, requestId: String) = Unit
+    suspend fun cancelVoiceRequest(roomId: String, matchNumber: Int, requestId: String) = Unit
+    suspend fun voiceUnavailable(roomId: String, matchNumber: Int, requestId: String, reason: String) = Unit
+    suspend fun endVoice(roomId: String, matchNumber: Int, requestId: String) = Unit
 }
 
 internal fun interface GameRealtimeTransportFactory {
@@ -55,6 +75,8 @@ internal class ManagedGameRealtimeClient(
 ) : GameRealtimeClient {
     private val mutableState = MutableStateFlow(RealtimeConnectionState.Disconnected)
     private val mutableEvents = MutableSharedFlow<GameRealtimeEvent>(extraBufferCapacity = 32)
+    private val mutableVoiceSignals = MutableSharedFlow<VoiceSignal>(extraBufferCapacity = 64)
+    private val mutableVoiceConsentSignals = MutableSharedFlow<VoiceConsentSignal>(extraBufferCapacity = 16)
     private val operationMutex = Mutex()
     private var activeTransport: ActiveTransport? = null
     private var activeSessionId: String? = null
@@ -68,6 +90,35 @@ internal class ManagedGameRealtimeClient(
 
     override val connectionState: StateFlow<RealtimeConnectionState> = mutableState.asStateFlow()
     override val events: Flow<GameRealtimeEvent> = mutableEvents.asSharedFlow()
+    override val signals: Flow<VoiceSignal> = mutableVoiceSignals.asSharedFlow()
+    override val consentSignals: Flow<VoiceConsentSignal> = mutableVoiceConsentSignals.asSharedFlow()
+
+    override suspend fun iceConfiguration(roomId: String): VoiceIceConfiguration =
+        operationMutex.withLock { requireTransport(roomId).voiceIceConfiguration(roomId) }
+    override suspend fun join(roomId: String, generation: Long): VoiceJoinResult =
+        operationMutex.withLock { requireTransport(roomId).joinVoice(roomId, generation) }
+    override suspend fun leave(roomId: String, generation: Long) =
+        operationMutex.withLock { activeTransport?.transport?.leaveVoice(roomId, generation) ?: Unit }
+    override suspend fun offer(roomId: String, generation: Long, sessionDescription: String) =
+        operationMutex.withLock { requireTransport(roomId).voiceOffer(roomId, generation, sessionDescription) }
+    override suspend fun answer(roomId: String, generation: Long, sessionDescription: String) =
+        operationMutex.withLock { requireTransport(roomId).voiceAnswer(roomId, generation, sessionDescription) }
+    override suspend fun iceCandidate(roomId: String, generation: Long, candidate: String, sdpMid: String?, sdpMLineIndex: Int) =
+        operationMutex.withLock { requireTransport(roomId).voiceIceCandidate(roomId, generation, candidate, sdpMid, sdpMLineIndex) }
+    override suspend fun muted(roomId: String, generation: Long, muted: Boolean) =
+        operationMutex.withLock { requireTransport(roomId).voiceMuted(roomId, generation, muted) }
+    override suspend fun requestVoice(roomId: String, matchNumber: Int): VoiceConsentResult =
+        operationMutex.withLock { requireTransport(roomId).requestVoice(roomId, matchNumber) }
+    override suspend fun acceptVoice(roomId: String, matchNumber: Int, requestId: String) =
+        operationMutex.withLock { requireTransport(roomId).acceptVoice(roomId, matchNumber, requestId) }
+    override suspend fun declineVoice(roomId: String, matchNumber: Int, requestId: String) =
+        operationMutex.withLock { requireTransport(roomId).declineVoice(roomId, matchNumber, requestId) }
+    override suspend fun cancelVoiceRequest(roomId: String, matchNumber: Int, requestId: String) =
+        operationMutex.withLock { requireTransport(roomId).cancelVoiceRequest(roomId, matchNumber, requestId) }
+    override suspend fun voiceUnavailable(roomId: String, matchNumber: Int, requestId: String, reason: String) =
+        operationMutex.withLock { requireTransport(roomId).voiceUnavailable(roomId, matchNumber, requestId, reason) }
+    override suspend fun endVoice(roomId: String, matchNumber: Int, requestId: String) =
+        operationMutex.withLock { activeTransport?.transport?.endVoice(roomId, matchNumber, requestId) ?: Unit }
 
     override suspend fun start(
         sessionId: String,
@@ -251,6 +302,36 @@ internal class ManagedGameRealtimeClient(
                 }
             }
 
+            override fun onVoiceSignal(signal: VoiceSignal) {
+                ownerScope.launch {
+                    operationMutex.withLock {
+                        if (isCurrentTransport(configuration)) {
+                            mutableVoiceSignals.tryEmit(signal)
+                        } else {
+                            logger.log(
+                                "transport stale voice signal ignored generation=${configuration.generation} " +
+                                    "instance=${configuration.instance}",
+                            )
+                        }
+                    }
+                }
+            }
+
+            override fun onVoiceConsentSignal(signal: VoiceConsentSignal) {
+                ownerScope.launch {
+                    operationMutex.withLock {
+                        if (isCurrentTransport(configuration)) {
+                            mutableVoiceConsentSignals.tryEmit(signal)
+                        } else {
+                            logger.log(
+                                "transport stale voice consent ignored generation=${configuration.generation} " +
+                                    "instance=${configuration.instance}",
+                            )
+                        }
+                    }
+                }
+            }
+
             override fun onClosed() {
                 ownerScope.launch {
                     operationMutex.withLock {
@@ -357,6 +438,11 @@ internal class ManagedGameRealtimeClient(
         val current = activeTransport
         activeTransport = null
         current?.transport?.dispose()
+    }
+
+    private fun requireTransport(roomId: String): GameRealtimeTransport {
+        require(activeSessionId == roomId) { "Voice room does not match the active game session." }
+        return activeTransport?.transport ?: error("Realtime transport is disconnected.")
     }
 
     private fun isCurrentGeneration(expectedGeneration: Long): Boolean =

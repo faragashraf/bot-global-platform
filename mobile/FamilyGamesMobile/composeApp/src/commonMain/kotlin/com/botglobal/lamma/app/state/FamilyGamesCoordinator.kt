@@ -41,6 +41,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.random.Random
+import com.botglobal.mobile.platform.voice.ManagedVoiceRoomController
+import com.botglobal.mobile.platform.voice.VoiceMediaPeerFactory
+import com.botglobal.mobile.platform.voice.VoiceRoomController
+import com.botglobal.mobile.platform.voice.VoiceRoomSnapshot
+import com.botglobal.mobile.platform.voice.VoiceRoomState
+import com.botglobal.mobile.platform.voice.ManagedVoiceConsentController
+import com.botglobal.mobile.platform.voice.VoiceConsentSnapshot
+import com.botglobal.mobile.platform.voice.VoiceConsentState
 
 enum class AppScreen {
     Startup,
@@ -82,6 +90,9 @@ data class FamilyGamesUiState(
     val storeDestination: String? = null,
     val invitation: GameInvitation? = null,
     val cameraExplanationVisible: Boolean = false,
+    val voiceExplanationVisible: Boolean = false,
+    val voice: VoiceRoomSnapshot = VoiceRoomSnapshot(VoiceRoomState.Unavailable),
+    val voiceConsent: VoiceConsentSnapshot = VoiceConsentSnapshot(),
     val pendingInvitationToken: String? = null,
 )
 
@@ -98,7 +109,14 @@ class FamilyGamesCoordinator(
     private val permissions: PermissionController = UnavailablePermissionController,
     networkAvailability: NetworkAvailability = UnavailableNetworkAvailability,
     private val languagePreferences: ApplicationLanguagePreferences = UnavailableApplicationLanguagePreferences,
+    voiceMediaFactory: VoiceMediaPeerFactory? = null,
 ) {
+    private val voice: VoiceRoomController? = voiceMediaFactory?.let {
+        ManagedVoiceRoomController(scope, realtime, it)
+    }
+    private val voiceConsent: ManagedVoiceConsentController? = voiceMediaFactory?.let {
+        ManagedVoiceConsentController(scope, realtime)
+    }
     private val mutableState = MutableStateFlow(
         FamilyGamesUiState(language = languagePreferences.restore() ?: AppLanguage.Arabic),
     )
@@ -114,8 +132,36 @@ class FamilyGamesCoordinator(
     private var recoveryGeneration = 0L
     private var realtimeSessionId: String? = null
     private var transportOperationInProgress = false
+    private var voiceStateJob: Job? = null
+    private var voiceConsentStateJob: Job? = null
+    private var handledAcceptedVoiceRequestId: String? = null
 
     init {
+        voiceStateJob = voice?.let { controller ->
+            scope.launch { controller.snapshot.collect { voice ->
+                voiceConsent?.mediaStateChanged(voice)
+                mutableState.update { it.copy(voice = voice) }
+            } }
+        }
+        voiceConsentStateJob = voiceConsent?.let { controller ->
+            scope.launch {
+                controller.snapshot.collect { consent ->
+                    if (consent.state in setOf(VoiceConsentState.Ended, VoiceConsentState.Unavailable) &&
+                        mutableState.value.voice.state !in setOf(
+                            VoiceRoomState.Idle, VoiceRoomState.Unavailable, VoiceRoomState.Failed,
+                        )) {
+                        voice?.leave()
+                    }
+                    val shouldExplain = consent.state == VoiceConsentState.Accepted &&
+                        consent.requestId != null && consent.requestId != handledAcceptedVoiceRequestId
+                    if (shouldExplain) handledAcceptedVoiceRequestId = consent.requestId
+                    mutableState.update { it.copy(
+                        voiceConsent = consent,
+                        voiceExplanationVisible = if (shouldExplain) true else it.voiceExplanationVisible,
+                    ) }
+                }
+            }
+        }
         networkAvailabilityJob = scope.launch {
             networkAvailability.changes.collect { snapshot ->
                 realtime.onNetworkAvailabilityChanged(snapshot)
@@ -259,6 +305,48 @@ class FamilyGamesCoordinator(
         mutableState.update { it.copy(cameraExplanationVisible = false) }
     }
 
+    fun showVoiceExplanation() {
+        if (mutableState.value.game?.ruleset?.voiceEnabled != true || voice == null ||
+            mutableState.value.voiceConsent.state != VoiceConsentState.Accepted) {
+            mutableState.update { it.copy(errorCode = "voice_unavailable") }
+            return
+        }
+        mutableState.update { it.copy(voiceExplanationVisible = true, errorCode = null) }
+    }
+
+    fun dismissVoiceExplanation() {
+        mutableState.update { it.copy(voiceExplanationVisible = false) }
+    }
+
+    fun requestVoiceChat() = launchAction { voiceConsent?.request() }
+    fun acceptVoiceRequest() = launchAction { voiceConsent?.accept() }
+    fun declineVoiceRequest() = launchAction { voiceConsent?.decline() }
+    fun cancelVoiceRequest() = launchAction { voiceConsent?.cancel() }
+
+    fun confirmMicrophoneAndJoinVoice() = launchAction {
+        mutableState.update { it.copy(voiceExplanationVisible = false) }
+        if (mutableState.value.voiceConsent.state != VoiceConsentState.Accepted) return@launchAction
+        val current = permissions.state(PermissionKind.Microphone)
+        val permission = if (current == PermissionState.Granted) current
+        else permissions.requestAfterExplanation(PermissionKind.Microphone)
+        if (permission != PermissionState.Granted) {
+            mutableState.update {
+                it.copy(errorCode = if (permission == PermissionState.PermanentlyDenied) {
+                    "microphone_permission_permanently_denied"
+                } else "microphone_permission_denied")
+            }
+            haptics.perform(HapticEvent.Warning)
+            voiceConsent?.unavailable("microphone_permission_denied")
+            return@launchAction
+        }
+        voice?.join(requireGame().sessionId)
+    }
+
+    fun toggleVoiceMute() {
+        val controller = voice ?: return
+        scope.launch { controller.setMuted(!mutableState.value.voice.muted) }
+    }
+
     fun confirmCameraAndScan(scanPrompt: String) = launchAction {
         mutableState.update { it.copy(cameraExplanationVisible = false) }
         val currentPermission = permissions.state(PermissionKind.Camera)
@@ -370,6 +458,11 @@ class FamilyGamesCoordinator(
         val sessionId = mutableState.value.game?.sessionId ?: return
         if (mutableState.value.screen !in GameScreens) return
         if (transportOperationInProgress || recoveryJob?.isActive == true) return
+        if (mutableState.value.voice.state == VoiceRoomState.Reconnecting &&
+            realtime.connectionState.value == RealtimeConnectionState.Connected
+        ) {
+            scope.launch { voice?.signalingRecovered() }
+        }
         when (realtime.connectionState.value) {
             RealtimeConnectionState.Connected -> {
                 recoveryRequired = true
@@ -382,8 +475,16 @@ class FamilyGamesCoordinator(
         }
     }
 
+    fun pauseForBackground() {
+        if (mutableState.value.voice.state !in setOf(VoiceRoomState.Idle, VoiceRoomState.Unavailable, VoiceRoomState.Failed)) {
+            scope.launch { voice?.signalingInterrupted() }
+        }
+    }
+
     fun exitGame() = launchAction {
         resetRecoveryOrchestration()
+        voice?.leave()
+        voiceConsent?.end()
         realtime.stop()
         mutableState.update {
             it.copy(
@@ -394,12 +495,16 @@ class FamilyGamesCoordinator(
                 recovery = SessionRecoveryState.Idle,
                 recoveredFromInterruption = false,
                 errorCode = null,
+                voice = VoiceRoomSnapshot(),
+                voiceConsent = VoiceConsentSnapshot(),
             )
         }
     }
 
     fun logout() = launchAction {
         resetRecoveryOrchestration()
+        voice?.leave()
+        voiceConsent?.end()
         realtime.stop()
         gateway.logout()
         mutableState.value = FamilyGamesUiState(screen = AppScreen.Welcome, language = mutableState.value.language)
@@ -410,6 +515,9 @@ class FamilyGamesCoordinator(
         realtimeEventsJob?.cancel()
         realtimeStateJob?.cancel()
         networkAvailabilityJob?.cancel()
+        voiceStateJob?.cancel()
+        voiceConsentStateJob?.cancel()
+        scope.launch { voice?.leave() }
         resetRecoveryOrchestration()
     }
 
@@ -474,12 +582,18 @@ class FamilyGamesCoordinator(
                         )
                     }
                 }
+                if (mutableState.value.voice.state == VoiceRoomState.Reconnecting) {
+                    scope.launch { voice?.signalingRecovered() }
+                }
             }
 
             RealtimeConnectionState.Reconnecting,
             RealtimeConnectionState.Failed,
             RealtimeConnectionState.Disconnected,
             -> {
+                if (mutableState.value.voice.state !in setOf(VoiceRoomState.Idle, VoiceRoomState.Unavailable, VoiceRoomState.Failed)) {
+                    scope.launch { voice?.signalingInterrupted() }
+                }
                 if (realtimeHasConnected || recoveryRequired) {
                     interruptRecovery(connection)
                 } else {
@@ -739,6 +853,11 @@ class FamilyGamesCoordinator(
         forceReplace: Boolean = false,
     ): Boolean {
         val current = mutableState.value.game
+        if (current == null || current.sessionId != snapshot.sessionId || current.matchNumber != snapshot.matchNumber) {
+            if (current != null) scope.launch { voice?.leave() }
+            handledAcceptedVoiceRequestId = null
+            voiceConsent?.bind(snapshot.sessionId, snapshot.matchNumber)
+        }
         if (!forceReplace && current != null && current.sessionId == snapshot.sessionId) {
             if (snapshot.matchNumber < current.matchNumber) return false
             if (snapshot.matchNumber == current.matchNumber && snapshot.version < current.version) return false

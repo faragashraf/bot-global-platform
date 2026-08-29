@@ -74,6 +74,7 @@ android {
         val invitationLinkBase = providers.gradleProperty("familyGamesInvitationLinkBase").orNull
             ?: "familygames://invite"
         buildConfigField("String", "INVITATION_LINK_BASE", "\"$invitationLinkBase\"")
+        buildConfigField("String", "VOICE_ICE_POLICY", "\"all\"")
     }
 
     signingConfigs {
@@ -93,6 +94,11 @@ android {
             val debugUrl = providers.gradleProperty("familyGamesDebugApiBaseUrl").orNull
                 ?: "http://10.0.2.2:5062"
             buildConfigField("String", "API_BASE_URL", "\"$debugUrl\"")
+            val voiceIcePolicy = providers.gradleProperty("familyGamesDebugVoiceIcePolicy").orNull ?: "all"
+            if (voiceIcePolicy !in setOf("all", "relay")) {
+                throw GradleException("familyGamesDebugVoiceIcePolicy must be 'all' or 'relay'.")
+            }
+            buildConfigField("String", "VOICE_ICE_POLICY", "\"$voiceIcePolicy\"")
         }
         getByName("release") {
             isMinifyEnabled = true

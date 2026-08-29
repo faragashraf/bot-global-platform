@@ -25,7 +25,10 @@ import com.botglobal.mobile.platform.device.PermissionKind
 import com.botglobal.mobile.platform.device.PermissionState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,9 +44,63 @@ import kotlin.test.assertNull
 import com.botglobal.lamma.app.data.ApiException
 import com.botglobal.mobile.platform.update.AppVersionPolicy
 import com.botglobal.mobile.platform.realtime.NetworkAvailability
+import com.botglobal.mobile.platform.voice.IceServer
+import com.botglobal.mobile.platform.voice.VoiceConsentResult
+import com.botglobal.mobile.platform.voice.VoiceConsentSignal
+import com.botglobal.mobile.platform.voice.VoiceIceConfiguration
+import com.botglobal.mobile.platform.voice.VoiceJoinResult
+import com.botglobal.mobile.platform.voice.VoiceMediaPeer
+import com.botglobal.mobile.platform.voice.VoiceMediaPeerFactory
+import com.botglobal.mobile.platform.voice.VoiceMediaPeerListener
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FamilyGamesCoordinatorTests {
+    @Test
+    fun microphone_permission_and_media_are_not_started_before_remote_acceptance() = runTest {
+        val realtime = FakeRealtime()
+        val permissions = RecordingMicrophonePermission()
+        val media = RecordingVoiceMediaFactory()
+        val coordinatorScope = CoroutineScope(coroutineContext + SupervisorJob())
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(restored = mobileSession, active = game(status = "started", voiceEnabled = true)),
+            realtime,
+            SilentHaptics,
+            coordinatorScope,
+            permissions = permissions,
+            voiceMediaFactory = media,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.requestVoiceChat()
+        advanceUntilIdle()
+        assertEquals(1, realtime.voiceRequests)
+        assertEquals(0, permissions.requests)
+        assertEquals(0, media.creations)
+
+        realtime.emitConsent(VoiceConsentSignal.Accepted(
+            "session-1", 1, "request-1", membershipId, "connection-a",
+            "member-2", "connection-b", "2099-01-01T00:00:00Z",
+        ))
+        runCurrent()
+        assertEquals(0, permissions.requests)
+        assertEquals(0, media.creations)
+
+        coordinator.confirmMicrophoneAndJoinVoice()
+        advanceUntilIdle()
+        assertEquals(1, permissions.requests)
+        assertEquals(1, media.creations)
+
+        realtime.emitConsent(VoiceConsentSignal.Ended(
+            "session-1", 1, "request-1", membershipId, "connection-a",
+            "member-2", "connection-b", "2099-01-01T00:00:00Z",
+        ))
+        advanceUntilIdle()
+        assertEquals(1, media.closes)
+        coordinator.dispose()
+        coordinatorScope.cancel()
+    }
+
     @Test
     fun explicit_english_selection_is_saved() = runTest {
         val preferences = FakeLanguagePreferences()
@@ -1092,8 +1149,11 @@ class FamilyGamesCoordinatorTests {
     ) : GameRealtimeClient {
         private val mutableEvents = MutableSharedFlow<GameRealtimeEvent>(extraBufferCapacity = 4)
         private val mutableConnection = MutableStateFlow(RealtimeConnectionState.Connected)
+        private val mutableConsent = MutableSharedFlow<VoiceConsentSignal>(extraBufferCapacity = 4)
         override val connectionState: StateFlow<RealtimeConnectionState> = mutableConnection
         override val events: Flow<GameRealtimeEvent> = mutableEvents
+        override val consentSignals: Flow<VoiceConsentSignal> = mutableConsent
+        var voiceRequests = 0
         var startedSession: String? = null
         var startCalls: Int = 0
         var rejoinCalls: Int = 0
@@ -1140,7 +1200,18 @@ class FamilyGamesCoordinatorTests {
             }
         }
         fun emit(snapshot: GameSessionSnapshot) { mutableEvents.tryEmit(GameRealtimeEvent("GameStateUpdated", snapshot)) }
+        fun emitConsent(signal: VoiceConsentSignal) { mutableConsent.tryEmit(signal) }
         fun setConnection(state: RealtimeConnectionState) { mutableConnection.value = state }
+        override suspend fun requestVoice(roomId: String, matchNumber: Int): VoiceConsentResult {
+            voiceRequests++
+            return VoiceConsentResult(roomId, matchNumber, "request-1", membershipId, "member-2", "2099-01-01T00:00:00Z", true)
+        }
+        override suspend fun iceConfiguration(roomId: String) = VoiceIceConfiguration(
+            listOf(IceServer(listOf("stun:test.invalid"))), "2099-01-01T00:00:00Z",
+        )
+        override suspend fun join(roomId: String, generation: Long) = VoiceJoinResult(
+            roomId, generation, membershipId, true, false, "connection-a", "member-2", "connection-b",
+        )
     }
 
     private class FakeNetworkAvailability : NetworkAvailability {
@@ -1190,6 +1261,32 @@ class FamilyGamesCoordinatorTests {
         }
     }
 
+    private class RecordingMicrophonePermission : PermissionController {
+        var requests = 0
+        override suspend fun state(permission: PermissionKind) = PermissionState.Unknown
+        override suspend fun requestAfterExplanation(permission: PermissionKind): PermissionState {
+            assertEquals(PermissionKind.Microphone, permission)
+            requests++
+            return PermissionState.Granted
+        }
+    }
+
+    private class RecordingVoiceMediaFactory : VoiceMediaPeerFactory {
+        var creations = 0
+        var closes = 0
+        override fun create(configuration: VoiceIceConfiguration, generation: Long, listener: VoiceMediaPeerListener): VoiceMediaPeer {
+            creations++
+            return object : VoiceMediaPeer {
+                override suspend fun createOffer() = "offer"
+                override suspend fun acceptOfferAndCreateAnswer(sessionDescription: String) = "answer"
+                override suspend fun acceptAnswer(sessionDescription: String) = Unit
+                override suspend fun addIceCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int) = Unit
+                override fun setMuted(muted: Boolean) = Unit
+                override suspend fun close() { closes++ }
+            }
+        }
+    }
+
     private class RecognizingScanner(private val content: String) : QrScannerCapability {
         var scans = 0
         override suspend fun scan(prompt: String): QrScanResult {
@@ -1216,13 +1313,14 @@ class FamilyGamesCoordinatorTests {
             gameType: String = "xo",
             opponentConnected: Boolean = true,
             revision: Long = 0,
+            voiceEnabled: Boolean = false,
         ) = GameSessionSnapshot(
             sessionId = "session-1",
             joinCode = "ABC123",
             gameType = gameType,
             status = status,
             matchNumber = matchNumber,
-            ruleset = RulesetSnapshot("classic-3x3", 3, 3, 2, null, true, false),
+            ruleset = RulesetSnapshot("classic-3x3", 3, 3, 2, null, true, voiceEnabled),
             players = listOf(
                 PlayerSnapshot(membershipId, "Player", 0, "x", true, true),
                 PlayerSnapshot("member-2", "Opponent", 1, "o", true, opponentConnected),

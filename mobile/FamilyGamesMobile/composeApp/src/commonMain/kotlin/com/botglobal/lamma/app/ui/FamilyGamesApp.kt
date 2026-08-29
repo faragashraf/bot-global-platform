@@ -101,6 +101,9 @@ import com.botglobal.mobile.platform.invitations.UnavailableQrScanner
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
 import com.botglobal.mobile.platform.realtime.NetworkAvailability
 import com.botglobal.mobile.platform.realtime.UnavailableNetworkAvailability
+import com.botglobal.mobile.platform.voice.VoiceMediaPeerFactory
+import com.botglobal.mobile.platform.voice.VoiceRoomState
+import com.botglobal.mobile.platform.voice.VoiceConsentState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
@@ -113,6 +116,7 @@ fun FamilyGamesApp(
     platform: String = "android",
     openExternalUrl: (String) -> Unit = {},
     foregroundEvents: Flow<Unit> = emptyFlow(),
+    backgroundEvents: Flow<Unit> = emptyFlow(),
     invitationLinks: Flow<String> = emptyFlow(),
     invitationLinkBase: String = "familygames://invite",
     platformShare: PlatformShareCapability = UnavailablePlatformShare,
@@ -120,6 +124,7 @@ fun FamilyGamesApp(
     permissions: PermissionController = UnavailablePermissionController,
     networkAvailability: NetworkAvailability = UnavailableNetworkAvailability,
     languagePreferences: ApplicationLanguagePreferences = UnavailableApplicationLanguagePreferences,
+    voiceMediaFactory: VoiceMediaPeerFactory? = null,
     invitationQr: @Composable (String, String, Modifier) -> Unit = { _, description, modifier ->
         Box(
             modifier
@@ -143,6 +148,7 @@ fun FamilyGamesApp(
         permissions,
         networkAvailability,
         languagePreferences,
+        voiceMediaFactory,
     ) {
         val gateway = FamilyGamesApi(createPlatformHttpClient(), environment, sessionVault)
         FamilyGamesCoordinator(
@@ -158,6 +164,7 @@ fun FamilyGamesApp(
             permissions,
             networkAvailability,
             languagePreferences,
+            voiceMediaFactory,
         )
     }
     val state by coordinator.state.collectAsState()
@@ -167,6 +174,9 @@ fun FamilyGamesApp(
     LaunchedEffect(coordinator) { coordinator.startup() }
     LaunchedEffect(coordinator, foregroundEvents) {
         foregroundEvents.collect { coordinator.resumeAfterForeground() }
+    }
+    LaunchedEffect(coordinator, backgroundEvents) {
+        backgroundEvents.collect { coordinator.pauseForBackground() }
     }
     LaunchedEffect(coordinator, invitationLinks) {
         invitationLinks.collect(coordinator::handleInvitationLink)
@@ -222,6 +232,20 @@ fun FamilyGamesApp(
                             text,
                             { coordinator.confirmCameraAndScan(text.scanInvitationPrompt) },
                             coordinator::dismissCameraExplanation,
+                        )
+                    }
+                    if (state.voiceExplanationVisible) {
+                        VoiceExplanationDialog(
+                            text,
+                            coordinator::confirmMicrophoneAndJoinVoice,
+                            coordinator::dismissVoiceExplanation,
+                        )
+                    }
+                    if (state.voiceConsent.state == VoiceConsentState.IncomingRequest) {
+                        VoiceRequestDialog(
+                            text = text,
+                            onAccept = coordinator::acceptVoiceRequest,
+                            onDecline = coordinator::declineVoiceRequest,
                         )
                     }
                 }
@@ -661,6 +685,28 @@ private fun CameraExplanationDialog(
 }
 
 @Composable
+private fun VoiceExplanationDialog(text: FamilyGamesStrings, onContinue: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text.voiceTitle, fontWeight = FontWeight.Black) },
+        text = { Text(text.voiceReason) },
+        confirmButton = { TextButton(onClick = onContinue) { Text(text.enableVoice) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(text.cancel) } },
+    )
+}
+
+@Composable
+private fun VoiceRequestDialog(text: FamilyGamesStrings, onAccept: () -> Unit, onDecline: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(text.voiceTitle, fontWeight = FontWeight.Black) },
+        text = { Text(text.voiceRequestIncoming) },
+        confirmButton = { TextButton(onClick = onAccept) { Text(text.acceptVoice) } },
+        dismissButton = { TextButton(onClick = onDecline) { Text(text.declineVoice) } },
+    )
+}
+
+@Composable
 private fun GameplayScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, coordinator: FamilyGamesCoordinator) {
     val game = state.game ?: return
     val membershipId = state.mobileSession?.identity?.membershipId
@@ -676,6 +722,10 @@ private fun GameplayScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, 
             text,
             coordinator::retryRealtime,
         )
+        if (game.ruleset.voiceEnabled) {
+            VoiceControl(text, state, coordinator)
+            Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+        }
         OpponentPresenceBanner(state.opponentConnection, text)
         Spacer(Modifier.height(FamilyGamesSpacing.Md))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FamilyGamesSpacing.Sm)) {
@@ -707,7 +757,60 @@ private fun GameplayScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, 
             )
             Spacer(Modifier.height(FamilyGamesSpacing.Sm))
         }
-        Text(text.voiceUnavailable, color = FamilyGamesColors.Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
+    }
+}
+
+@Composable
+private fun VoiceControl(text: FamilyGamesStrings, state: FamilyGamesUiState, coordinator: FamilyGamesCoordinator) {
+    val voice = state.voice
+    val consent = state.voiceConsent
+    val label = when (consent.state) {
+        VoiceConsentState.Idle -> text.requestVoiceChat
+        VoiceConsentState.Requesting -> text.voiceRequestWaiting
+        VoiceConsentState.IncomingRequest -> text.voiceRequestIncoming
+        VoiceConsentState.Accepted -> text.voiceRequestAccepted
+        VoiceConsentState.Declined -> text.voiceRequestDeclined
+        VoiceConsentState.TimedOut -> text.voiceRequestTimedOut
+        VoiceConsentState.Cancelled -> text.voiceRequestCancelled
+        VoiceConsentState.Joining -> text.voiceConnecting
+        VoiceConsentState.Connected, VoiceConsentState.Muted -> if (voice.peerMuted) text.opponentMuted else text.voiceConnected
+        VoiceConsentState.Reconnecting -> text.voiceReconnecting
+        VoiceConsentState.Unavailable -> text.voiceUnavailable
+        VoiceConsentState.Ended -> text.requestVoiceChat
+    }
+    val action = when (consent.state) {
+        VoiceConsentState.Idle, VoiceConsentState.Declined, VoiceConsentState.TimedOut,
+        VoiceConsentState.Cancelled, VoiceConsentState.Unavailable, VoiceConsentState.Ended -> coordinator::requestVoiceChat
+        VoiceConsentState.Requesting -> coordinator::cancelVoiceRequest
+        VoiceConsentState.Connected, VoiceConsentState.Muted -> coordinator::toggleVoiceMute
+        else -> ({})
+    }
+    Surface(
+        color = FamilyGamesColors.NightSoft.copy(alpha = 0.9f),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().clickable(
+                enabled = consent.state in setOf(
+                    VoiceConsentState.Idle, VoiceConsentState.Requesting, VoiceConsentState.Declined,
+                    VoiceConsentState.TimedOut, VoiceConsentState.Cancelled, VoiceConsentState.Ended,
+                    VoiceConsentState.Unavailable,
+                    VoiceConsentState.Connected, VoiceConsentState.Muted,
+                ),
+                onClick = action,
+            ).padding(horizontal = FamilyGamesSpacing.Md, vertical = FamilyGamesSpacing.Sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(FamilyGamesSpacing.Sm),
+        ) {
+            Text(if (voice.muted) "◉" else "●", color = if (consent.state in setOf(VoiceConsentState.Connected, VoiceConsentState.Muted)) FamilyGamesColors.Mint else FamilyGamesColors.Gold)
+            Text(label, modifier = Modifier.weight(1f), color = FamilyGamesColors.Cream)
+            if (consent.state in setOf(VoiceConsentState.Connected, VoiceConsentState.Muted)) {
+                Text(if (voice.muted) text.unmute else text.mute, color = FamilyGamesColors.Gold, fontWeight = FontWeight.Bold)
+            } else if (consent.state == VoiceConsentState.Requesting) {
+                Text(text.cancelVoiceRequest, color = FamilyGamesColors.Gold, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 
