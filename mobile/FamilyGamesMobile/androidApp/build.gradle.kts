@@ -61,11 +61,11 @@ dependencies {
 }
 
 android {
-    namespace = "com.botglobal.familygames"
+    namespace = "com.botglobal.lamma"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.botglobal.familygames"
+        applicationId = "com.botglobal.lamma"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = libs.versions.lamma.versionCode.get().toInt()

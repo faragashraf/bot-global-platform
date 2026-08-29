@@ -1,2 +1,2 @@
--keep class com.botglobal.familygames.app.data.** { *; }
+-keep class com.botglobal.lamma.app.data.** { *; }
 -dontwarn org.slf4j.**

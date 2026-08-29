@@ -19,7 +19,7 @@ kotlin {
     jvm("desktop")
 
     androidLibrary {
-        namespace = "com.botglobal.familygames.app"
+        namespace = "com.botglobal.lamma.app"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
         compilerOptions.jvmTarget.set(JvmTarget.JVM_11)
