@@ -16,4 +16,15 @@
 # WebRTC's native JNI_OnLoad resolves this bootstrap class and its methods by
 # their exact names. The upstream AAR does not publish a consumer keep rule.
 -keep class org.jni_zero.JniInit { *; }
+
+# WebRTC reverse-JNI entry points are otherwise invisible to R8. Preserve only
+# classes and methods explicitly marked as native callbacks, plus the types in
+# their JNI signatures. This covers WebRtcClassLoader and JniHelper without
+# retaining the entire org.webrtc package.
+-keepclasseswithmembers,allowoptimization,includedescriptorclasses class org.webrtc.** {
+    @org.webrtc.CalledByNative <methods>;
+}
+-keepclasseswithmembers,allowoptimization,includedescriptorclasses class org.webrtc.** {
+    @org.webrtc.CalledByNativeUnchecked <methods>;
+}
 -dontwarn org.slf4j.**
