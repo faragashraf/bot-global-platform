@@ -8,6 +8,7 @@ import com.botglobal.familygames.app.data.RegistrationRequest
 import com.botglobal.familygames.app.data.RulesetSnapshot
 import com.botglobal.familygames.app.realtime.GameRealtimeClient
 import com.botglobal.familygames.app.realtime.GameRealtimeEvent
+import com.botglobal.familygames.app.realtime.RealtimeConnectSource
 import com.botglobal.mobile.platform.device.HapticEvent
 import com.botglobal.mobile.platform.device.SemanticHaptics
 import com.botglobal.mobile.platform.identity.ApplicationIdentity
@@ -524,6 +525,68 @@ class FamilyGamesCoordinatorTests {
     }
 
     @Test
+    fun duplicate_foreground_events_while_connected_do_not_restart_transport() = runTest {
+        val gateway = FakeGateway(restored = mobileSession, active = game(status = "started"))
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(gateway, realtime, SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.resumeAfterForeground()
+        coordinator.resumeAfterForeground()
+        advanceUntilIdle()
+
+        assertEquals(1, realtime.startCalls)
+        assertEquals(RealtimeConnectionState.Connected, realtime.connectionState.value)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun foreground_while_automatic_reconnect_is_active_does_not_restart_transport() = runTest {
+        val gateway = FakeGateway(restored = mobileSession, active = game(status = "started"))
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(gateway, realtime, SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        runCurrent()
+        coordinator.resumeAfterForeground()
+        advanceUntilIdle()
+
+        assertEquals(1, realtime.startCalls)
+        assertEquals(RealtimeConnectionState.Reconnecting, realtime.connectionState.value)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun stable_observer_presence_changes_only_from_server_events() = runTest {
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(restored = mobileSession, active = game(status = "started", revision = 60)),
+            realtime,
+            SilentHaptics,
+            this,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+        val startsBeforePresence = realtime.startCalls
+
+        realtime.emit(game(status = "started", opponentConnected = false, revision = 61))
+        advanceUntilIdle()
+        assertEquals(OpponentConnectionState.Disconnected, coordinator.state.value.opponentConnection)
+        assertEquals(RealtimeConnectionState.Connected, realtime.connectionState.value)
+
+        realtime.emit(game(status = "started", opponentConnected = true, revision = 62))
+        advanceUntilIdle()
+
+        assertEquals(OpponentConnectionState.Connected, coordinator.state.value.opponentConnection)
+        assertEquals(RealtimeConnectionState.Connected, realtime.connectionState.value)
+        assertEquals(startsBeforePresence, realtime.startCalls)
+        coordinator.dispose()
+    }
+
+    @Test
     fun stale_move_rejection_refreshes_authoritative_state_without_optimistic_override() = runTest {
         val gateway = FakeGateway(
             restored = mobileSession,
@@ -746,7 +809,11 @@ class FamilyGamesCoordinatorTests {
         var startedSession: String? = null
         var startCalls: Int = 0
         var rejoinCalls: Int = 0
-        override suspend fun start(sessionId: String, accessToken: suspend () -> String?) {
+        override suspend fun start(
+            sessionId: String,
+            source: RealtimeConnectSource,
+            accessToken: suspend () -> String?,
+        ) {
             startCalls++
             startedSession = sessionId
             if (connectOnStart) {

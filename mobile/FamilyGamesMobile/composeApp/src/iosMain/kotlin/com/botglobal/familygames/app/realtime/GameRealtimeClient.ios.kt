@@ -11,7 +11,11 @@ private class IosRealtimeBoundary : GameRealtimeClient {
     override val connectionState: StateFlow<RealtimeConnectionState> =
         MutableStateFlow(RealtimeConnectionState.Unavailable)
     override val events: Flow<GameRealtimeEvent> = MutableSharedFlow()
-    override suspend fun start(sessionId: String, accessToken: suspend () -> String?) = Unit
+    override suspend fun start(
+        sessionId: String,
+        source: RealtimeConnectSource,
+        accessToken: suspend () -> String?,
+    ) = Unit
     override suspend fun stop() = Unit
     override suspend fun rejoin() = Unit
 }

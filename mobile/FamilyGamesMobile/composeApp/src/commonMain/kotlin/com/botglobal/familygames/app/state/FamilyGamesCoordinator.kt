@@ -6,6 +6,7 @@ import com.botglobal.familygames.app.data.GameSessionSnapshot
 import com.botglobal.familygames.app.data.MoveRequest
 import com.botglobal.familygames.app.data.RegistrationRequest
 import com.botglobal.familygames.app.realtime.GameRealtimeClient
+import com.botglobal.familygames.app.realtime.RealtimeConnectSource
 import com.botglobal.mobile.platform.device.HapticEvent
 import com.botglobal.mobile.platform.device.PermissionController
 import com.botglobal.mobile.platform.device.PermissionKind
@@ -156,7 +157,7 @@ class FamilyGamesCoordinator(
             mutableState.update { it.copy(screen = AppScreen.Home) }
         } else {
             onAuthoritativeSnapshot(active)
-            connectRealtime(active.sessionId)
+            connectRealtime(active.sessionId, RealtimeConnectSource.AppStart)
         }
     }
 
@@ -202,13 +203,13 @@ class FamilyGamesCoordinator(
     fun createClassicGame() = launchAction {
         val snapshot = gateway.createSession("classic-3x3")
         onAuthoritativeSnapshot(snapshot)
-        connectRealtime(snapshot.sessionId)
+        connectRealtime(snapshot.sessionId, RealtimeConnectSource.SessionCreated)
     }
 
     fun joinGame(code: String) = launchAction {
         val snapshot = gateway.joinSession(code)
         onAuthoritativeSnapshot(snapshot)
-        connectRealtime(snapshot.sessionId)
+        connectRealtime(snapshot.sessionId, RealtimeConnectSource.SessionJoined)
     }
 
     fun showInvitation() = launchAction {
@@ -339,11 +340,15 @@ class FamilyGamesCoordinator(
 
     fun retryRealtime() {
         val sessionId = mutableState.value.game?.sessionId ?: return
-        if (realtime.connectionState.value == RealtimeConnectionState.Connected) {
-            recoveryRequired = true
-            requestAuthoritativeRecovery(sessionId)
-        } else {
-            restartRealtimeTransport(sessionId)
+        when (realtime.connectionState.value) {
+            RealtimeConnectionState.Connected -> {
+                recoveryRequired = true
+                requestAuthoritativeRecovery(sessionId)
+            }
+            RealtimeConnectionState.Connecting,
+            RealtimeConnectionState.Reconnecting,
+            -> Unit
+            else -> restartRealtimeTransport(sessionId, RealtimeConnectSource.ManualRetry)
         }
     }
 
@@ -351,11 +356,15 @@ class FamilyGamesCoordinator(
         val sessionId = mutableState.value.game?.sessionId ?: return
         if (mutableState.value.screen !in GameScreens) return
         if (transportOperationInProgress || recoveryJob?.isActive == true) return
-        if (realtime.connectionState.value == RealtimeConnectionState.Connected) {
-            recoveryRequired = true
-            requestAuthoritativeRecovery(sessionId)
-        } else {
-            restartRealtimeTransport(sessionId)
+        when (realtime.connectionState.value) {
+            RealtimeConnectionState.Connected -> {
+                recoveryRequired = true
+                requestAuthoritativeRecovery(sessionId)
+            }
+            RealtimeConnectionState.Connecting,
+            RealtimeConnectionState.Reconnecting,
+            -> Unit
+            else -> restartRealtimeTransport(sessionId, RealtimeConnectSource.Foreground)
         }
     }
 
@@ -388,14 +397,13 @@ class FamilyGamesCoordinator(
         realtimeStateJob?.cancel()
         networkAvailabilityJob?.cancel()
         resetRecoveryOrchestration()
-        scope.launch { realtime.stop() }
     }
 
     private fun navigate(screen: AppScreen) {
         mutableState.update { it.copy(screen = screen, errorCode = null) }
     }
 
-    private suspend fun connectRealtime(sessionId: String) {
+    private suspend fun connectRealtime(sessionId: String, source: RealtimeConnectSource) {
         resetRecoveryOrchestration()
         realtimeSessionId = sessionId
         realtimeEventsJob?.cancel()
@@ -418,7 +426,7 @@ class FamilyGamesCoordinator(
         }
         transportOperationInProgress = true
         try {
-            realtime.start(sessionId) { gateway.restore()?.accessToken }
+            realtime.start(sessionId, source) { gateway.restore()?.accessToken }
         } finally {
             transportOperationInProgress = false
         }
@@ -623,13 +631,13 @@ class FamilyGamesCoordinator(
         }
     }
 
-    private fun restartRealtimeTransport(sessionId: String) {
+    private fun restartRealtimeTransport(sessionId: String, source: RealtimeConnectSource) {
         if (transportOperationInProgress || transportRestartJob?.isActive == true) return
         recoveryRequired = true
         transportRestartJob = scope.launch {
             transportOperationInProgress = true
             try {
-                realtime.start(sessionId) { gateway.restore()?.accessToken }
+                realtime.start(sessionId, source) { gateway.restore()?.accessToken }
             } catch (_: Throwable) {
                 if (realtimeSessionId == sessionId) {
                     mutableState.update {
@@ -651,10 +659,9 @@ class FamilyGamesCoordinator(
         val sessionId = realtimeSessionId ?: return
         if (!recoveryRequired) return
         when (realtime.connectionState.value) {
-            RealtimeConnectionState.Reconnecting,
             RealtimeConnectionState.Failed,
             RealtimeConnectionState.Disconnected,
-            -> restartRealtimeTransport(sessionId)
+            -> restartRealtimeTransport(sessionId, RealtimeConnectSource.NetworkAvailable)
             else -> Unit
         }
     }
@@ -719,7 +726,7 @@ class FamilyGamesCoordinator(
             )
         }
         onAuthoritativeSnapshot(snapshot)
-        connectRealtime(snapshot.sessionId)
+        connectRealtime(snapshot.sessionId, RealtimeConnectSource.InvitationResolved)
         haptics.perform(HapticEvent.Success)
     }
 
