@@ -213,6 +213,64 @@ public sealed class VoiceRuntimeTests
     }
 
     [Fact]
+    public void Disconnect_during_accepted_join_ends_stale_consent_and_allows_a_new_request()
+    {
+        var registry = new VoiceConsentRegistry();
+        var now = DateTimeOffset.UtcNow;
+        var sender = Guid.NewGuid();
+        var recipient = Guid.NewGuid();
+        var session = Guid.NewGuid();
+        var crashed = registry.RequestVoice(session, 1, sender, recipient, now, TimeSpan.FromSeconds(30)).Request;
+        registry.Accept(crashed.RequestId, session, 1, recipient, now.AddSeconds(1));
+
+        var cleaned = Assert.Single(registry.Disconnect(session, recipient));
+        Assert.Equal(VoiceConsentRegistry.Status.Ended, cleaned.Status);
+        Assert.Throws<InvalidOperationException>(() => registry.RequireAccepted(session, 1, sender));
+
+        var retry = registry.RequestVoice(session, 1, sender, recipient, now.AddSeconds(2), TimeSpan.FromSeconds(30));
+        Assert.True(retry.Created);
+        Assert.NotEqual(crashed.RequestId, retry.Request.RequestId);
+    }
+
+    [Fact]
+    public void Cancel_is_idempotent_for_stale_request_and_cannot_remove_newer_request()
+    {
+        var registry = new VoiceConsentRegistry();
+        var now = DateTimeOffset.UtcNow;
+        var sender = Guid.NewGuid();
+        var recipient = Guid.NewGuid();
+        var session = Guid.NewGuid();
+        var stale = registry.RequestVoice(session, 1, sender, recipient, now, TimeSpan.FromSeconds(30)).Request;
+
+        Assert.Equal(VoiceConsentRegistry.Status.Cancelled,
+            registry.Cancel(stale.RequestId, session, 1, sender, now.AddSeconds(1)).Status);
+        var current = registry.RequestVoice(session, 1, sender, recipient, now.AddSeconds(2), TimeSpan.FromSeconds(30)).Request;
+
+        Assert.Equal(VoiceConsentRegistry.Status.Cancelled,
+            registry.Cancel(stale.RequestId, session, 1, sender, now.AddSeconds(3)).Status);
+        Assert.Equal(current.RequestId, registry.Current(session, 1, sender, now.AddSeconds(3))!.RequestId);
+    }
+
+    [Fact]
+    public void Authoritative_consent_state_expires_pending_request_and_never_leaks_to_an_outsider()
+    {
+        var registry = new VoiceConsentRegistry();
+        var now = DateTimeOffset.UtcNow;
+        var sender = Guid.NewGuid();
+        var recipient = Guid.NewGuid();
+        var session = Guid.NewGuid();
+        var request = registry.RequestVoice(session, 1, sender, recipient, now, TimeSpan.FromSeconds(5)).Request;
+
+        Assert.Equal(request.RequestId, registry.Current(session, 1, recipient, now.AddSeconds(1))!.RequestId);
+        Assert.Throws<InvalidOperationException>(() => registry.Current(session, 1, Guid.NewGuid(), now.AddSeconds(1)));
+        Assert.Equal(VoiceConsentRegistry.Status.TimedOut,
+            registry.Current(session, 1, sender, now.AddSeconds(6))!.Status);
+
+        var retry = registry.RequestVoice(session, 1, sender, recipient, now.AddSeconds(7), TimeSpan.FromSeconds(5));
+        Assert.True(retry.Created);
+    }
+
+    [Fact]
     public void Game_connection_registry_excludes_all_sender_membership_connections_from_opponent()
     {
         var registry = new BotGlobal.Games.Realtime.GameConnectionRegistry();

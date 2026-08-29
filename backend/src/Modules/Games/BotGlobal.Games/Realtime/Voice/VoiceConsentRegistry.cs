@@ -52,8 +52,22 @@ public sealed class VoiceConsentRegistry
     public Request Decline(Guid requestId, Guid sessionId, int matchNumber, Guid recipientMembershipId, DateTimeOffset now) =>
         Transition(requestId, sessionId, matchNumber, recipientMembershipId, now, Status.Declined, requireRecipient: true);
 
-    public Request Cancel(Guid requestId, Guid sessionId, int matchNumber, Guid requesterMembershipId, DateTimeOffset now) =>
-        Transition(requestId, sessionId, matchNumber, requesterMembershipId, now, Status.Cancelled, requireRecipient: false);
+    public Request Cancel(Guid requestId, Guid sessionId, int matchNumber, Guid requesterMembershipId, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            var request = RequireRequest(requestId, sessionId, matchNumber);
+            if (requesterMembershipId != request.RequesterMembershipId)
+                throw new InvalidOperationException("The participant cannot perform this voice request action.");
+            return request.Status switch
+            {
+                Status.Pending when request.ExpiresAtUtc <= now => Complete(request, Status.TimedOut),
+                Status.Pending => Complete(request, Status.Cancelled),
+                Status.Accepted => Complete(request, Status.Ended),
+                _ => request,
+            };
+        }
+    }
 
     public Request? Expire(Guid requestId, DateTimeOffset now)
     {
@@ -78,6 +92,42 @@ public sealed class VoiceConsentRegistry
         }
     }
 
+    public Request? Current(Guid sessionId, int matchNumber, Guid membershipId, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            var match = (sessionId, matchNumber);
+            if (!_activeByMatch.TryGetValue(match, out var id) || !_byId.TryGetValue(id, out var request))
+                return null;
+            if (membershipId != request.RequesterMembershipId && membershipId != request.RecipientMembershipId)
+                throw new InvalidOperationException("The participant cannot inspect this voice request.");
+            if (request.Status == Status.Pending && request.ExpiresAtUtc <= now)
+                return Complete(request, Status.TimedOut);
+            return request.Status is Status.Pending or Status.Accepted ? request : null;
+        }
+    }
+
+    public IReadOnlyList<Request> Disconnect(Guid sessionId, Guid membershipId)
+    {
+        lock (_gate)
+        {
+            var active = _activeByMatch
+                .Where(x => x.Key.SessionId == sessionId)
+                .Select(x => _byId.TryGetValue(x.Value, out var request) ? request : null)
+                .Where(x => x is not null &&
+                    (x.RequesterMembershipId == membershipId || x.RecipientMembershipId == membershipId))
+                .Cast<Request>()
+                .ToArray();
+            return active.Select(request => request.Status switch
+                {
+                    Status.Pending => Complete(request, Status.Cancelled),
+                    Status.Accepted => Complete(request, Status.Ended),
+                    _ => request,
+                })
+                .ToArray();
+        }
+    }
+
     public Request End(Guid requestId, Guid sessionId, int matchNumber, Guid membershipId)
     {
         lock (_gate)
@@ -97,8 +147,7 @@ public sealed class VoiceConsentRegistry
     {
         lock (_gate)
         {
-            if (!_byId.TryGetValue(requestId, out var request) || request.SessionId != sessionId || request.MatchNumber != matchNumber)
-                throw new InvalidOperationException("The voice request is stale or belongs to another match.");
+            var request = RequireRequest(requestId, sessionId, matchNumber);
             var requiredActor = requireRecipient ? request.RecipientMembershipId : request.RequesterMembershipId;
             if (actorMembershipId != requiredActor) throw new InvalidOperationException("The participant cannot perform this voice request action.");
             if (request.Status == destination) return request;
@@ -112,8 +161,18 @@ public sealed class VoiceConsentRegistry
     {
         var completed = request with { Status = status };
         _byId[request.RequestId] = completed;
-        if (status != Status.Accepted) _activeByMatch.Remove((request.SessionId, request.MatchNumber));
+        var match = (request.SessionId, request.MatchNumber);
+        if (status != Status.Accepted &&
+            _activeByMatch.TryGetValue(match, out var activeId) && activeId == request.RequestId)
+            _activeByMatch.Remove(match);
         return completed;
+    }
+
+    private Request RequireRequest(Guid requestId, Guid sessionId, int matchNumber)
+    {
+        if (!_byId.TryGetValue(requestId, out var request) || request.SessionId != sessionId || request.MatchNumber != matchNumber)
+            throw new InvalidOperationException("The voice request is stale or belongs to another match.");
+        return request;
     }
 
     public enum Status { Pending, Accepted, Declined, Cancelled, TimedOut, Ended }
