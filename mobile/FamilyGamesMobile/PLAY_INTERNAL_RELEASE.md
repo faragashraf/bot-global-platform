@@ -23,16 +23,7 @@ Runtime validation on 2026-08-29 found that the Huawei API 23 device cannot esta
 
 ## Upload signing
 
-No upload key or password is stored in Git. Create the upload key in an owner-controlled secure location; the command prompts for secret values rather than embedding them:
-
-```bash
-keytool -genkeypair -v \
-  -keystore /secure/path/lamma-upload.jks \
-  -alias lamma-upload \
-  -keyalg RSA \
-  -keysize 2048 \
-  -validity 10000
-```
+The first Internal Testing bundle uses one dedicated Lamma upload key. The upload key is not the Google Play app-signing key: Google Play App Signing may manage the latter after enrollment. No keystore or password is stored in Git. Keep the upload keystore in an owner-controlled private location, keep its password in the operating-system credential store, and maintain a secure owner backup for future uploads.
 
 Supply all four values using environment variables or the equivalent Gradle properties:
 
@@ -59,20 +50,51 @@ Never commit the key, its passwords, or a local properties file.
 - `VIBRATE`: semantic XO and invitation haptics.
 - `CAMERA`: QR invitation scanning. It is requested only after the player chooses scanning and confirms an in-app explanation.
 
-Notification and microphone permissions are not declared in this release because push-provider integration and WebRTC audio transport are not operational. Location and contacts are not declared or requested.
+- `ACCESS_NETWORK_STATE`: detects connectivity loss and recovery without polling private network details.
+- `RECORD_AUDIO`: outgoing WebRTC voice after both players explicitly consent and the local player confirms the in-app microphone explanation. It is requested Just-In-Time, never at startup.
+- `MODIFY_AUDIO_SETTINGS`: temporary hands-free communication routing while a voice session is active; prior audio state is restored during cleanup.
+
+Notification, biometric/fingerprint, location, contacts, storage, SMS, phone, and advertising-ID permissions are not declared or requested. The unused biometric compatibility permissions contributed by the platform dependency are explicitly removed from the merged manifest. Push-provider integration is not configured in this Android application.
+
+## Voice status for Internal Testing
+
+Consent-gated, two-player WebRTC voice, mute/unmute, and cleanup are operational and have been proven on the current Samsung test devices with bidirectional RTP evidence. Voice remains **LIMITED** for this release: operational TURN and forced-relay testing are deferred, so some carrier, symmetric-NAT, restricted-Wi-Fi, or UDP-blocked environments may not establish media. Voice failure remains independent from gameplay.
+
+## Firebase status
+
+The Android application has no Firebase SDK/plugin dependency and no `google-services.json`; the release build does not require Firebase. Generic notification capability exists elsewhere in the platform, but Lamma Android push registration/delivery is not configured. If push notifications are enabled later, register a distinct Firebase Android app for `com.botglobal.lamma` and supply its approved configuration without committing private service-account material.
 
 ## Data Safety evidence
 
 - Identity: guests send a display name; registered flows send display name, username, email, and password to the central identity API. Session access/refresh credentials are encrypted locally with a non-exportable Android Keystore key.
 - Gameplay: the backend receives application-scoped identity, session/join/invitation actions, readiness, moves, and rematch commands.
-- QR/camera: scanning is on demand. The QR contains a game invitation/deep link with an opaque invitation token, not account credentials.
-- Notifications: shared semantic contracts exist, but FCM registration, push delivery, and a production notification provider are not configured.
-- Microphone/voice: shared WebRTC/ICE/signaling contracts exist; Android audio transport and microphone access are not implemented.
+- Notifications: shared semantic contracts exist, but this Android application has no notification permission, FCM configuration, registration, or push-delivery integration.
+- Microphone/voice: after an explicit opponent request/accept flow and local Just-In-Time permission, microphone audio is transmitted to the other game participant through WebRTC. Audio frames are not carried by the Bot Global API or SignalR and are not recorded or stored by the application. Signaling and session/participant identifiers pass through the backend.
+- Camera/QR: the camera is used only after the player chooses QR scanning and grants permission. Camera frames are processed for scanning and are not uploaded or stored; the resulting opaque invitation token—not account credentials—is sent to the backend for resolution.
 - Location/contacts: shared capability contracts exist only; this application does not declare, request, or use them.
 - Analytics/crash reporting/advertising identifiers: no analytics, crash-reporting, advertising SDK, or advertising-ID integration is present.
 - Purchases: entitlement and billing-provider contracts exist, but no store product, purchase flow, or payment SDK is configured.
 
 Server retention, deletion, encryption in transit/at rest, and third-party sharing answers require the owner/backend policy and must be confirmed in Play Console rather than inferred here.
+
+## Content rating facts
+
+- Lamma is an online multiplayer game platform currently launching with XO.
+- Players interact with another real player in a game session and may see player-selected display names.
+- There is no free-form text chat, image posting, public feed, or other general content-posting feature.
+- Two-player voice communication exists only after an explicit in-game request and acceptance; either player can decline, mute, or leave.
+- No advertising, purchases, gambling, simulated gambling, violence, sexual content, or controlled-substance content is implemented.
+- These are implementation facts only. The owner must answer Google Play's questionnaire and select the resulting rating without treating this document as a rating decision.
+
+## Internal Testing release notes
+
+### English
+
+First Lamma Internal Testing release: play online XO as a Guest, invite another player with QR codes or native sharing, use consent-based voice requests/chat, and recover from temporary connection loss. Includes Arabic and English. Voice is proven in the current test environment, but some carrier/NAT networks may remain unsupported until TURN relay rollout.
+
+### Arabic
+
+أول إصدار من لَمّة للاختبار الداخلي: العب XO عبر الإنترنت كضيف، وادعُ لاعبًا آخر عبر رمز QR أو المشاركة، واستخدم طلبات المحادثة الصوتية بعد موافقة الطرفين، مع استعادة الاتصال بعد الانقطاع المؤقت. يدعم العربية والإنجليزية. تم إثبات الصوت في بيئة الاختبار الحالية، وقد لا يعمل على بعض شبكات المحمول أو NAT حتى إضافة ترحيل TURN.
 
 ## Store listing inventory
 
