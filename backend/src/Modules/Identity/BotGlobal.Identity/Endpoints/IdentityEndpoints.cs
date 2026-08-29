@@ -33,6 +33,8 @@ public static class IdentityEndpoints
             .RequireAuthorization(
                 IdentityPolicies.Administrator);
 
+        endpoints.MapFamilyGamesMobileIdentityEndpoints();
+
         return endpoints;
     }
 

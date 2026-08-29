@@ -35,5 +35,16 @@ logs/
 coverage/
 TestResults/
 
+# Kotlin / Android mobile
+mobile/.gradle/
+mobile/.kotlin/
+mobile/**/build/
+mobile/local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+keystore.properties
+
 # Temporary bootstrap backup
 .bootstrap-backup/

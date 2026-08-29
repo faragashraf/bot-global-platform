@@ -12,6 +12,7 @@ A bilingual (Arabic/English), theme-aware digital platform for Bot Global.
 ## Architecture
 - Frontend: Core + Shared UI + Capability Features
 - Backend: Modular Monolith by Capability
+- Mobile: Kotlin Multiplatform + Compose Multiplatform (`mobile/shared` + application modules)
 
 ## Current scope
 Foundation only. Existing products such as WhatsApp SaaS are intentionally
@@ -25,4 +26,9 @@ npm run build
 cd ../backend
 dotnet build BotGlobal.sln
 dotnet test BotGlobal.sln
+
+cd ../mobile
+ANDROID_HOME=/path/to/Android/sdk ./gradlew :shared:jvmTest \
+  :FamilyGamesMobile:composeApp:desktopTest \
+  :FamilyGamesMobile:androidApp:assembleDebug
 ```
