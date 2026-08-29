@@ -4,12 +4,12 @@
 
 - Application ID: `com.botglobal.lamma`
 - Version name: `0.1.0`
-- Version code: `1`
+- Version code: `2`
 - Minimum SDK: 23
 - Target SDK: 36
 - Compile SDK: 37
 
-Confirm in Play Console that version code `1` has never been uploaded for this application ID before uploading the first bundle. If it has, increment the centralized `lamma-versionCode` value in `mobile/gradle/libs.versions.toml`.
+Version code `1` was used for the first Internal Testing upload. This corrected bundle uses version code `2` while retaining version name `0.1.0`.
 
 ## Release connectivity
 
