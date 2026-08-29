@@ -3,6 +3,7 @@ package com.botglobal.familygames.app.realtime
 import com.botglobal.familygames.app.data.FamilyGamesEnvironment
 import com.botglobal.familygames.app.data.GameSessionSnapshot
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
+import com.botglobal.mobile.platform.realtime.NetworkAvailabilitySnapshot
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -21,6 +22,7 @@ interface GameRealtimeClient {
     )
     suspend fun stop()
     suspend fun rejoin()
+    suspend fun onNetworkAvailabilityChanged(snapshot: NetworkAvailabilitySnapshot) = Unit
 }
 
 enum class RealtimeConnectSource(val logValue: String) {

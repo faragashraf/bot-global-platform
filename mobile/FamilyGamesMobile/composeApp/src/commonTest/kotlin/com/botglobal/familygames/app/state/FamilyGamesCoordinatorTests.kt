@@ -15,6 +15,8 @@ import com.botglobal.mobile.platform.identity.ApplicationIdentity
 import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
+import com.botglobal.mobile.platform.realtime.NetworkAvailabilitySnapshot
+import com.botglobal.mobile.platform.realtime.NetworkAvailabilityState
 import com.botglobal.mobile.platform.invitations.GameInvitation
 import com.botglobal.mobile.platform.invitations.QrScanResult
 import com.botglobal.mobile.platform.invitations.QrScannerCapability
@@ -189,7 +191,7 @@ class FamilyGamesCoordinatorTests {
     }
 
     @Test
-    fun network_restoration_restarts_exhausted_transport_without_foreground_event() = runTest {
+    fun network_restoration_resumes_the_canonical_owner_without_foreground_event() = runTest {
         val gateway = FakeGateway(
             restored = mobileSession,
             active = game(version = 3, status = "started"),
@@ -210,10 +212,78 @@ class FamilyGamesCoordinatorTests {
         realtime.setConnection(RealtimeConnectionState.Reconnecting)
         realtime.setConnection(RealtimeConnectionState.Failed)
         runCurrent()
+        network.setAvailable(false)
+        runCurrent()
         network.setAvailable(true)
         advanceUntilIdle()
 
-        assertEquals(2, realtime.startCalls)
+        assertEquals(1, realtime.startCalls)
+        assertEquals(1, gateway.rejoinCalls)
+        assertEquals(RealtimeConnectionState.Connected, coordinator.state.value.connection)
+        assertEquals(SessionRecoveryState.Recovered, coordinator.state.value.recovery)
+        assertNull(coordinator.state.value.errorCode)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun network_unavailable_promptly_pauses_moves_without_starting_another_transport() = runTest {
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = game(version = 3, status = "started", activePlayer = membershipId),
+        )
+        val realtime = FakeRealtime()
+        val network = FakeNetworkAvailability()
+        val coordinator = FamilyGamesCoordinator(
+            gateway,
+            realtime,
+            SilentHaptics,
+            this,
+            networkAvailability = network,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        network.setAvailable(false)
+        advanceUntilIdle()
+        coordinator.play(0, 0)
+        advanceUntilIdle()
+
+        assertEquals(RealtimeConnectionState.Reconnecting, coordinator.state.value.connection)
+        assertEquals(SessionRecoveryState.Interrupted, coordinator.state.value.recovery)
+        assertEquals(1, realtime.startCalls)
+        assertNull(gateway.lastMove)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun duplicate_connectivity_callbacks_coalesce_and_success_clears_network_recovery_state() = runTest {
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = game(version = 3, status = "started"),
+            rejoinResult = game(version = 9, status = "started", activePlayer = membershipId),
+        )
+        val realtime = FakeRealtime()
+        val network = FakeNetworkAvailability()
+        val coordinator = FamilyGamesCoordinator(
+            gateway,
+            realtime,
+            SilentHaptics,
+            this,
+            networkAvailability = network,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        network.setAvailable(false)
+        network.setAvailable(false)
+        advanceUntilIdle()
+        network.setAvailable(true)
+        network.setAvailable(true)
+        advanceUntilIdle()
+
+        assertEquals(1, realtime.startCalls)
+        assertEquals(1, realtime.effectiveNetworkLosses)
+        assertEquals(1, realtime.effectiveNetworkReturns)
         assertEquals(1, gateway.rejoinCalls)
         assertEquals(RealtimeConnectionState.Connected, coordinator.state.value.connection)
         assertEquals(SessionRecoveryState.Recovered, coordinator.state.value.recovery)
@@ -809,6 +879,11 @@ class FamilyGamesCoordinatorTests {
         var startedSession: String? = null
         var startCalls: Int = 0
         var rejoinCalls: Int = 0
+        var effectiveNetworkLosses: Int = 0
+        var effectiveNetworkReturns: Int = 0
+        private var networkObserverGeneration = Long.MIN_VALUE
+        private var networkRevision = Long.MIN_VALUE
+        private var networkState = NetworkAvailabilityState.Unknown
         override suspend fun start(
             sessionId: String,
             source: RealtimeConnectSource,
@@ -823,15 +898,49 @@ class FamilyGamesCoordinatorTests {
         }
         override suspend fun stop() = Unit
         override suspend fun rejoin() { rejoinCalls++ }
+        override suspend fun onNetworkAvailabilityChanged(snapshot: NetworkAvailabilitySnapshot) {
+            val current = snapshot.observerGeneration > networkObserverGeneration ||
+                snapshot.observerGeneration == networkObserverGeneration && snapshot.revision > networkRevision
+            if (!current) return
+            val previous = networkState
+            networkObserverGeneration = snapshot.observerGeneration
+            networkRevision = snapshot.revision
+            networkState = snapshot.state
+            if (previous == snapshot.state || startedSession == null) return
+            when (snapshot.state) {
+                NetworkAvailabilityState.Unavailable -> {
+                    effectiveNetworkLosses++
+                    mutableConnection.value = RealtimeConnectionState.Reconnecting
+                }
+                NetworkAvailabilityState.Available -> {
+                    effectiveNetworkReturns++
+                    if (mutableConnection.value != RealtimeConnectionState.Connected) {
+                        mutableConnection.value = RealtimeConnectionState.Connected
+                    }
+                }
+                NetworkAvailabilityState.Unknown -> Unit
+            }
+        }
         fun emit(snapshot: GameSessionSnapshot) { mutableEvents.tryEmit(GameRealtimeEvent("GameStateUpdated", snapshot)) }
         fun setConnection(state: RealtimeConnectionState) { mutableConnection.value = state }
     }
 
     private class FakeNetworkAvailability : NetworkAvailability {
-        private val mutableChanges = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
-        override val changes: Flow<Boolean> = mutableChanges
+        private val mutableChanges = MutableSharedFlow<NetworkAvailabilitySnapshot>(extraBufferCapacity = 4)
+        private var revision = 0L
+        override val changes: Flow<NetworkAvailabilitySnapshot> = mutableChanges
         fun setAvailable(available: Boolean) {
-            mutableChanges.tryEmit(available)
+            mutableChanges.tryEmit(
+                NetworkAvailabilitySnapshot(
+                    state = if (available) {
+                        NetworkAvailabilityState.Available
+                    } else {
+                        NetworkAvailabilityState.Unavailable
+                    },
+                    observerGeneration = 1,
+                    revision = ++revision,
+                ),
+            )
         }
     }
 

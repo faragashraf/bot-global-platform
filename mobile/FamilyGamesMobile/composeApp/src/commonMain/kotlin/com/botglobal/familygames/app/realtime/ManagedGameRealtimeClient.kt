@@ -1,6 +1,8 @@
 package com.botglobal.familygames.app.realtime
 
 import com.botglobal.familygames.app.data.GameSessionSnapshot
+import com.botglobal.mobile.platform.realtime.NetworkAvailabilitySnapshot
+import com.botglobal.mobile.platform.realtime.NetworkAvailabilityState
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -60,6 +62,9 @@ internal class ManagedGameRealtimeClient(
     private var generation = 0L
     private var nextInstance = 0L
     private var reconnectJob: Job? = null
+    private var networkObserverGeneration = Long.MIN_VALUE
+    private var networkRevision = Long.MIN_VALUE
+    private var networkState = NetworkAvailabilityState.Unknown
 
     override val connectionState: StateFlow<RealtimeConnectionState> = mutableState.asStateFlow()
     override val events: Flow<GameRealtimeEvent> = mutableEvents.asSharedFlow()
@@ -108,6 +113,41 @@ internal class ManagedGameRealtimeClient(
             ?: error("Realtime transport is disconnected.")
     }
 
+    override suspend fun onNetworkAvailabilityChanged(snapshot: NetworkAvailabilitySnapshot) =
+        operationMutex.withLock {
+            if (!acceptNetworkSnapshot(snapshot)) {
+                logger.log(
+                    "connectivity stale ignored observerGeneration=${snapshot.observerGeneration} " +
+                        "networkRevision=${snapshot.revision} state=${snapshot.state}",
+                )
+                return@withLock
+            }
+
+            val previousState = networkState
+            networkObserverGeneration = snapshot.observerGeneration
+            networkRevision = snapshot.revision
+            networkState = snapshot.state
+            logger.log(
+                "connectivity ${snapshot.state.name.lowercase()} " +
+                    "observerGeneration=${snapshot.observerGeneration} " +
+                    "networkRevision=${snapshot.revision} generation=$generation " +
+                    "state=${mutableState.value}",
+            )
+            if (previousState == snapshot.state) {
+                logger.log(
+                    "realtime recovery coalesced source=connectivityDuplicate " +
+                        "generation=$generation state=${mutableState.value}",
+                )
+                return@withLock
+            }
+
+            when (snapshot.state) {
+                NetworkAvailabilityState.Unavailable -> onNetworkUnavailableLocked()
+                NetworkAvailabilityState.Available -> onNetworkAvailableLocked()
+                NetworkAvailabilityState.Unknown -> Unit
+            }
+        }
+
     private suspend fun replaceTransportLocked(
         sessionId: String,
         accessToken: suspend () -> String?,
@@ -129,6 +169,14 @@ internal class ManagedGameRealtimeClient(
         generation++
         activeSessionId = sessionId
         tokenProvider = accessToken
+        if (networkState == NetworkAvailabilityState.Unavailable) {
+            mutableState.value = RealtimeConnectionState.Reconnecting
+            logger.log(
+                "realtime connect deferred source=${source.logValue} generation=$generation " +
+                    "reason=networkUnavailable state=${mutableState.value}",
+            )
+            return
+        }
         mutableState.value = RealtimeConnectionState.Connecting
         try {
             connectAttemptLocked(generation)
@@ -228,8 +276,48 @@ internal class ManagedGameRealtimeClient(
         }
 
     private fun scheduleReconnectLocked(expectedGeneration: Long) {
-        if (!isCurrentGeneration(expectedGeneration) || reconnectJob?.isActive == true) return
+        if (
+            !isCurrentGeneration(expectedGeneration) ||
+            reconnectJob?.isActive == true ||
+            networkState == NetworkAvailabilityState.Unavailable
+        ) return
         reconnectJob = ownerScope.launch { reconnect(expectedGeneration) }
+    }
+
+    private suspend fun onNetworkUnavailableLocked() {
+        if (activeSessionId == null) return
+        reconnectJob?.cancel()
+        reconnectJob = null
+        val interrupted = activeTransport
+        activeTransport = null
+        mutableState.value = RealtimeConnectionState.Reconnecting
+        logger.log(
+            "realtime recovery requested source=networkUnavailable " +
+                "generation=$generation state=${mutableState.value}",
+        )
+        if (interrupted != null) {
+            interrupted.transport.dispose()
+            logger.log(
+                "transport disposed generation=${interrupted.configuration.generation} " +
+                    "instance=${interrupted.configuration.instance} reason=networkUnavailable " +
+                    "state=${mutableState.value}",
+            )
+        }
+    }
+
+    private fun onNetworkAvailableLocked() {
+        if (activeSessionId == null) return
+        if (
+            mutableState.value in RecoverableNetworkStates &&
+            activeTransport == null
+        ) {
+            mutableState.value = RealtimeConnectionState.Reconnecting
+            logger.log(
+                "realtime recovery requested source=networkAvailable " +
+                    "generation=$generation state=${mutableState.value}",
+            )
+            scheduleReconnectLocked(generation)
+        }
     }
 
     private suspend fun reconnect(expectedGeneration: Long) {
@@ -277,6 +365,10 @@ internal class ManagedGameRealtimeClient(
     private fun isCurrentTransport(configuration: GameRealtimeTransportConfiguration): Boolean =
         activeTransport?.configuration == configuration && isCurrentGeneration(configuration.generation)
 
+    private fun acceptNetworkSnapshot(snapshot: NetworkAvailabilitySnapshot): Boolean =
+        snapshot.observerGeneration > networkObserverGeneration ||
+            snapshot.observerGeneration == networkObserverGeneration && snapshot.revision > networkRevision
+
     private data class ActiveTransport(
         val configuration: GameRealtimeTransportConfiguration,
         val transport: GameRealtimeTransport,
@@ -287,6 +379,11 @@ internal class ManagedGameRealtimeClient(
             RealtimeConnectionState.Connecting,
             RealtimeConnectionState.Connected,
             RealtimeConnectionState.Reconnecting,
+        )
+        val RecoverableNetworkStates = setOf(
+            RealtimeConnectionState.Disconnected,
+            RealtimeConnectionState.Reconnecting,
+            RealtimeConnectionState.Failed,
         )
         val DefaultReconnectBackoff = listOf(0L, 500L, 1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 30_000L)
         const val PresenceEventName = "PlayerConnectionChanged"

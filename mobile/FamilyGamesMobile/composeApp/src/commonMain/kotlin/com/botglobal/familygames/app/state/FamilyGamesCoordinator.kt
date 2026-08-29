@@ -114,8 +114,8 @@ class FamilyGamesCoordinator(
 
     init {
         networkAvailabilityJob = scope.launch {
-            networkAvailability.changes.collect { available ->
-                if (available) onNetworkAvailable()
+            networkAvailability.changes.collect { snapshot ->
+                realtime.onNetworkAvailabilityChanged(snapshot)
             }
         }
     }
@@ -302,6 +302,13 @@ class FamilyGamesCoordinator(
     fun play(row: Int, column: Int) = launchAction {
         val game = requireGame()
         val identity = mutableState.value.mobileSession?.identity ?: error("session_missing")
+        if (
+            mutableState.value.connection != RealtimeConnectionState.Connected ||
+            realtime.connectionState.value != RealtimeConnectionState.Connected
+        ) {
+            haptics.perform(HapticEvent.Warning)
+            return@launchAction
+        }
         if (game.status != "started" || game.activePlayerMembershipId != identity.membershipId) {
             haptics.perform(HapticEvent.Warning)
             return@launchAction
@@ -652,17 +659,6 @@ class FamilyGamesCoordinator(
             } finally {
                 transportOperationInProgress = false
             }
-        }
-    }
-
-    private fun onNetworkAvailable() {
-        val sessionId = realtimeSessionId ?: return
-        if (!recoveryRequired) return
-        when (realtime.connectionState.value) {
-            RealtimeConnectionState.Failed,
-            RealtimeConnectionState.Disconnected,
-            -> restartRealtimeTransport(sessionId, RealtimeConnectSource.NetworkAvailable)
-            else -> Unit
         }
     }
 

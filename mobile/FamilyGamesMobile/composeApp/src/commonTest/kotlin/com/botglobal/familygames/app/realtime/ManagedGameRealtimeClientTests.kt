@@ -3,6 +3,8 @@ package com.botglobal.familygames.app.realtime
 import com.botglobal.familygames.app.data.GameSessionSnapshot
 import com.botglobal.familygames.app.data.PlayerSnapshot
 import com.botglobal.familygames.app.data.RulesetSnapshot
+import com.botglobal.mobile.platform.realtime.NetworkAvailabilitySnapshot
+import com.botglobal.mobile.platform.realtime.NetworkAvailabilityState
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -150,6 +152,102 @@ class ManagedGameRealtimeClientTests {
         assertEquals(1, factory.transports.size)
     }
 
+    @Test
+    fun network_unavailable_enters_reconnecting_without_creating_a_transport() = runTest {
+        val factory = RecordingTransportFactory()
+        val client = client(factory)
+        client.start(SessionId, RealtimeConnectSource.AppStart) { "access" }
+
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Unavailable, revision = 1))
+
+        assertEquals(RealtimeConnectionState.Reconnecting, client.connectionState.value)
+        assertEquals(1, factory.transports.size)
+        assertTrue(factory.transports.single().disposed)
+        assertEquals(1, factory.distinctGenerations())
+    }
+
+    @Test
+    fun network_return_resumes_recovery_through_the_current_generation() = runTest {
+        val factory = RecordingTransportFactory()
+        val client = client(factory)
+        client.start(SessionId, RealtimeConnectSource.AppStart) { "access" }
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Unavailable, revision = 1))
+
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Available, revision = 2))
+        advanceUntilIdle()
+
+        assertEquals(RealtimeConnectionState.Connected, client.connectionState.value)
+        assertEquals(2, factory.transports.size)
+        assertEquals(1, factory.distinctGenerations())
+        assertEquals(1, factory.transports.last().connectCalls)
+    }
+
+    @Test
+    fun duplicate_connectivity_callbacks_do_not_create_recovery_storms() = runTest {
+        val factory = RecordingTransportFactory()
+        val client = client(factory)
+        client.start(SessionId, RealtimeConnectSource.AppStart) { "access" }
+
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Unavailable, revision = 1))
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Unavailable, revision = 2))
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Available, revision = 3))
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Available, revision = 4))
+        advanceUntilIdle()
+
+        assertEquals(RealtimeConnectionState.Connected, client.connectionState.value)
+        assertEquals(2, factory.transports.size)
+        assertEquals(1, factory.distinctGenerations())
+    }
+
+    @Test
+    fun stale_connectivity_revision_cannot_override_newer_available_state() = runTest {
+        val factory = RecordingTransportFactory()
+        val client = client(factory)
+        client.start(SessionId, RealtimeConnectSource.AppStart) { "access" }
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Unavailable, revision = 5))
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Available, revision = 6))
+        advanceUntilIdle()
+
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Unavailable, revision = 5))
+        advanceUntilIdle()
+
+        assertEquals(RealtimeConnectionState.Connected, client.connectionState.value)
+        assertEquals(2, factory.transports.size)
+        assertEquals(1, factory.distinctGenerations())
+    }
+
+    @Test
+    fun newer_connectivity_observer_supersedes_callbacks_from_an_old_observer() = runTest {
+        val factory = RecordingTransportFactory()
+        val client = client(factory)
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Available, revision = 1, observer = 2))
+        client.start(SessionId, RealtimeConnectSource.AppStart) { "access" }
+
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Unavailable, revision = 1, observer = 3))
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Available, revision = 2, observer = 3))
+        advanceUntilIdle()
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Unavailable, revision = 99, observer = 2))
+
+        assertEquals(RealtimeConnectionState.Connected, client.connectionState.value)
+        assertEquals(2, factory.transports.size)
+        assertEquals(1, factory.distinctGenerations())
+    }
+
+    @Test
+    fun healthy_network_updates_do_not_restart_a_connected_transport() = runTest {
+        val factory = RecordingTransportFactory()
+        val client = client(factory)
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Available, revision = 1))
+        client.start(SessionId, RealtimeConnectSource.AppStart) { "access" }
+
+        client.onNetworkAvailabilityChanged(network(NetworkAvailabilityState.Available, revision = 2))
+        advanceUntilIdle()
+
+        assertEquals(RealtimeConnectionState.Connected, client.connectionState.value)
+        assertEquals(1, factory.transports.size)
+        assertEquals(1, factory.distinctGenerations())
+    }
+
     private fun kotlinx.coroutines.test.TestScope.client(factory: RecordingTransportFactory) =
         ManagedGameRealtimeClient(
             ownerScope = this,
@@ -209,6 +307,12 @@ class ManagedGameRealtimeClientTests {
 
     private companion object {
         const val SessionId = "session-1"
+
+        fun network(
+            state: NetworkAvailabilityState,
+            revision: Long,
+            observer: Long = 1,
+        ) = NetworkAvailabilitySnapshot(state, observer, revision)
 
         fun snapshot(revision: Long) = GameSessionSnapshot(
             sessionId = SessionId,
