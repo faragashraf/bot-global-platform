@@ -80,9 +80,11 @@ import com.botglobal.familygames.app.data.createPlatformHttpClient
 import com.botglobal.familygames.app.realtime.createGameRealtimeClient
 import com.botglobal.familygames.app.state.AppLanguage
 import com.botglobal.familygames.app.state.AppScreen
+import com.botglobal.familygames.app.state.ApplicationLanguagePreferences
 import com.botglobal.familygames.app.state.FamilyGamesCoordinator
 import com.botglobal.familygames.app.state.FamilyGamesUiState
 import com.botglobal.familygames.app.state.OpponentConnectionState
+import com.botglobal.familygames.app.state.UnavailableApplicationLanguagePreferences
 import com.botglobal.mobile.platform.device.PermissionController
 import com.botglobal.mobile.platform.device.SemanticHaptics
 import com.botglobal.mobile.platform.device.UnavailablePermissionController
@@ -114,6 +116,7 @@ fun FamilyGamesApp(
     qrScanner: QrScannerCapability = UnavailableQrScanner,
     permissions: PermissionController = UnavailablePermissionController,
     networkAvailability: NetworkAvailability = UnavailableNetworkAvailability,
+    languagePreferences: ApplicationLanguagePreferences = UnavailableApplicationLanguagePreferences,
     invitationQr: @Composable (String, String, Modifier) -> Unit = { _, description, modifier ->
         Box(
             modifier
@@ -136,6 +139,7 @@ fun FamilyGamesApp(
         qrScanner,
         permissions,
         networkAvailability,
+        languagePreferences,
     ) {
         val gateway = FamilyGamesApi(createPlatformHttpClient(), environment, sessionVault)
         FamilyGamesCoordinator(
@@ -150,6 +154,7 @@ fun FamilyGamesApp(
             qrScanner,
             permissions,
             networkAvailability,
+            languagePreferences,
         )
     }
     val state by coordinator.state.collectAsState()

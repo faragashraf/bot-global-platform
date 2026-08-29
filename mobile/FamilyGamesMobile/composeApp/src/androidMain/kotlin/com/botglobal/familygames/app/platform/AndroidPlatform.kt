@@ -9,6 +9,10 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import com.botglobal.familygames.app.data.MobileSessionDto
+import com.botglobal.familygames.app.state.AppLanguage
+import com.botglobal.familygames.app.state.ApplicationLanguagePreferences
+import com.botglobal.familygames.app.state.appLanguageFromPreference
+import com.botglobal.familygames.app.state.preferenceValue
 import com.botglobal.mobile.platform.device.HapticEvent
 import com.botglobal.mobile.platform.device.SemanticHaptics
 import com.botglobal.mobile.platform.identity.MobileSession
@@ -89,6 +93,21 @@ class AndroidSecureSessionVault(context: Context) : SessionVault {
         const val KEY_IV = "session_iv"
         const val KEY_ALIAS = "botglobal.familygames.mobile.session"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
+    }
+}
+
+class AndroidApplicationLanguagePreferences(context: Context) : ApplicationLanguagePreferences {
+    private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+
+    override fun restore(): AppLanguage? = appLanguageFromPreference(preferences.getString(KEY_LANGUAGE, null))
+
+    override fun save(language: AppLanguage) {
+        preferences.edit().putString(KEY_LANGUAGE, language.preferenceValue()).commit()
+    }
+
+    private companion object {
+        const val PREFERENCES = "botglobal_family_games_preferences"
+        const val KEY_LANGUAGE = "application_language"
     }
 }
 

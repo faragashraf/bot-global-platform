@@ -97,8 +97,11 @@ class FamilyGamesCoordinator(
     private val qrScanner: QrScannerCapability = UnavailableQrScanner,
     private val permissions: PermissionController = UnavailablePermissionController,
     networkAvailability: NetworkAvailability = UnavailableNetworkAvailability,
+    private val languagePreferences: ApplicationLanguagePreferences = UnavailableApplicationLanguagePreferences,
 ) {
-    private val mutableState = MutableStateFlow(FamilyGamesUiState())
+    private val mutableState = MutableStateFlow(
+        FamilyGamesUiState(language = languagePreferences.restore() ?: AppLanguage.Arabic),
+    )
     val state: StateFlow<FamilyGamesUiState> = mutableState.asStateFlow()
     private var realtimeEventsJob: Job? = null
     private var realtimeStateJob: Job? = null
@@ -191,9 +194,13 @@ class FamilyGamesCoordinator(
     fun backHome() = navigate(AppScreen.Home)
 
     fun toggleLanguage() {
-        mutableState.update {
-            it.copy(language = if (it.language == AppLanguage.Arabic) AppLanguage.English else AppLanguage.Arabic)
+        val selected = if (mutableState.value.language == AppLanguage.Arabic) {
+            AppLanguage.English
+        } else {
+            AppLanguage.Arabic
         }
+        languagePreferences.save(selected)
+        mutableState.update { it.copy(language = selected) }
     }
 
     fun dismissOptionalUpdate() {

@@ -45,6 +45,224 @@ import com.botglobal.mobile.platform.realtime.NetworkAvailability
 @OptIn(ExperimentalCoroutinesApi::class)
 class FamilyGamesCoordinatorTests {
     @Test
+    fun explicit_english_selection_is_saved() = runTest {
+        val preferences = FakeLanguagePreferences()
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            languagePreferences = preferences,
+        )
+
+        coordinator.toggleLanguage()
+
+        assertEquals(AppLanguage.English, coordinator.state.value.language)
+        assertEquals(AppLanguage.English, preferences.stored)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun explicit_arabic_selection_is_saved() = runTest {
+        val preferences = FakeLanguagePreferences(AppLanguage.English)
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            languagePreferences = preferences,
+        )
+
+        coordinator.toggleLanguage()
+
+        assertEquals(AppLanguage.Arabic, coordinator.state.value.language)
+        assertEquals(AppLanguage.Arabic, preferences.stored)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun startup_restores_english_before_session_work() = runTest {
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            languagePreferences = FakeLanguagePreferences(AppLanguage.English),
+        )
+
+        assertEquals(AppLanguage.English, coordinator.state.value.language)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        assertEquals(AppLanguage.English, coordinator.state.value.language)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun startup_restores_arabic_before_session_work() = runTest {
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            languagePreferences = FakeLanguagePreferences(AppLanguage.Arabic),
+        )
+
+        assertEquals(AppLanguage.Arabic, coordinator.state.value.language)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        assertEquals(AppLanguage.Arabic, coordinator.state.value.language)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun process_recreation_restores_the_last_explicit_selection() = runTest {
+        val preferences = FakeLanguagePreferences()
+        val first = FamilyGamesCoordinator(
+            FakeGateway(),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            languagePreferences = preferences,
+        )
+        first.toggleLanguage()
+        first.dispose()
+
+        val recreated = FamilyGamesCoordinator(
+            FakeGateway(),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            languagePreferences = preferences,
+        )
+
+        assertEquals(AppLanguage.English, recreated.state.value.language)
+        recreated.dispose()
+    }
+
+    @Test
+    fun guest_creation_does_not_reset_restored_language() = runTest {
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            languagePreferences = FakeLanguagePreferences(AppLanguage.English),
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.continueAsGuest("Player")
+        advanceUntilIdle()
+
+        assertEquals(AppLanguage.English, coordinator.state.value.language)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun restored_identity_and_game_do_not_reset_language() = runTest {
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(restored = mobileSession, active = game(status = "started")),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            languagePreferences = FakeLanguagePreferences(AppLanguage.English),
+        )
+
+        coordinator.startup()
+        advanceUntilIdle()
+
+        assertEquals(AppLanguage.English, coordinator.state.value.language)
+        assertEquals(AppScreen.Gameplay, coordinator.state.value.screen)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun cold_start_deep_link_does_not_reset_language() = runTest {
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(restored = mobileSession, resolvedInvitation = game()),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            languagePreferences = FakeLanguagePreferences(AppLanguage.English),
+        )
+
+        coordinator.handleInvitationLink("familygames://invite/AbCdEf0123456789_opaque-token")
+        coordinator.startup()
+        advanceUntilIdle()
+
+        assertEquals(AppLanguage.English, coordinator.state.value.language)
+        assertEquals(AppScreen.Lobby, coordinator.state.value.screen)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun invitation_resolution_does_not_reset_language() = runTest {
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(restored = mobileSession, resolvedInvitation = game()),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            languagePreferences = FakeLanguagePreferences(AppLanguage.English),
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.handleInvitationLink("familygames://invite/AbCdEf0123456789_opaque-token")
+        advanceUntilIdle()
+
+        assertEquals(AppLanguage.English, coordinator.state.value.language)
+        assertEquals(AppScreen.Lobby, coordinator.state.value.screen)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun realtime_recovery_does_not_reset_language() = runTest {
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(
+                restored = mobileSession,
+                active = game(version = 3, status = "started"),
+                rejoinResult = game(version = 4, status = "started"),
+            ),
+            realtime,
+            SilentHaptics,
+            this,
+            languagePreferences = FakeLanguagePreferences(AppLanguage.English),
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        realtime.setConnection(RealtimeConnectionState.Reconnecting)
+        runCurrent()
+        realtime.setConnection(RealtimeConnectionState.Connected)
+        advanceUntilIdle()
+
+        assertEquals(AppLanguage.English, coordinator.state.value.language)
+        assertEquals(RealtimeConnectionState.Connected, coordinator.state.value.connection)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun first_time_user_keeps_the_approved_arabic_default() = runTest {
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            languagePreferences = FakeLanguagePreferences(),
+        )
+
+        assertEquals(AppLanguage.Arabic, coordinator.state.value.language)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        assertEquals(AppLanguage.Arabic, coordinator.state.value.language)
+        coordinator.dispose()
+    }
+
+    @Test
     fun startup_without_session_opens_guest_first_welcome() = runTest {
         val coordinator = FamilyGamesCoordinator(FakeGateway(), FakeRealtime(), SilentHaptics, this)
         coordinator.startup()
@@ -941,6 +1159,16 @@ class FamilyGamesCoordinatorTests {
                     revision = ++revision,
                 ),
             )
+        }
+    }
+
+    private class FakeLanguagePreferences(initial: AppLanguage? = null) : ApplicationLanguagePreferences {
+        var stored: AppLanguage? = initial
+
+        override fun restore(): AppLanguage? = stored
+
+        override fun save(language: AppLanguage) {
+            stored = language
         }
     }
 
