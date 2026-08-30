@@ -24,10 +24,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +37,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,9 +59,15 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.botglobal.mobile.platform.appearance.AppearancePreference
 import com.botglobal.mobile.platform.appearance.ResolvedAppearance
+import com.botglobal.mobile.platform.contacts.ContactsSnapshot
+import com.botglobal.mobile.platform.contacts.ContactsStatus
+import com.botglobal.mobile.platform.contacts.DeviceContact
+import com.botglobal.mobile.platform.identity.FederatedAuthenticationError
+import com.botglobal.mobile.platform.identity.FederatedAuthenticationState
 import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.nqrb.app.state.NqrbAppState
 import com.botglobal.nqrb.app.state.NqrbDestination
+import kotlinx.coroutines.launch
 
 @Composable
 fun NqrbApp(
@@ -68,12 +77,17 @@ fun NqrbApp(
     val locale by appState.locale.state.collectAsState()
     val appearance by appState.appearance.state.collectAsState()
     val backStack by appState.navigation.backStack.collectAsState()
+    val authentication by appState.identity.state.collectAsState()
+    val contacts by appState.contacts.state.collectAsState()
     val systemIsDark = isSystemInDarkTheme()
     val strings = nqrbStrings(locale.languageTag)
     val layoutDirection = if (locale.direction == ContentDirection.RightToLeft) LayoutDirection.Rtl else LayoutDirection.Ltr
 
     LaunchedEffect(systemIsDark) {
         appState.appearance.updateSystemAppearance(systemIsDark)
+    }
+    LaunchedEffect(appState) {
+        appState.startup()
     }
     SideEffect {
         onResolvedAppearanceChanged(appearance.resolved)
@@ -90,6 +104,8 @@ fun NqrbApp(
                 strings = strings,
                 appState = appState,
                 layoutDirection = layoutDirection,
+                authentication = authentication,
+                contacts = contacts,
             )
         }
     }
@@ -101,12 +117,14 @@ private fun NqrbShell(
     strings: NqrbStrings,
     appState: NqrbAppState,
     layoutDirection: LayoutDirection,
+    authentication: FederatedAuthenticationState,
+    contacts: ContactsSnapshot,
 ) {
     val colors = LocalNqrbColors.current
     Scaffold(
         containerColor = Color.Transparent,
         bottomBar = {
-            if (destination != NqrbDestination.Settings) {
+            if (destination in NQRB_TOP_LEVEL_DESTINATIONS) {
                 NqrbBottomBar(destination, strings, appState::selectTopLevel)
             }
         },
@@ -123,6 +141,8 @@ private fun NqrbShell(
         ) {
             AnimatedContent(destination) { current ->
                 when (current) {
+                    NqrbDestination.SignIn -> SignInScreen(strings, authentication, appState)
+                    NqrbDestination.ContactsOnboarding -> ContactsOnboardingScreen(strings, appState)
                     NqrbDestination.Home -> HomeScreen(strings, appState::openSettings)
                     NqrbDestination.Settings -> SettingsScreen(
                         strings = strings,
@@ -130,10 +150,202 @@ private fun NqrbShell(
                         layoutDirection = layoutDirection,
                     )
                     NqrbDestination.History -> PlaceholderScreen(strings.historyTitle, strings.historyBody, strings, appState::openSettings)
-                    NqrbDestination.People -> PlaceholderScreen(strings.peopleTitle, strings.peopleBody, strings, appState::openSettings)
-                    NqrbDestination.Profile -> PlaceholderScreen(strings.profileTitle, strings.profileBody, strings, appState::openSettings)
+                    NqrbDestination.People -> PeopleScreen(strings, contacts, appState)
+                    NqrbDestination.Profile -> ProfileScreen(strings, appState)
                 }
             }
+        }
+    }
+}
+
+private val NQRB_TOP_LEVEL_DESTINATIONS = NqrbAppState.TOP_LEVEL_DESTINATIONS
+
+@Composable
+private fun SignInScreen(
+    strings: NqrbStrings,
+    authentication: FederatedAuthenticationState,
+    appState: NqrbAppState,
+) {
+    val scope = rememberCoroutineScope()
+    val busy = authentication is FederatedAuthenticationState.SigningIn ||
+        authentication is FederatedAuthenticationState.RestoringSession
+    BrandedFlowFrame(strings, appState::openSettings) {
+        FlowHero(NqrbGlyph.Profile, strings.signInTitle, strings.signInBody)
+        Button(
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+            enabled = !busy,
+            onClick = { scope.launch { appState.signInWithGoogle() } },
+        ) {
+            Text(strings.continueWithGoogle)
+        }
+        if (authentication is FederatedAuthenticationState.AuthenticationError) {
+            val message = when (authentication.reason) {
+                FederatedAuthenticationError.ConfigurationMissing -> strings.googleConfigurationMissing
+                FederatedAuthenticationError.ProviderUnavailable -> strings.googleUnavailable
+                FederatedAuthenticationError.ProviderFailure -> strings.googleSignInFailed
+                FederatedAuthenticationError.BackendRejected -> strings.googleRejected
+                FederatedAuthenticationError.AccountLinkRequired -> strings.accountLinkRequired
+                FederatedAuthenticationError.NetworkFailure -> strings.networkFailure
+                FederatedAuthenticationError.AuthenticationFailure -> strings.googleSignInFailed
+            }
+            InfoNote(message)
+        }
+        InfoNote(strings.signInPrivacy)
+    }
+}
+
+@Composable
+private fun ContactsOnboardingScreen(strings: NqrbStrings, appState: NqrbAppState) {
+    val scope = rememberCoroutineScope()
+    BrandedFlowFrame(strings, appState::openSettings) {
+        FlowHero(NqrbGlyph.People, strings.contactsOnboardingTitle, strings.contactsOnboardingBody)
+        InfoNote(strings.contactsStayLocal)
+        Button(
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+            onClick = { scope.launch { appState.allowContacts() } },
+        ) {
+            Text(strings.allowContacts)
+        }
+        TextButton(onClick = appState::skipContacts, modifier = Modifier.fillMaxWidth()) {
+            Text(strings.notNow)
+        }
+    }
+}
+
+@Composable
+private fun BrandedFlowFrame(
+    strings: NqrbStrings,
+    onSettings: () -> Unit,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = NqrbSpacing.Lg, vertical = NqrbSpacing.Md),
+        verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
+    ) {
+        ProductHeader(strings, onSettings)
+        Spacer(Modifier.height(NqrbSpacing.Sm))
+        content()
+        Spacer(Modifier.height(NqrbSpacing.Lg))
+    }
+}
+
+@Composable
+private fun FlowHero(glyph: NqrbGlyph, title: String, body: String) {
+    val colors = LocalNqrbColors.current
+    Surface(
+        Modifier.fillMaxWidth(),
+        color = colors.surface,
+        shape = RoundedCornerShape(30.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
+        shadowElevation = 8.dp,
+    ) {
+        Column(Modifier.padding(NqrbSpacing.Xl), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md)) {
+            Box(
+                Modifier.size(58.dp).clip(CircleShape).background(colors.accentSoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                NqrbIcon(glyph, title, colors.accent, Modifier.size(30.dp))
+            }
+            Text(title, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
+            Text(body, style = MaterialTheme.typography.bodyLarge, color = colors.textSecondary)
+        }
+    }
+}
+
+@Composable
+private fun InfoNote(text: String) {
+    val colors = LocalNqrbColors.current
+    Surface(Modifier.fillMaxWidth(), color = colors.accentSoft, shape = RoundedCornerShape(18.dp)) {
+        Text(
+            text,
+            Modifier.padding(NqrbSpacing.Md),
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textSecondary,
+        )
+    }
+}
+
+@Composable
+private fun PeopleScreen(strings: NqrbStrings, snapshot: ContactsSnapshot, appState: NqrbAppState) {
+    val scope = rememberCoroutineScope()
+    val colors = LocalNqrbColors.current
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
+        verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
+    ) {
+        ProductHeader(strings, appState::openSettings)
+        Text(strings.peopleTitle, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
+        when (snapshot.status) {
+            ContactsStatus.Available -> snapshot.contacts.forEach { ContactCard(it) }
+            ContactsStatus.Empty -> InfoNote(strings.contactsEmpty)
+            ContactsStatus.Denied -> ContactsPermissionState(strings.contactsDenied, strings.allowContacts) {
+                scope.launch { appState.requestContactsFromPeople() }
+            }
+            ContactsStatus.PermanentlyDenied -> InfoNote(strings.contactsPermanentlyDenied)
+            ContactsStatus.Unavailable -> InfoNote(strings.contactsDenied)
+            ContactsStatus.Loading -> InfoNote(strings.refreshContacts)
+            ContactsStatus.NotRequested -> ContactsPermissionState(strings.peopleBody, strings.allowContacts) {
+                scope.launch { appState.requestContactsFromPeople() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContactsPermissionState(body: String, action: String, onAction: () -> Unit) {
+    InfoNote(body)
+    Button(onClick = onAction, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(action) }
+}
+
+@Composable
+private fun ContactCard(contact: DeviceContact) {
+    val colors = LocalNqrbColors.current
+    Surface(
+        Modifier.fillMaxWidth(),
+        color = colors.surface,
+        shape = RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
+    ) {
+        Row(Modifier.padding(NqrbSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(46.dp).clip(CircleShape).background(colors.accentSoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(contact.displayName.trim().take(1).uppercase(), color = colors.accent, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(NqrbSpacing.Md))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
+                Text(contact.displayName, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                contact.phoneNumbers.forEach { number ->
+                    Text(
+                        "\u2066${number.displayValue}\u2069",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileScreen(strings: NqrbStrings, appState: NqrbAppState) {
+    val scope = rememberCoroutineScope()
+    val colors = LocalNqrbColors.current
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
+        verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Lg),
+    ) {
+        ProductHeader(strings, appState::openSettings)
+        FlowHero(NqrbGlyph.Profile, strings.profileTitle, strings.profileBody)
+        TextButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { scope.launch { appState.logout() } },
+        ) {
+            Text(strings.logout, color = colors.destructive)
         }
     }
 }

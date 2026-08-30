@@ -9,6 +9,57 @@ namespace BotGlobal.Identity.Endpoints;
 
 internal static class MobileIdentityEndpoints
 {
+    public static IEndpointRouteBuilder MapNqrbMobileIdentityEndpoints(
+        this IEndpointRouteBuilder endpoints)
+    {
+        const string applicationKey = BotGlobalApplications.Nqrb;
+        var group = endpoints.MapGroup("/api/mobile/nqrb/identity");
+
+        group.MapPost("/federated", async (
+            MobileFederatedIdentityRequest request,
+            IMobileFederatedIdentityService service,
+            CancellationToken cancellationToken) =>
+            ToFederatedResult(await service.AuthenticateAsync(applicationKey, request, cancellationToken)))
+            .AllowAnonymous();
+
+        group.MapPost("/refresh", async (
+            MobileRefreshRequest request,
+            IMobileIdentityService service,
+            CancellationToken cancellationToken) =>
+        {
+            var session = await service.RefreshAsync(applicationKey, request, cancellationToken);
+            return session is null ? Results.Unauthorized() : Results.Ok(session);
+        }).AllowAnonymous();
+
+        group.MapGet("/me", (ClaimsPrincipal principal) =>
+        {
+            var membershipId = RequireMembershipId(principal);
+            return Results.Ok(new MobileIdentityResponse(
+                membershipId,
+                principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
+                principal.Identity?.Name ?? string.Empty,
+                false,
+                applicationKey));
+        }).RequireAuthorization(ApplicationIdentityPolicies.For(applicationKey));
+
+        group.MapPost("/logout", async (
+            HttpRequest request,
+            IMobileApplicationTokenService tokens,
+            CancellationToken cancellationToken) =>
+        {
+            const string prefix = "Bearer ";
+            var authorization = request.Headers.Authorization.ToString();
+            if (authorization.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                await tokens.RevokeAccessTokenAsync(authorization[prefix.Length..].Trim(), cancellationToken);
+            }
+
+            return Results.NoContent();
+        }).RequireAuthorization(ApplicationIdentityPolicies.For(applicationKey));
+
+        return endpoints;
+    }
+
     public static IEndpointRouteBuilder MapFamilyGamesMobileIdentityEndpoints(
         this IEndpointRouteBuilder endpoints)
     {
@@ -90,6 +141,32 @@ internal static class MobileIdentityEndpoints
         result.Succeeded
             ? Results.Ok(result.Session)
             : Results.ValidationProblem(result.Errors);
+
+    private static IResult ToFederatedResult(MobileIdentityResult result)
+    {
+        if (result.Succeeded)
+        {
+            return Results.Ok(result.Session);
+        }
+
+        var configurationMissing = result.Errors.Values
+            .SelectMany(x => x)
+            .Contains("google_configuration_missing", StringComparer.Ordinal);
+        if (configurationMissing)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Federated identity is not configured.",
+                extensions: new Dictionary<string, object?> { ["code"] = "google_configuration_missing" });
+        }
+
+        var accountLinkRequired = result.Errors.Values
+            .SelectMany(x => x)
+            .Contains("account_link_required", StringComparer.Ordinal);
+        return accountLinkRequired
+            ? Results.Conflict(new { code = "account_link_required" })
+            : Results.ValidationProblem(result.Errors);
+    }
 
     private static Guid RequireMembershipId(ClaimsPrincipal principal) =>
         Guid.TryParse(

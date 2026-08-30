@@ -3,6 +3,7 @@ namespace BotGlobal.Contracts.Mobile;
 public static class BotGlobalApplications
 {
     public const string FamilyGames = "family-games";
+    public const string Nqrb = "nqrb";
 }
 
 public static class ApplicationIdentityDefaults

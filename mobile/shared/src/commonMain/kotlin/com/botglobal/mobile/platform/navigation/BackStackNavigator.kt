@@ -25,6 +25,10 @@ class BackStackNavigator<Destination : Any>(initialDestination: Destination) {
         mutableBackStack.value = if (destination == root) listOf(root) else listOf(root, destination)
     }
 
+    fun reset(destination: Destination) {
+        mutableBackStack.value = listOf(destination)
+    }
+
     fun navigateBack(): Boolean {
         if (!canNavigateBack) return false
         mutableBackStack.value = mutableBackStack.value.dropLast(1)

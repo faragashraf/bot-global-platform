@@ -1,5 +1,11 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+val googleServerClientId = providers.gradleProperty("nqrbGoogleServerClientId")
+    .orElse(providers.environmentVariable("NQRB_GOOGLE_SERVER_CLIENT_ID"))
+    .getOrElse("")
+
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeCompiler)
@@ -21,12 +27,28 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
+        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", googleServerClientId.asBuildConfigString())
     }
 
     buildTypes {
+        getByName("debug") {
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
+            val apiUrl = providers.gradleProperty("nqrbDebugApiBaseUrl").getOrElse("http://10.0.2.2:5062")
+            buildConfigField("String", "API_BASE_URL", apiUrl.asBuildConfigString())
+        }
         getByName("release") {
             isMinifyEnabled = false
+            buildConfigField(
+                "String",
+                "API_BASE_URL",
+                "https://bgapi.challengershoes.com".asBuildConfigString(),
+            )
         }
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {

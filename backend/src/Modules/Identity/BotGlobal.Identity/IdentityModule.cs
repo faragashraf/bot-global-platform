@@ -69,6 +69,11 @@ public static class IdentityModule
         services.AddScoped<IMobileApplicationTokenService, MobileApplicationTokenService>();
         services.AddScoped<IMobileApplicationSessionAuthenticator, MobileApplicationSessionAuthenticator>();
         services.AddScoped<IMobileIdentityService, MobileIdentityService>();
+        services.Configure<GoogleFederatedIdentityOptions>(
+            configuration.GetSection(GoogleFederatedIdentityOptions.SectionName));
+        services.AddSingleton<IGoogleIdTokenVerifier, GoogleIdTokenVerifier>();
+        services.AddScoped<IFederatedIdentityTokenValidator, GoogleFederatedIdentityTokenValidator>();
+        services.AddScoped<IMobileFederatedIdentityService, MobileFederatedIdentityService>();
 
         services.ConfigureApplicationCookie(
             options =>
@@ -128,6 +133,18 @@ public static class IdentityModule
                     policy.RequireClaim(
                         ApplicationIdentityDefaults.ApplicationKeyClaim,
                         BotGlobalApplications.FamilyGames);
+                });
+
+        services.AddAuthorizationBuilder()
+            .AddPolicy(
+                ApplicationIdentityPolicies.For(BotGlobalApplications.Nqrb),
+                policy =>
+                {
+                    policy.AddAuthenticationSchemes(ApplicationIdentityDefaults.Scheme);
+                    policy.RequireAuthenticatedUser();
+                    policy.RequireClaim(
+                        ApplicationIdentityDefaults.ApplicationKeyClaim,
+                        BotGlobalApplications.Nqrb);
                 });
 
         services.Configure<BootstrapAdminOptions>(

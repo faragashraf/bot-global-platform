@@ -40,4 +40,15 @@ class BackStackNavigatorTests {
         assertEquals(Destination.Home, navigator.current)
         assertFalse(navigator.navigateBack())
     }
+
+    @Test
+    fun resetReplacesTheEntireHistoryWithANewRoot() {
+        val navigator = BackStackNavigator(Destination.Home)
+        navigator.push(Destination.Settings)
+
+        navigator.reset(Destination.Profile)
+
+        assertEquals(listOf(Destination.Profile), navigator.backStack.value)
+        assertFalse(navigator.navigateBack())
+    }
 }

@@ -34,6 +34,7 @@ public static class IdentityEndpoints
                 IdentityPolicies.Administrator);
 
         endpoints.MapFamilyGamesMobileIdentityEndpoints();
+        endpoints.MapNqrbMobileIdentityEndpoints();
 
         return endpoints;
     }

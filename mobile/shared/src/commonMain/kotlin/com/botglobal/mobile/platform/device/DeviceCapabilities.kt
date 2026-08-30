@@ -6,7 +6,15 @@ interface SemanticHaptics {
     fun perform(event: HapticEvent)
 }
 
-enum class PermissionKind { Notifications, LocationApproximate, LocationPrecise, Microphone, Camera, Contacts }
+enum class PermissionKind {
+    Notifications,
+    LocationApproximate,
+    LocationPrecise,
+    Microphone,
+    Camera,
+    Contacts,
+    PhoneNumberDiscovery,
+}
 enum class PermissionState { Unknown, Granted, Denied, PermanentlyDenied, Unavailable }
 
 interface PermissionController {
