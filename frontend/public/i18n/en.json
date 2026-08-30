@@ -267,7 +267,9 @@
       "nav": {
         "dashboard": "Dashboard",
         "catalog": "Catalog",
-        "platformClients": "Platform Clients"
+        "platformClients": "Platform Clients",
+        "notifications": "Notifications",
+        "devicePairing": "Devices"
       },
       "dashboard": {
         "eyebrow": "Overview",
@@ -427,6 +429,151 @@
           }
         }
       },
+      "notifications": {
+        "eyebrow": "Admin broadcast",
+        "title": "Notification Center",
+        "description": "Create durable bilingual campaigns for every current active device in one application.",
+        "metrics": {
+          "label": "Campaign summary",
+          "period": "Campaigns in period",
+          "processing": "Queued or processing",
+          "completed": "Completed",
+          "attention": "Failures or expired"
+        },
+        "composer": {
+          "eyebrow": "New campaign",
+          "title": "Broadcast composer",
+          "description": "Compose one Arabic and English notification for all current active devices in the selected application.",
+          "durable": "Durably queued",
+          "application": "Application",
+          "applicationPlaceholder": "Search active applications",
+          "applicationHint": "Audience ownership is isolated to this application.",
+          "arabic": "Arabic content",
+          "english": "English content",
+          "notificationTitle": "Title",
+          "notificationBody": "Message",
+          "priority": "Priority",
+          "deliveryWindow": "Advanced delivery window",
+          "deliveryWindowHint": "Pending devices remain eligible until this window expires.",
+          "days": "{{count}} day(s)",
+          "disclaimer": "This version reports transport dispatch or acceptance. It does not claim that a device received or read the message."
+        },
+        "audience": {
+          "title": "Current audience preview",
+          "snapshot": "Snapshot before submission",
+          "users": "Distinct users",
+          "devices": "Active devices",
+          "pushCapable": "Push-capable",
+          "loading": "Calculating the current audience…",
+          "error": "Audience preview is unavailable.",
+          "selectApplication": "Select an application to calculate its current audience."
+        },
+        "priorities": {
+          "Normal": "Normal",
+          "High": "High",
+          "normalHint": "Standard notification priority",
+          "highHint": "High transport priority"
+        },
+        "preview": {
+          "label": "Mobile notification preview",
+          "titlePlaceholderAr": "عنوان الإشعار",
+          "bodyPlaceholderAr": "سيظهر نص الإشعار العربي هنا.",
+          "titlePlaceholderEn": "Notification title",
+          "bodyPlaceholderEn": "The English notification message will appear here.",
+          "now": "Now"
+        },
+        "validation": {
+          "required": "This field is required."
+        },
+        "actions": {
+          "refresh": "Refresh",
+          "review": "Review broadcast",
+          "apply": "Apply",
+          "reset": "Reset",
+          "retry": "Retry",
+          "previous": "Previous page",
+          "next": "Next page",
+          "details": "View campaign details",
+          "cancel": "Cancel",
+          "confirm": "Confirm broadcast",
+          "sending": "Accepting campaign…"
+        },
+        "success": {
+          "title": "Campaign accepted",
+          "description": "The campaign was durably accepted for {{count}} current device(s)."
+        },
+        "errors": {
+          "title": "Campaign not accepted",
+          "applications": "Active applications could not be loaded.",
+          "history": "Campaign history could not be loaded.",
+          "conflict": "This application has no current audience, or this submission key conflicts with another request.",
+          "validation": "Review the campaign fields and try again.",
+          "send": "The campaign could not be durably accepted. Retry this same submission."
+        },
+        "statuses": {
+          "Queued": "Queued",
+          "PreparingAudience": "Preparing audience",
+          "Dispatching": "Dispatching",
+          "Completed": "Completed",
+          "CompletedWithFailures": "Completed with failures",
+          "Expired": "Expired",
+          "Failed": "Failed",
+          "Cancelled": "Cancelled"
+        },
+        "history": {
+          "eyebrow": "Operations",
+          "title": "Campaign history",
+          "description": "Aggregate transport progress without recipient identifiers.",
+          "application": "Application",
+          "allApplications": "All applications",
+          "status": "Status",
+          "allStatuses": "All statuses",
+          "period": "Period",
+          "lastDays": "Last {{count}} days",
+          "loading": "Loading campaign history…",
+          "empty": "No campaigns match the selected filters.",
+          "devices": "devices",
+          "pending": "pending",
+          "dispatched": "dispatched",
+          "accepted": "accepted",
+          "failedExpired": "failed/expired",
+          "page": "Page {{page}} of {{pages}} · {{count}} campaign(s)",
+          "columns": {
+            "campaign": "Campaign",
+            "status": "Status",
+            "audience": "Audience",
+            "progress": "Pending",
+            "outcomes": "Transport outcomes",
+            "creator": "Creator / expiry",
+            "actions": "Actions"
+          }
+        },
+        "confirm": {
+          "title": "Confirm application broadcast",
+          "description": "The audience is fixed at submission time and will not include devices paired later.",
+          "application": "Application",
+          "users": "Current users",
+          "devices": "Current devices",
+          "window": "Delivery window",
+          "terminology": "SignalR will be reported as Dispatched and FCM as Accepted; neither means device receipt or read."
+        },
+        "detail": {
+          "title": "Campaign details",
+          "loading": "Loading aggregate campaign details…",
+          "audienceUsers": "Audience users",
+          "audienceDevices": "Audience devices",
+          "pending": "Pending",
+          "signalr": "SignalR dispatched",
+          "fcm": "FCM accepted",
+          "failed": "Failed",
+          "skipped": "Skipped revoked",
+          "expired": "Expired",
+          "created": "Created",
+          "expires": "Expires",
+          "creator": "Created by",
+          "note": "Recipient and device identifiers are intentionally not available in this view."
+        }
+      },
       "platformClients": {
         "eyebrow": "Security & integrations",
         "title": "Platform Clients",
@@ -498,6 +645,84 @@
         "capabilities": {
           "cancel": "Cancel",
           "save": "Save changes"
+        }
+      },
+      "devicePairing": {
+        "eyebrow": "Devices & pairing",
+        "title": "Device Pairing Management",
+        "subtitle": "Track each device's pairing status, review its full event log, and revoke access when needed.",
+        "loadError": "Unable to load paired devices.",
+        "empty": "No paired devices match your search.",
+        "searchPlaceholder": "Search by device, user, or application…",
+        "refresh": "Refresh",
+        "stats": {
+          "active": "Active",
+          "revoked": "Revoked"
+        },
+        "columns": {
+          "device": "Device",
+          "application": "Application",
+          "subject": "User",
+          "push": "Push",
+          "pairedAt": "Last paired",
+          "status": "Status"
+        },
+        "push": {
+          "none": "No token"
+        },
+        "status": {
+          "active": "Paired",
+          "revoked": "Revoked"
+        },
+        "actions": {
+          "log": "Log",
+          "revoke": "Revoke"
+        },
+        "detail": {
+          "installationId": "Installation ID",
+          "appVersion": "App version",
+          "subject": "User",
+          "firstPaired": "First paired",
+          "deliveries": "Delivered messages",
+          "status": "Status",
+          "close": "Close"
+        },
+        "timeline": {
+          "title": "Device log",
+          "empty": "No events recorded for this device yet.",
+          "derived": "Derived",
+          "kinds": {
+            "paired": "Paired",
+            "re-paired": "Re-paired",
+            "push-registered": "Push token registered",
+            "push-refreshed": "Push token refreshed",
+            "push-invalidated": "Push token invalidated",
+            "unpaired-by-device": "Unpaired from device",
+            "revoked-by-administrator": "Revoked by administrator",
+            "history-purged-by-administrator": "History purged by administrator",
+            "notification-delivery": "Notification delivery attempt"
+          },
+          "actors": {
+            "device": "Device",
+            "administrator": "Administrator",
+            "system": "System"
+          }
+        },
+        "revoke": {
+          "title": "Revoke device pairing",
+          "lead": "Pairing for “{{device}}” will be revoked immediately: the device will no longer connect or receive notifications, and its push token will be invalidated.",
+          "keepTitle": "Keep history",
+          "keepHint": "The device's event log and delivery records stay available for review.",
+          "purgeTitle": "Delete all history",
+          "purgeHint": "Permanently deletes all events and delivery records for this device. This cannot be undone.",
+          "busy": "Revoking pairing…",
+          "confirmText": "Confirm revoking the pairing of “{{device}}”?",
+          "submit": "Confirm revoke",
+          "cancel": "Back",
+          "error": "Unable to revoke the pairing.",
+          "resultKept": "Pairing revoked; history kept.",
+          "resultPurged": "Pairing revoked and purged {{audit}} events and {{delivery}} deliveries.",
+          "resultAlreadyRevoked": "This device is already revoked."
         }
       }
     }

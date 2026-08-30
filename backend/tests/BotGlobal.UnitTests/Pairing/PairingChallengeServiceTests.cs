@@ -237,6 +237,7 @@ public sealed class PairingChallengeServiceTests
                 context,
                 fixture.TokenService,
                 new MobileDeviceCredentialService(),
+                new BotGlobal.Pairing.Application.MobileDeviceAuditRecorder(context),
                 fixture.Clock);
 
                     return await service.ClaimAsync(
@@ -307,6 +308,7 @@ public sealed class PairingChallengeServiceTests
                 InitialContext,
                 TokenService,
                 new MobileDeviceCredentialService(),
+                new BotGlobal.Pairing.Application.MobileDeviceAuditRecorder(InitialContext),
                 Clock);
 
         public PairingDbContext CreateContext()

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using BotGlobal.Pairing.Application.PushRegistrations;
+using BotGlobal.Contracts.Notifications;
 
 namespace BotGlobal.UnitTests.Pairing;
 
@@ -128,6 +129,12 @@ public sealed class PairingEndpointContractTests
         builder.Services.AddScoped<
             IMobilePushRegistrationService,
             FakeMobilePushRegistrationService>();
+        builder.Services.AddScoped<
+            BotGlobal.Pairing.Application.AdminDevicePairings.IAdminDevicePairingService,
+            FakeAdminDevicePairingService>();
+        builder.Services.AddScoped<
+            BotGlobal.Contracts.Notifications.IAdministratorDescriptorReader,
+            FakeAdministratorDescriptorReader>();
         var app = builder.Build();
 
         app.MapPairingModule(
@@ -176,12 +183,14 @@ public sealed class PairingEndpointContractTests
         : IMobilePushRegistrationService
     {
         public Task<MobilePushRegistrationResult> RegisterAsync(
+            NotificationApplicationContext application,
             Guid deviceId,
             RegisterMobilePushRequest request,
             CancellationToken cancellationToken)
             => Task.FromResult(
                 new MobilePushRegistrationResult(
                     deviceId,
+                    application.ApplicationId,
                     request.Provider,
                     DateTimeOffset.UtcNow));
 
@@ -189,6 +198,36 @@ public sealed class PairingEndpointContractTests
             Guid deviceId,
             CancellationToken cancellationToken)
             => Task.CompletedTask;
+    }
+
+    private sealed class FakeAdminDevicePairingService
+        : BotGlobal.Pairing.Application.AdminDevicePairings.IAdminDevicePairingService
+    {
+        public Task<IReadOnlyList<BotGlobal.Pairing.Application.AdminDevicePairings.AdminDevicePairingListItem>> ListAsync(
+            ApplicationAdministrationScope applicationScope,
+            CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<BotGlobal.Pairing.Application.AdminDevicePairings.AdminDevicePairingListItem>>(
+                []);
+
+        public Task<BotGlobal.Pairing.Application.AdminDevicePairings.AdminDevicePairingDetail?> FindAsync(
+            ApplicationAdministrationScope applicationScope,
+            Guid deviceId,
+            CancellationToken cancellationToken)
+            => Task.FromResult<BotGlobal.Pairing.Application.AdminDevicePairings.AdminDevicePairingDetail?>(null);
+
+        public Task<BotGlobal.Pairing.Application.AdminDevicePairings.AdminRevokeDeviceResult> RevokeAsync(
+            BotGlobal.Pairing.Application.AdminDevicePairings.AdminRevokeDeviceCommand command,
+            CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class FakeAdministratorDescriptorReader
+        : BotGlobal.Contracts.Notifications.IAdministratorDescriptorReader
+    {
+        public Task<BotGlobal.Contracts.Notifications.AdministratorDescriptor?> FindAsync(
+            Guid userId,
+            CancellationToken cancellationToken)
+            => Task.FromResult<BotGlobal.Contracts.Notifications.AdministratorDescriptor?>(null);
     }
 
     private sealed class FakePairingChallengeService

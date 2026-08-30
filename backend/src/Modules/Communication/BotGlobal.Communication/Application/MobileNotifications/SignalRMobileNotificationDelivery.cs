@@ -1,6 +1,7 @@
 using BotGlobal.Communication.Contracts.MobileNotifications;
 using BotGlobal.Communication.Hubs;
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Notifications;
 using Microsoft.AspNetCore.SignalR;
 
 namespace BotGlobal.Communication.Application.MobileNotifications;
@@ -11,10 +12,12 @@ internal sealed class SignalRMobileNotificationDelivery(
     : IMobileNotificationDelivery
 {
     public async Task<MobileNotificationDeliveryResult> DeliverAsync(
+        NotificationApplicationContext application,
         MobileNotificationEnvelope notification,
         IReadOnlyList<MobileRecipientDevice> devices,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(application);
         ArgumentNullException.ThrowIfNull(notification);
         ArgumentNullException.ThrowIfNull(devices);
 

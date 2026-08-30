@@ -1,4 +1,5 @@
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Notifications;
 using BotGlobal.Identity.Application;
 using BotGlobal.Identity.Domain;
 using BotGlobal.Identity.Endpoints;
@@ -132,6 +133,10 @@ public static class IdentityModule
         services.Configure<BootstrapAdminOptions>(
             configuration.GetSection(
                 BootstrapAdminOptions.SectionName));
+
+        services.AddScoped<
+            IAdministratorDescriptorReader,
+            AdministratorDescriptorReader>();
 
         return services;
     }

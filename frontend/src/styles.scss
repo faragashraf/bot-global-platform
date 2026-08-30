@@ -4,6 +4,7 @@
 @use './styles/components/card';
 @use './styles/components/marketing-showcase';
 @use './styles/components/marketing';
+@use './app/features/admin/notifications/pages/notification-center-page/notification-center-page.component';
 
 @use './styles/components/portfolio';
 @import 'primeicons/primeicons.css';

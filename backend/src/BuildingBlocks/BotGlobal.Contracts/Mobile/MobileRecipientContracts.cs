@@ -1,3 +1,5 @@
+using BotGlobal.Contracts.Notifications;
+
 namespace BotGlobal.Contracts.Mobile;
 
 public sealed record MobileRecipientDevice(
@@ -9,7 +11,7 @@ public sealed record MobileRecipientDevice(
 public interface IMobileRecipientResolver
 {
     Task<IReadOnlyList<MobileRecipientDevice>> ResolveActiveDevicesAsync(
-        Guid platformClientId,
+        NotificationApplicationContext application,
         string externalSubjectId,
         CancellationToken cancellationToken);
 }

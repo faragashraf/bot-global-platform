@@ -1,4 +1,5 @@
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Notifications;
 using BotGlobal.Pairing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,10 +11,11 @@ public sealed class PairingMobileNotificationRecipientResolver(
 {
     public async Task<IReadOnlyList<MobileRecipientDevice>>
         ResolveActiveDevicesAsync(
-            Guid platformClientId,
+            NotificationApplicationContext application,
             string externalSubjectId,
             CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(application);
         ArgumentException.ThrowIfNullOrWhiteSpace(externalSubjectId);
 
         var normalizedSubjectId =
@@ -22,7 +24,7 @@ public sealed class PairingMobileNotificationRecipientResolver(
         return await dbContext.Devices
             .AsNoTracking()
             .Where(device =>
-                device.PlatformClientId == platformClientId &&
+                device.PlatformClientId == application.ApplicationId &&
                 device.ExternalSubjectId == normalizedSubjectId &&
                 device.RevokedAtUtc == null)
             .Select(device =>

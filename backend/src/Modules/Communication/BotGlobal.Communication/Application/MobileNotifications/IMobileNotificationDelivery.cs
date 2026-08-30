@@ -1,4 +1,5 @@
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Notifications;
 using BotGlobal.Communication.Contracts.MobileNotifications;
 
 namespace BotGlobal.Communication.Application.MobileNotifications;
@@ -12,6 +13,7 @@ public sealed record MobileNotificationDeliveryResult(
 public interface IMobileNotificationDelivery
 {
     Task<MobileNotificationDeliveryResult> DeliverAsync(
+        NotificationApplicationContext application,
         MobileNotificationEnvelope notification,
         IReadOnlyList<MobileRecipientDevice> devices,
         CancellationToken cancellationToken);

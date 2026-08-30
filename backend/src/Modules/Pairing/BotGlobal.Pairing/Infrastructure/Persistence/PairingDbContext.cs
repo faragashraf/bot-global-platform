@@ -14,6 +14,9 @@ public sealed class PairingDbContext(
     public DbSet<MobilePushRegistration> PushRegistrations =>
         Set<MobilePushRegistration>();
 
+    public DbSet<MobileDeviceAuditEntry> DeviceAuditEntries =>
+        Set<MobileDeviceAuditEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(PairingModule.DatabaseSchema);

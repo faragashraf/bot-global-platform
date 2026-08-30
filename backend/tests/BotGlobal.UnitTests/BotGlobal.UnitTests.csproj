@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\Modules\Communication\BotGlobal.Communication\BotGlobal.Communication.csproj" />
     <ProjectReference Include="..\..\src\Modules\PlatformClients\BotGlobal.PlatformClients\BotGlobal.PlatformClients.csproj" />
     <ProjectReference Include="..\..\src\Modules\Pairing\BotGlobal.Pairing\BotGlobal.Pairing.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Notifications\BotGlobal.Notifications\BotGlobal.Notifications.csproj" />
     <ProjectReference Include="..\..\src\Modules\Games\BotGlobal.Games\BotGlobal.Games.csproj" />
   </ItemGroup>
 </Project>

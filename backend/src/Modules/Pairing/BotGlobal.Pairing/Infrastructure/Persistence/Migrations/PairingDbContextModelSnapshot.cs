@@ -82,6 +82,46 @@ namespace BotGlobal.Pairing.Infrastructure.Persistence.Migrations
                     b.ToTable("MobileDevices", "pairing");
                 });
 
+            modelBuilder.Entity("BotGlobal.Pairing.Domain.MobileDeviceAuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorDisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ActorType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<Guid>("MobileDeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("PlatformClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MobileDeviceId", "OccurredAtUtc");
+
+                    b.ToTable("MobileDeviceAuditEntries", "pairing");
+                });
+
             modelBuilder.Entity("BotGlobal.Pairing.Domain.MobilePushRegistration", b =>
                 {
                     b.Property<Guid>("Id")
@@ -196,6 +236,15 @@ namespace BotGlobal.Pairing.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_PairingChallenges_Status", "[Status] IN ('Pending','Completed')");
                         });
+                });
+
+            modelBuilder.Entity("BotGlobal.Pairing.Domain.MobileDeviceAuditEntry", b =>
+                {
+                    b.HasOne("BotGlobal.Pairing.Domain.MobileDevice", null)
+                        .WithMany()
+                        .HasForeignKey("MobileDeviceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("BotGlobal.Pairing.Domain.MobilePushRegistration", b =>

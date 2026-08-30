@@ -50,6 +50,7 @@ public sealed class MobileDeviceLifecycleServiceTests
             new MobileDeviceLifecycleService(
                 db,
                 credentialService,
+                new BotGlobal.Pairing.Application.MobileDeviceAuditRecorder(db),
                 TimeProvider.System);
 
         var result =
@@ -103,6 +104,7 @@ public sealed class MobileDeviceLifecycleServiceTests
             new MobileDeviceLifecycleService(
                 db,
                 credentialService,
+                new BotGlobal.Pairing.Application.MobileDeviceAuditRecorder(db),
                 TimeProvider.System);
 
         var first =
@@ -137,6 +139,7 @@ public sealed class MobileDeviceLifecycleServiceTests
             new MobileDeviceLifecycleService(
                 db,
                 credentialService,
+                new BotGlobal.Pairing.Application.MobileDeviceAuditRecorder(db),
                 TimeProvider.System);
 
         var result =

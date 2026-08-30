@@ -1,18 +1,24 @@
+using BotGlobal.Communication.Application.MobileNotifications.Push;
+
 namespace BotGlobal.Communication.Application.MobileNotifications.Fcm;
 
-public sealed record FcmPushMessage(
+internal sealed record FcmPushMessage(
     string RegistrationToken,
     string Title,
     string Body,
-    IReadOnlyDictionary<string, string>? Data = null);
+    IReadOnlyDictionary<string, string>? Data,
+    TimeSpan TimeToLive);
 
-public sealed record FcmPushSendResult(
+internal sealed record FcmPushSendResult(
     bool Accepted,
-    string? MessageId);
+    string? MessageId,
+    string? SafeErrorCode = null,
+    bool IsPermanentFailure = false);
 
-public interface IFcmPushSender
+internal interface IFcmPushSender
 {
     Task<FcmPushSendResult> SendAsync(
+        ResolvedApplicationPushProvider configuration,
         FcmPushMessage message,
         CancellationToken cancellationToken);
 }

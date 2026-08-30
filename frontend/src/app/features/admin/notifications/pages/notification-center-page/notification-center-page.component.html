@@ -1,0 +1,249 @@
+<section class="notification-center" aria-labelledby="notification-center-title">
+  <header class="notification-center__header">
+    <div>
+      <span class="eyebrow">
+        <i class="pi pi-megaphone" aria-hidden="true"></i>
+        {{ 'auth.management.notifications.eyebrow' | translate }}
+      </span>
+      <h1 id="notification-center-title">
+        {{ 'auth.management.notifications.title' | translate }}
+      </h1>
+      <p>{{ 'auth.management.notifications.description' | translate }}</p>
+    </div>
+
+    <button class="icon-action" type="button" (click)="refresh()"
+      [attr.aria-label]="'auth.management.notifications.actions.refresh' | translate"
+      [disabled]="applicationsLoading() || historyLoading()">
+      <i class="pi pi-refresh" [class.pi-spin]="applicationsLoading() || historyLoading()" aria-hidden="true"></i>
+      <span>{{ 'auth.management.notifications.actions.refresh' | translate }}</span>
+    </button>
+  </header>
+
+  <section class="campaign-metrics" [attr.aria-label]="'auth.management.notifications.metrics.label' | translate">
+    <article class="metric-card">
+      <span class="metric-card__icon"><i class="pi pi-list" aria-hidden="true"></i></span>
+      <div><strong>{{ history().totalCount }}</strong><span>{{ 'auth.management.notifications.metrics.period' | translate }}</span></div>
+    </article>
+    <article class="metric-card">
+      <span class="metric-card__icon metric-card__icon--queued"><i class="pi pi-clock" aria-hidden="true"></i></span>
+      <div><strong>{{ history().queuedOrProcessingCount }}</strong><span>{{ 'auth.management.notifications.metrics.processing' | translate }}</span></div>
+    </article>
+    <article class="metric-card">
+      <span class="metric-card__icon metric-card__icon--complete"><i class="pi pi-check" aria-hidden="true"></i></span>
+      <div><strong>{{ history().completedCount }}</strong><span>{{ 'auth.management.notifications.metrics.completed' | translate }}</span></div>
+    </article>
+    <article class="metric-card">
+      <span class="metric-card__icon metric-card__icon--attention"><i class="pi pi-exclamation-triangle" aria-hidden="true"></i></span>
+      <div><strong>{{ history().completedWithFailuresOrExpiredCount }}</strong><span>{{ 'auth.management.notifications.metrics.attention' | translate }}</span></div>
+    </article>
+  </section>
+
+  @if (acceptedCampaign()) {
+    <div class="state-banner state-banner--success" role="status">
+      <i class="pi pi-check-circle" aria-hidden="true"></i>
+      <div>
+        <strong>{{ 'auth.management.notifications.success.title' | translate }}</strong>
+        <span>{{ 'auth.management.notifications.success.description' | translate:{ count: acceptedCampaign()!.expectedDeviceCount } }}</span>
+      </div>
+    </div>
+  }
+
+  @if (submitErrorKey()) {
+    <div class="state-banner state-banner--error" role="alert">
+      <i class="pi pi-exclamation-circle" aria-hidden="true"></i>
+      <div><strong>{{ 'auth.management.notifications.errors.title' | translate }}</strong><span>{{ submitErrorKey()! | translate }}</span></div>
+    </div>
+  }
+
+  <section class="composer-card" aria-labelledby="broadcast-composer-title">
+    <header class="section-header">
+      <div>
+        <span class="section-header__eyebrow">{{ 'auth.management.notifications.composer.eyebrow' | translate }}</span>
+        <h2 id="broadcast-composer-title">{{ 'auth.management.notifications.composer.title' | translate }}</h2>
+        <p>{{ 'auth.management.notifications.composer.description' | translate }}</p>
+      </div>
+      <span class="durable-note"><i class="pi pi-database" aria-hidden="true"></i>{{ 'auth.management.notifications.composer.durable' | translate }}</span>
+    </header>
+
+    <div class="composer-layout">
+      <div class="composer-form">
+        <div class="field-group application-field">
+          <label for="notification-application">{{ 'auth.management.notifications.composer.application' | translate }} <span aria-hidden="true">*</span></label>
+          <p-select
+            inputId="notification-application"
+            [options]="applicationOptions()"
+            optionLabel="label"
+            optionValue="id"
+            [filter]="true"
+            filterBy="label"
+            [showClear]="true"
+            [loading]="applicationsLoading()"
+            [ngModel]="selectedPlatformClientId()"
+            (ngModelChange)="selectApplication($event)"
+            [placeholder]="'auth.management.notifications.composer.applicationPlaceholder' | translate"
+            styleClass="application-select"
+          />
+          <small>{{ 'auth.management.notifications.composer.applicationHint' | translate }}</small>
+          @if (showValidation() && draftErrors().platformClientId) {
+            <span class="field-error">{{ 'auth.management.notifications.validation.required' | translate }}</span>
+          }
+          @if (applicationsError()) {
+            <span class="field-error">{{ 'auth.management.notifications.errors.applications' | translate }}</span>
+          }
+        </div>
+
+        <section class="audience-card" [class.audience-card--error]="audienceError()">
+          <header><div><i class="pi pi-users" aria-hidden="true"></i><strong>{{ 'auth.management.notifications.audience.title' | translate }}</strong></div><small>{{ 'auth.management.notifications.audience.snapshot' | translate }}</small></header>
+          @if (audienceLoading()) {
+            <div class="audience-loading"><i class="pi pi-spin pi-spinner" aria-hidden="true"></i>{{ 'auth.management.notifications.audience.loading' | translate }}</div>
+          } @else if (audienceError()) {
+            <div class="audience-loading"><i class="pi pi-exclamation-circle" aria-hidden="true"></i>{{ 'auth.management.notifications.audience.error' | translate }}</div>
+          } @else if (audiencePreview()) {
+            <div class="audience-metrics">
+              <div><strong>{{ audiencePreview()!.distinctExternalSubjectCount }}</strong><span>{{ 'auth.management.notifications.audience.users' | translate }}</span></div>
+              <div><strong>{{ audiencePreview()!.activeDeviceCount }}</strong><span>{{ 'auth.management.notifications.audience.devices' | translate }}</span></div>
+              <div><strong>{{ audiencePreview()!.pushCapableDeviceCount }}</strong><span>{{ 'auth.management.notifications.audience.pushCapable' | translate }}</span></div>
+            </div>
+          } @else {
+            <div class="audience-loading"><i class="pi pi-info-circle" aria-hidden="true"></i>{{ 'auth.management.notifications.audience.selectApplication' | translate }}</div>
+          }
+        </section>
+
+        <div class="language-grid">
+          <fieldset class="language-panel" dir="rtl">
+            <legend><span>AR</span>{{ 'auth.management.notifications.composer.arabic' | translate }}</legend>
+            <label for="notification-title-ar">{{ 'auth.management.notifications.composer.notificationTitle' | translate }} <span aria-hidden="true">*</span></label>
+            <input id="notification-title-ar" type="text" [maxlength]="limits.title"
+              [ngModel]="titleAr()" (ngModelChange)="updateTitleAr($event)"
+              [attr.aria-invalid]="showValidation() && !!draftErrors().titleAr" />
+            <div class="field-meta"><span>{{ showValidation() && draftErrors().titleAr ? ('auth.management.notifications.validation.required' | translate) : '' }}</span><span>{{ titleAr().length }} / {{ limits.title }}</span></div>
+
+            <label for="notification-body-ar">{{ 'auth.management.notifications.composer.notificationBody' | translate }} <span aria-hidden="true">*</span></label>
+            <textarea id="notification-body-ar" rows="5" [maxlength]="limits.body"
+              [ngModel]="bodyAr()" (ngModelChange)="updateBodyAr($event)"
+              [attr.aria-invalid]="showValidation() && !!draftErrors().bodyAr"></textarea>
+            <div class="field-meta"><span>{{ showValidation() && draftErrors().bodyAr ? ('auth.management.notifications.validation.required' | translate) : '' }}</span><span>{{ bodyAr().length }} / {{ limits.body }}</span></div>
+          </fieldset>
+
+          <fieldset class="language-panel" dir="ltr">
+            <legend><span>EN</span>{{ 'auth.management.notifications.composer.english' | translate }}</legend>
+            <label for="notification-title-en">{{ 'auth.management.notifications.composer.notificationTitle' | translate }} <span aria-hidden="true">*</span></label>
+            <input id="notification-title-en" type="text" [maxlength]="limits.title"
+              [ngModel]="titleEn()" (ngModelChange)="updateTitleEn($event)"
+              [attr.aria-invalid]="showValidation() && !!draftErrors().titleEn" />
+            <div class="field-meta"><span>{{ showValidation() && draftErrors().titleEn ? ('auth.management.notifications.validation.required' | translate) : '' }}</span><span>{{ titleEn().length }} / {{ limits.title }}</span></div>
+
+            <label for="notification-body-en">{{ 'auth.management.notifications.composer.notificationBody' | translate }} <span aria-hidden="true">*</span></label>
+            <textarea id="notification-body-en" rows="5" [maxlength]="limits.body"
+              [ngModel]="bodyEn()" (ngModelChange)="updateBodyEn($event)"
+              [attr.aria-invalid]="showValidation() && !!draftErrors().bodyEn"></textarea>
+            <div class="field-meta"><span>{{ showValidation() && draftErrors().bodyEn ? ('auth.management.notifications.validation.required' | translate) : '' }}</span><span>{{ bodyEn().length }} / {{ limits.body }}</span></div>
+          </fieldset>
+        </div>
+
+        <div class="delivery-settings">
+          <fieldset class="priority-selector">
+            <legend>{{ 'auth.management.notifications.composer.priority' | translate }}</legend>
+            <button type="button" [class.is-selected]="priority() === 'Normal'" [attr.aria-pressed]="priority() === 'Normal'" (click)="setPriority('Normal')">
+              <i class="pi pi-bell" aria-hidden="true"></i><span><strong>{{ 'auth.management.notifications.priorities.Normal' | translate }}</strong><small>{{ 'auth.management.notifications.priorities.normalHint' | translate }}</small></span>
+            </button>
+            <button type="button" [class.is-selected]="priority() === 'High'" [attr.aria-pressed]="priority() === 'High'" (click)="setPriority('High')">
+              <i class="pi pi-bolt" aria-hidden="true"></i><span><strong>{{ 'auth.management.notifications.priorities.High' | translate }}</strong><small>{{ 'auth.management.notifications.priorities.highHint' | translate }}</small></span>
+            </button>
+          </fieldset>
+
+          <div class="field-group delivery-window">
+            <label for="notification-lifetime">{{ 'auth.management.notifications.composer.deliveryWindow' | translate }}</label>
+            <select id="notification-lifetime" [ngModel]="lifetimeDays()" (ngModelChange)="setLifetimeDays($event)">
+              @for (days of lifetimeOptions; track days) {
+                <option [ngValue]="days">{{ 'auth.management.notifications.composer.days' | translate:{ count: days } }}</option>
+              }
+            </select>
+            <small>{{ 'auth.management.notifications.composer.deliveryWindowHint' | translate }}</small>
+          </div>
+        </div>
+
+        <div class="composer-actions">
+          <span><i class="pi pi-info-circle" aria-hidden="true"></i>{{ 'auth.management.notifications.composer.disclaimer' | translate }}</span>
+          <button class="primary-action" type="button" (click)="openConfirmation()"
+            [disabled]="sending() || audienceLoading() || !composerValid()">
+            <i class="pi pi-send" aria-hidden="true"></i>{{ 'auth.management.notifications.actions.review' | translate }}
+          </button>
+        </div>
+      </div>
+
+      <aside class="phone-preview" [attr.aria-label]="'auth.management.notifications.preview.label' | translate">
+        <span class="phone-preview__label"><i class="pi pi-mobile" aria-hidden="true"></i>{{ 'auth.management.notifications.preview.label' | translate }}</span>
+        <div class="phone-frame">
+          <div class="phone-frame__top"><span></span><small>BOT GLOBAL</small></div>
+          <article class="notification-preview" dir="rtl">
+            <span class="notification-preview__icon"><i class="pi pi-bell" aria-hidden="true"></i></span>
+            <div><strong>{{ titleAr() || ('auth.management.notifications.preview.titlePlaceholderAr' | translate) }}</strong><p>{{ bodyAr() || ('auth.management.notifications.preview.bodyPlaceholderAr' | translate) }}</p><small>{{ 'auth.management.notifications.preview.now' | translate }}</small></div>
+          </article>
+          <article class="notification-preview" dir="ltr">
+            <span class="notification-preview__icon"><i class="pi pi-bell" aria-hidden="true"></i></span>
+            <div><strong>{{ titleEn() || ('auth.management.notifications.preview.titlePlaceholderEn' | translate) }}</strong><p>{{ bodyEn() || ('auth.management.notifications.preview.bodyPlaceholderEn' | translate) }}</p><small>{{ 'auth.management.notifications.preview.now' | translate }}</small></div>
+          </article>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="history-card" aria-labelledby="campaign-history-title">
+    <header class="section-header">
+      <div><span class="section-header__eyebrow">{{ 'auth.management.notifications.history.eyebrow' | translate }}</span><h2 id="campaign-history-title">{{ 'auth.management.notifications.history.title' | translate }}</h2><p>{{ 'auth.management.notifications.history.description' | translate }}</p></div>
+    </header>
+
+    <div class="history-filters">
+      <label><span>{{ 'auth.management.notifications.history.application' | translate }}</span><select [ngModel]="historyApplicationId()" (ngModelChange)="historyApplicationId.set($event)"><option value="">{{ 'auth.management.notifications.history.allApplications' | translate }}</option>@for (application of applicationOptions(); track application.id) {<option [value]="application.id">{{ application.label }}</option>}</select></label>
+      <label><span>{{ 'auth.management.notifications.history.status' | translate }}</span><select [ngModel]="historyStatus()" (ngModelChange)="historyStatus.set($event)"><option value="">{{ 'auth.management.notifications.history.allStatuses' | translate }}</option>@for (status of statusOptions; track status) {<option [value]="status">{{ ('auth.management.notifications.statuses.' + status) | translate }}</option>}</select></label>
+      <label><span>{{ 'auth.management.notifications.history.period' | translate }}</span><select [ngModel]="periodDays()" (ngModelChange)="periodDays.set(+$event)">@for (days of periodOptions; track days) {<option [ngValue]="days">{{ 'auth.management.notifications.history.lastDays' | translate:{ count: days } }}</option>}</select></label>
+      <div class="filter-actions"><button type="button" (click)="resetHistoryFilters()">{{ 'auth.management.notifications.actions.reset' | translate }}</button><button type="button" class="filter-apply" (click)="applyHistoryFilters()">{{ 'auth.management.notifications.actions.apply' | translate }}</button></div>
+    </div>
+
+    @if (historyError()) {
+      <div class="history-state" role="alert"><i class="pi pi-exclamation-circle" aria-hidden="true"></i><span>{{ 'auth.management.notifications.errors.history' | translate }}</span><button type="button" (click)="loadHistory()">{{ 'auth.management.notifications.actions.retry' | translate }}</button></div>
+    } @else if (historyLoading() && history().items.length === 0) {
+      <div class="history-state"><i class="pi pi-spin pi-spinner" aria-hidden="true"></i><span>{{ 'auth.management.notifications.history.loading' | translate }}</span></div>
+    } @else if (history().items.length === 0) {
+      <div class="history-state"><i class="pi pi-inbox" aria-hidden="true"></i><span>{{ 'auth.management.notifications.history.empty' | translate }}</span></div>
+    } @else {
+      <div class="history-table-wrap">
+        <table class="history-table">
+          <thead><tr><th>{{ 'auth.management.notifications.history.columns.campaign' | translate }}</th><th>{{ 'auth.management.notifications.history.columns.status' | translate }}</th><th>{{ 'auth.management.notifications.history.columns.audience' | translate }}</th><th>{{ 'auth.management.notifications.history.columns.progress' | translate }}</th><th>{{ 'auth.management.notifications.history.columns.outcomes' | translate }}</th><th>{{ 'auth.management.notifications.history.columns.creator' | translate }}</th><th><span class="sr-only">{{ 'auth.management.notifications.history.columns.actions' | translate }}</span></th></tr></thead>
+          <tbody>
+            @for (campaign of history().items; track campaign.campaignId) {
+              <tr>
+                <td data-label="Application"><div class="campaign-identity"><strong>{{ campaign.platformClientDisplayName }}</strong><code>{{ campaign.platformClientKey }}</code><small>{{ campaign.createdAtUtc | date:'medium' }}</small></div></td>
+                <td data-label="Status"><span class="campaign-status" [attr.data-tone]="statusTone(campaign.status)">{{ ('auth.management.notifications.statuses.' + campaign.status) | translate }}</span></td>
+                <td data-label="Audience"><strong>{{ campaign.audienceDeviceCount }}</strong><small>{{ 'auth.management.notifications.history.devices' | translate }}</small></td>
+                <td data-label="Pending"><strong>{{ campaign.pendingCount }}</strong><small>{{ 'auth.management.notifications.history.pending' | translate }}</small></td>
+                <td data-label="Outcomes"><div class="outcome-stack"><span><i class="pi pi-wifi" aria-hidden="true"></i>{{ campaign.signalRDispatchedCount }} {{ 'auth.management.notifications.history.dispatched' | translate }}</span><span><i class="pi pi-send" aria-hidden="true"></i>{{ campaign.fcmAcceptedCount }} {{ 'auth.management.notifications.history.accepted' | translate }}</span><span><i class="pi pi-exclamation-circle" aria-hidden="true"></i>{{ campaign.failedCount + campaign.expiredCount }} {{ 'auth.management.notifications.history.failedExpired' | translate }}</span></div></td>
+                <td data-label="Creator"><strong>{{ campaign.createdByDisplayName }}</strong><small>{{ campaign.expiresAtUtc | date:'mediumDate' }}</small></td>
+                <td><button class="row-action" type="button" (click)="openDetail(campaign)" [attr.aria-label]="'auth.management.notifications.actions.details' | translate"><i class="pi pi-angle-right" aria-hidden="true"></i></button></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <footer class="pagination"><span>{{ 'auth.management.notifications.history.page' | translate:{ page: history().page, pages: totalPages(), count: history().totalCount } }}</span><div><button type="button" (click)="previousPage()" [disabled]="history().page <= 1" [attr.aria-label]="'auth.management.notifications.actions.previous' | translate"><i class="pi pi-chevron-left" aria-hidden="true"></i></button><button type="button" (click)="nextPage()" [disabled]="history().page >= totalPages()" [attr.aria-label]="'auth.management.notifications.actions.next' | translate"><i class="pi pi-chevron-right" aria-hidden="true"></i></button></div></footer>
+    }
+  </section>
+</section>
+
+<p-dialog [visible]="confirmationOpen()" [modal]="true" [closable]="!sending()" [closeOnEscape]="!sending()" [draggable]="false" [resizable]="false" [style]="{ width: 'min(34rem, calc(100vw - 2rem))' }" (onHide)="closeConfirmation()" [header]="'auth.management.notifications.confirm.title' | translate">
+  <div class="confirmation-content">
+    <span class="confirmation-icon"><i class="pi pi-megaphone" aria-hidden="true"></i></span>
+    <p>{{ 'auth.management.notifications.confirm.description' | translate }}</p>
+    <dl><div><dt>{{ 'auth.management.notifications.confirm.application' | translate }}</dt><dd>{{ selectedApplication()?.displayName }} <code>{{ selectedApplication()?.clientKey }}</code></dd></div><div><dt>{{ 'auth.management.notifications.confirm.users' | translate }}</dt><dd>{{ audiencePreview()?.distinctExternalSubjectCount }}</dd></div><div><dt>{{ 'auth.management.notifications.confirm.devices' | translate }}</dt><dd>{{ audiencePreview()?.activeDeviceCount }}</dd></div><div><dt>{{ 'auth.management.notifications.confirm.window' | translate }}</dt><dd>{{ 'auth.management.notifications.composer.days' | translate:{ count: lifetimeDays() } }}</dd></div></dl>
+    <div class="confirmation-warning"><i class="pi pi-info-circle" aria-hidden="true"></i>{{ 'auth.management.notifications.confirm.terminology' | translate }}</div>
+  </div>
+  <ng-template #footer><button class="dialog-secondary" type="button" (click)="closeConfirmation()" [disabled]="sending()">{{ 'auth.management.notifications.actions.cancel' | translate }}</button><button class="primary-action" type="button" (click)="sendCampaign()" [disabled]="sending()"><i [class]="sending() ? 'pi pi-spin pi-spinner' : 'pi pi-send'" aria-hidden="true"></i>{{ (sending() ? 'auth.management.notifications.actions.sending' : 'auth.management.notifications.actions.confirm') | translate }}</button></ng-template>
+</p-dialog>
+
+<p-dialog [visible]="detailOpen()" [modal]="true" [draggable]="false" [resizable]="false" [style]="{ width: 'min(42rem, calc(100vw - 2rem))' }" (onHide)="closeDetail()" [header]="'auth.management.notifications.detail.title' | translate">
+  @if (detailLoading()) {<div class="history-state"><i class="pi pi-spin pi-spinner" aria-hidden="true"></i>{{ 'auth.management.notifications.detail.loading' | translate }}</div>}
+  @if (selectedCampaign(); as campaign) {
+    <div class="campaign-detail"><header><div><strong>{{ campaign.platformClientDisplayName }}</strong><code>{{ campaign.platformClientKey }}</code></div><span class="campaign-status" [attr.data-tone]="statusTone(campaign.status)">{{ ('auth.management.notifications.statuses.' + campaign.status) | translate }}</span></header><div class="detail-grid"><div><span>{{ 'auth.management.notifications.detail.audienceUsers' | translate }}</span><strong>{{ campaign.audienceSubjectCount }}</strong></div><div><span>{{ 'auth.management.notifications.detail.audienceDevices' | translate }}</span><strong>{{ campaign.audienceDeviceCount }}</strong></div><div><span>{{ 'auth.management.notifications.detail.pending' | translate }}</span><strong>{{ campaign.pendingCount }}</strong></div><div><span>{{ 'auth.management.notifications.detail.signalr' | translate }}</span><strong>{{ campaign.signalRDispatchedCount }}</strong></div><div><span>{{ 'auth.management.notifications.detail.fcm' | translate }}</span><strong>{{ campaign.fcmAcceptedCount }}</strong></div><div><span>{{ 'auth.management.notifications.detail.failed' | translate }}</span><strong>{{ campaign.failedCount }}</strong></div><div><span>{{ 'auth.management.notifications.detail.skipped' | translate }}</span><strong>{{ campaign.skippedCount }}</strong></div><div><span>{{ 'auth.management.notifications.detail.expired' | translate }}</span><strong>{{ campaign.expiredCount }}</strong></div></div><dl class="detail-dates"><div><dt>{{ 'auth.management.notifications.detail.created' | translate }}</dt><dd>{{ campaign.createdAtUtc | date:'medium' }}</dd></div><div><dt>{{ 'auth.management.notifications.detail.expires' | translate }}</dt><dd>{{ campaign.expiresAtUtc | date:'medium' }}</dd></div><div><dt>{{ 'auth.management.notifications.detail.creator' | translate }}</dt><dd>{{ campaign.createdByDisplayName }}</dd></div></dl><p class="detail-note">{{ 'auth.management.notifications.detail.note' | translate }}</p></div>
+  }
+</p-dialog>

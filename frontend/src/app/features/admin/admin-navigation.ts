@@ -29,11 +29,27 @@ export const ADMIN_SECTIONS = {
     labelKey: 'auth.management.nav.platformClients',
     icon: 'pi pi-shield',
     exact: false
+  },
+  notifications: {
+    path: 'notifications',
+    route: '/admin/notifications',
+    labelKey: 'auth.management.nav.notifications',
+    icon: 'pi pi-bell',
+    exact: false
+  },
+  devicePairing: {
+    path: 'device-pairing',
+    route: '/admin/device-pairing',
+    labelKey: 'auth.management.nav.devicePairing',
+    icon: 'pi pi-mobile',
+    exact: false
   }
 } as const satisfies Record<string, AdminSection>;
 
 export const ADMIN_NAVIGATION: readonly AdminSection[] = [
   ADMIN_SECTIONS.dashboard,
   ADMIN_SECTIONS.catalog,
+  ADMIN_SECTIONS.notifications,
+  ADMIN_SECTIONS.devicePairing,
   ADMIN_SECTIONS.platformClients
 ];

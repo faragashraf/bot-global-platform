@@ -85,4 +85,32 @@ public sealed class PairingPersistenceModelTests
 
         Assert.True(property.IsConcurrencyToken);
     }
+
+    [Fact]
+    public void Device_and_push_registration_model_preserves_application_isolation()
+    {
+        using var context = CreateContext();
+        var device = context.Model.FindEntityType(typeof(MobileDevice))!;
+        var registration = context.Model.FindEntityType(
+            typeof(MobilePushRegistration))!;
+
+        var applicationInstallation = device
+            .GetIndexes()
+            .Single(index =>
+                index.Properties.Select(property => property.Name)
+                    .SequenceEqual(
+                    [
+                        nameof(MobileDevice.PlatformClientId),
+                        nameof(MobileDevice.InstallationId)
+                    ]));
+
+        Assert.True(applicationInstallation.IsUnique);
+
+        var foreignKey = Assert.Single(
+            registration.GetForeignKeys());
+        Assert.Equal(typeof(MobileDevice), foreignKey.PrincipalEntityType.ClrType);
+        Assert.Equal(
+            nameof(MobilePushRegistration.MobileDeviceId),
+            Assert.Single(foreignKey.Properties).Name);
+    }
 }

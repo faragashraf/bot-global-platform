@@ -1,3 +1,4 @@
+using BotGlobal.Contracts.Notifications;
 using BotGlobal.Pairing.Domain;
 using BotGlobal.Pairing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -10,12 +11,14 @@ public sealed record RegisterMobilePushRequest(
 
 public sealed record MobilePushRegistrationResult(
     Guid DeviceId,
+    Guid ApplicationId,
     string Provider,
     DateTimeOffset UpdatedAtUtc);
 
 public interface IMobilePushRegistrationService
 {
     Task<MobilePushRegistrationResult> RegisterAsync(
+        NotificationApplicationContext application,
         Guid deviceId,
         RegisterMobilePushRequest request,
         CancellationToken cancellationToken);
@@ -27,14 +30,17 @@ public interface IMobilePushRegistrationService
 
 internal sealed class MobilePushRegistrationService(
     PairingDbContext dbContext,
+    MobileDeviceAuditRecorder auditRecorder,
     TimeProvider timeProvider)
     : IMobilePushRegistrationService
 {
     public async Task<MobilePushRegistrationResult> RegisterAsync(
+        NotificationApplicationContext application,
         Guid deviceId,
         RegisterMobilePushRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(application);
         ArgumentNullException.ThrowIfNull(request);
 
         if (deviceId == Guid.Empty)
@@ -68,6 +74,7 @@ internal sealed class MobilePushRegistrationService(
                 .AnyAsync(
                     device =>
                         device.Id == deviceId
+                        && device.PlatformClientId == application.ApplicationId
                         && device.RevokedAtUtc == null,
                     cancellationToken);
 
@@ -99,11 +106,38 @@ internal sealed class MobilePushRegistrationService(
 
             dbContext.PushRegistrations.Add(
                 registration);
+
+            auditRecorder.Record(
+                deviceId,
+                await ResolvePlatformClientIdAsync(
+                    deviceId,
+                    cancellationToken),
+                MobileDeviceAuditKinds.PushRegistered,
+                MobileDeviceAuditActorTypes.Device,
+                null,
+                $"provider={provider}",
+                now);
         }
         else
         {
+            var wasInvalidated =
+                registration.InvalidatedAtUtc is not null;
+
             registration.Refresh(
                 request.RegistrationToken,
+                now);
+
+            auditRecorder.Record(
+                deviceId,
+                await ResolvePlatformClientIdAsync(
+                    deviceId,
+                    cancellationToken),
+                wasInvalidated
+                    ? MobileDeviceAuditKinds.PushRegistered
+                    : MobileDeviceAuditKinds.PushRefreshed,
+                MobileDeviceAuditActorTypes.Device,
+                null,
+                $"provider={provider}",
                 now);
         }
 
@@ -112,6 +146,7 @@ internal sealed class MobilePushRegistrationService(
 
         return new MobilePushRegistrationResult(
             deviceId,
+            application.ApplicationId,
             provider,
             now);
     }
@@ -136,12 +171,41 @@ internal sealed class MobilePushRegistrationService(
         var now =
             timeProvider.GetUtcNow();
 
+        var platformClientId =
+            await ResolvePlatformClientIdAsync(
+                deviceId,
+                cancellationToken);
+
         foreach (var registration in registrations)
         {
             registration.Invalidate(now);
+
+            auditRecorder.Record(
+                deviceId,
+                platformClientId,
+                MobileDeviceAuditKinds.PushInvalidated,
+                MobileDeviceAuditActorTypes.System,
+                null,
+                $"provider={registration.Provider}",
+                now);
         }
 
         await dbContext.SaveChangesAsync(
             cancellationToken);
+    }
+
+    private async Task<Guid> ResolvePlatformClientIdAsync(
+        Guid deviceId,
+        CancellationToken cancellationToken)
+    {
+        var platformClientId = await dbContext.Devices
+            .AsNoTracking()
+            .Where(device => device.Id == deviceId)
+            .Select(device => (Guid?)device.PlatformClientId)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return platformClientId
+            ?? throw new InvalidOperationException(
+                "Authenticated mobile device is unavailable or revoked.");
     }
 }
