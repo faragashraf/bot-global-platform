@@ -138,10 +138,31 @@ public sealed class ApplicationPushProviderIsolationTests
             CancellationToken.None);
 
         Assert.Equal(ApplicationPushDispatchKind.Accepted, result.Kind);
+        Assert.Equal("message-id", result.ProviderMessageId);
         Assert.Equal(1, fcm.Calls);
         Assert.Equal(
             applicationId,
             fcm.LastConfiguration!.Application.ApplicationId);
+    }
+
+    [Fact]
+    public async Task Unknown_fcm_call_failure_is_ambiguous_not_retryable()
+    {
+        var applicationId = Guid.NewGuid();
+        var dispatcher = new ApplicationPushNotificationDispatcher(
+            Resolver(Provider(
+                applicationId,
+                "firebase-app",
+                "project-app",
+                "com.botglobal.app")),
+            new ThrowingFcmSender());
+
+        var result = await dispatcher.DispatchAsync(
+            Message(applicationId),
+            CancellationToken.None);
+
+        Assert.Equal(ApplicationPushDispatchKind.Ambiguous, result.Kind);
+        Assert.Equal("push-provider-outcome-unknown", result.SafeErrorCode);
     }
 
     private static ConfigurationApplicationPushProviderResolver Resolver(
@@ -185,7 +206,8 @@ public sealed class ApplicationPushProviderIsolationTests
     {
         public int Calls { get; private set; }
 
-        public ResolvedApplicationPushProvider? LastConfiguration {
+        public ResolvedApplicationPushProvider? LastConfiguration
+        {
             get;
             private set;
         }
@@ -200,5 +222,14 @@ public sealed class ApplicationPushProviderIsolationTests
             return Task.FromResult(
                 new FcmPushSendResult(true, "message-id"));
         }
+    }
+
+    private sealed class ThrowingFcmSender : IFcmPushSender
+    {
+        public Task<FcmPushSendResult> SendAsync(
+            ResolvedApplicationPushProvider configuration,
+            FcmPushMessage message,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Synthetic unknown send outcome.");
     }
 }

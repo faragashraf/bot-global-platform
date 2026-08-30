@@ -1,4 +1,5 @@
 using BotGlobal.Notifications;
+using BotGlobal.Notifications.Application.Processing;
 using BotGlobal.Notifications.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,5 +38,7 @@ public sealed class NotificationsRuntimeRegistrationTests
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<NotificationsDbContext>());
+        Assert.NotNull(scope.ServiceProvider
+            .GetRequiredService<NotificationDeliveryRecoveryProcessor>());
     }
 }

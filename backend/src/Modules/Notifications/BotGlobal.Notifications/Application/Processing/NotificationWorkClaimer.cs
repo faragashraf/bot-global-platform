@@ -2,15 +2,20 @@ using System.Data;
 using BotGlobal.Notifications.Domain;
 using BotGlobal.Notifications.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace BotGlobal.Notifications.Application.Processing;
 
 internal sealed record ClaimedNotificationWork(
     Guid Id,
-    Guid LeaseId);
+    Guid LeaseId,
+    Guid AttemptId = default,
+    string DeliveryKey = "",
+    int AttemptNumber = 0);
 
 internal sealed class NotificationWorkClaimer(
-    NotificationsDbContext dbContext)
+    NotificationsDbContext dbContext,
+    ILogger<NotificationWorkClaimer>? logger = null)
 {
     private static readonly SemaphoreSlim NonRelationalClaimLock =
         new(1, 1);
@@ -104,6 +109,7 @@ internal sealed class NotificationWorkClaimer(
             try
             {
                 var recipients = await dbContext.Recipients
+                    .Include(recipient => recipient.Campaign)
                     .Where(recipient =>
                         (recipient.Status == NotificationRecipientStatus.Pending
                             || recipient.Status == NotificationRecipientStatus.RetryScheduled)
@@ -121,8 +127,13 @@ internal sealed class NotificationWorkClaimer(
                 foreach (var recipient in recipients)
                 {
                     var leaseId = Guid.NewGuid();
-                    recipient.Claim(leaseId, leaseExpiresAtUtc);
-                    claims.Add(new ClaimedNotificationWork(recipient.Id, leaseId));
+                    claims.Add(await ClaimRecipientAsync(
+                        recipient,
+                        recipient.Campaign.PlatformClientId,
+                        leaseId,
+                        leaseExpiresAtUtc,
+                        now,
+                        cancellationToken));
                 }
 
                 await dbContext.SaveChangesAsync(cancellationToken);
@@ -158,15 +169,92 @@ internal sealed class NotificationWorkClaimer(
         var result = new List<ClaimedNotificationWork>(
             claimedRecipients.Length);
 
+        var campaignIds = claimedRecipients
+            .Select(recipient => recipient.CampaignId)
+            .Distinct()
+            .ToArray();
+        var applicationIds = await dbContext.Campaigns
+            .AsNoTracking()
+            .Where(campaign => campaignIds.Contains(campaign.Id))
+            .ToDictionaryAsync(
+                campaign => campaign.Id,
+                campaign => campaign.PlatformClientId,
+                cancellationToken);
+
         foreach (var recipient in claimedRecipients)
         {
             var leaseId = Guid.NewGuid();
-            recipient.Claim(leaseId, leaseExpiresAtUtc);
-            result.Add(new ClaimedNotificationWork(recipient.Id, leaseId));
+            result.Add(await ClaimRecipientAsync(
+                recipient,
+                applicationIds[recipient.CampaignId],
+                leaseId,
+                leaseExpiresAtUtc,
+                now,
+                cancellationToken));
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return result;
+    }
+
+    private async Task<ClaimedNotificationWork> ClaimRecipientAsync(
+        NotificationRecipient recipient,
+        Guid applicationId,
+        Guid leaseId,
+        DateTimeOffset leaseExpiresAtUtc,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        NotificationDeliveryAttempt attempt;
+        if (recipient.Status == NotificationRecipientStatus.Pending
+            && recipient.CurrentAttemptId is Guid currentAttemptId)
+        {
+            attempt = await dbContext.DeliveryAttempts
+                .SingleOrDefaultAsync(
+                    candidate =>
+                        candidate.Id == currentAttemptId
+                        && candidate.NotificationRecipientId == recipient.Id,
+                    cancellationToken)
+                ?? throw new InvalidOperationException(
+                    "A claimed notification recipient references a missing delivery attempt.");
+
+            attempt.ReassignPreparedLease(leaseId);
+        }
+        else
+        {
+            attempt = NotificationDeliveryAttempt.Create(
+                Guid.NewGuid(),
+                recipient.Id,
+                applicationId,
+                recipient.CampaignId,
+                recipient.MobileDeviceId,
+                recipient.DeliveryKey,
+                recipient.AttemptCount + 1,
+                leaseId,
+                now);
+            dbContext.DeliveryAttempts.Add(attempt);
+        }
+
+        recipient.Claim(
+            leaseId,
+            leaseExpiresAtUtc,
+            attempt.Id);
+
+        logger?.LogInformation(
+            "Notification delivery claimed. DeliveryId={DeliveryId} ApplicationId={ApplicationId} CampaignId={CampaignId} AttemptId={AttemptId} AttemptNumber={AttemptNumber} LeaseId={LeaseId}",
+            recipient.DeliveryKey,
+            applicationId,
+            recipient.CampaignId,
+            attempt.Id,
+            attempt.AttemptNumber,
+            leaseId);
+
+        return new ClaimedNotificationWork(
+            recipient.Id,
+            leaseId,
+            attempt.Id,
+            recipient.DeliveryKey,
+            attempt.AttemptNumber);
     }
 }

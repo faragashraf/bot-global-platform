@@ -48,10 +48,12 @@ internal sealed class CampaignMobileNotificationTransport(
             priority,
             DateTimeOffset.UtcNow);
 
+        var sideEffectInvocationStarted = false;
         try
         {
             if (connections.IsConnected(request.MobileDeviceId))
             {
+                sideEffectInvocationStarted = true;
                 await signalR.DeliverAsync(
                     request.Application,
                     envelope,
@@ -63,7 +65,8 @@ internal sealed class CampaignMobileNotificationTransport(
                     cancellationToken);
 
                 return new MobileNotificationTransportOutcome(
-                    MobileNotificationTransportOutcomeKind.SignalRDispatched);
+                    MobileNotificationTransportOutcomeKind.SignalRDispatched,
+                    Transport: "SignalR");
             }
 
             var destination = await pushDestinations.ResolveActiveAsync(
@@ -82,6 +85,7 @@ internal sealed class CampaignMobileNotificationTransport(
             var pushData = new Dictionary<string, string>
             {
                 ["notificationId"] = request.NotificationId,
+                ["deliveryAttemptId"] = request.DeliveryAttemptId.ToString("N"),
                 ["type"] = request.Type,
                 ["titleAr"] = request.TitleAr,
                 ["titleEn"] = request.TitleEn,
@@ -99,6 +103,7 @@ internal sealed class CampaignMobileNotificationTransport(
                 pushData["actionUrl"] = actionUrl;
             }
 
+            sideEffectInvocationStarted = true;
             var pushResult = await push.DispatchAsync(
                 new ApplicationPushMessage(
                     request.Application,
@@ -114,24 +119,36 @@ internal sealed class CampaignMobileNotificationTransport(
             {
                 ApplicationPushDispatchKind.Accepted =>
                     new MobileNotificationTransportOutcome(
-                        MobileNotificationTransportOutcomeKind.FcmAccepted),
+                        MobileNotificationTransportOutcomeKind.FcmAccepted,
+                        ProviderMessageId: pushResult.ProviderMessageId,
+                        Transport: "Fcm"),
 
                 ApplicationPushDispatchKind.PermanentFailure =>
                     new MobileNotificationTransportOutcome(
                         MobileNotificationTransportOutcomeKind.PermanentFailure,
-                        pushResult.SafeErrorCode),
+                        pushResult.SafeErrorCode,
+                        Transport: "Fcm"),
+
+                ApplicationPushDispatchKind.Ambiguous =>
+                    new MobileNotificationTransportOutcome(
+                        MobileNotificationTransportOutcomeKind.Ambiguous,
+                        pushResult.SafeErrorCode
+                            ?? "push-provider-outcome-unknown",
+                        Transport: "Fcm"),
 
                 ApplicationPushDispatchKind.ProviderDisabled
                     or ApplicationPushDispatchKind.MissingConfiguration
                     or ApplicationPushDispatchKind.RuntimeUnavailable =>
                     new MobileNotificationTransportOutcome(
                         MobileNotificationTransportOutcomeKind.NoAvailableRoute,
-                        pushResult.SafeErrorCode),
+                        pushResult.SafeErrorCode,
+                        Transport: "Fcm"),
 
                 _ =>
                     new MobileNotificationTransportOutcome(
                         MobileNotificationTransportOutcomeKind.TransientFailure,
-                        pushResult.SafeErrorCode)
+                        pushResult.SafeErrorCode,
+                        Transport: "Fcm")
             };
         }
         catch (OperationCanceledException)
@@ -148,8 +165,12 @@ internal sealed class CampaignMobileNotificationTransport(
         catch (Exception)
         {
             return new MobileNotificationTransportOutcome(
-                MobileNotificationTransportOutcomeKind.TransientFailure,
-                "transport-unavailable");
+                sideEffectInvocationStarted
+                    ? MobileNotificationTransportOutcomeKind.Ambiguous
+                    : MobileNotificationTransportOutcomeKind.TransientFailure,
+                sideEffectInvocationStarted
+                    ? "transport-outcome-unknown"
+                    : "transport-unavailable");
         }
     }
 

@@ -76,6 +76,7 @@ internal sealed class NotificationAudienceExpander(
 
             dbContext.Recipients.Add(
                 NotificationRecipient.Create(
+                    campaign.PlatformClientId,
                     campaign.Id,
                     device.DeviceId,
                     device.InstallationId,

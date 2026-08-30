@@ -24,7 +24,22 @@ public enum NotificationRecipientStatus
     FcmAccepted = 4,
     FailedPermanent = 5,
     SkippedRevoked = 6,
-    Expired = 7
+    Expired = 7,
+    Sending = 8,
+    Ambiguous = 9
+}
+
+public enum NotificationDeliveryAttemptStatus
+{
+    Prepared = 1,
+    ProviderInvocationStarted = 2,
+    SignalRDispatched = 3,
+    FcmAccepted = 4,
+    RetryableFailure = 5,
+    PermanentFailure = 6,
+    DeviceRevoked = 7,
+    Ambiguous = 8,
+    Expired = 9
 }
 
 public enum NotificationPriority

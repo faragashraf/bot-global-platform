@@ -16,7 +16,7 @@ internal sealed class NotificationRecipientConfiguration
             {
                 table.HasCheckConstraint(
                     "CK_NotificationRecipients_Status",
-                    "[Status] BETWEEN 1 AND 7");
+                    "[Status] BETWEEN 1 AND 9");
                 table.HasCheckConstraint(
                     "CK_NotificationRecipients_AttemptCount",
                     "[AttemptCount] >= 0");
@@ -25,7 +25,10 @@ internal sealed class NotificationRecipientConfiguration
                     "([LeaseId] IS NULL AND [LeaseExpiresAtUtc] IS NULL) OR ([LeaseId] IS NOT NULL AND [LeaseExpiresAtUtc] IS NOT NULL)");
                 table.HasCheckConstraint(
                     "CK_NotificationRecipients_NextAttempt",
-                    "([Status] IN (1, 2) AND [NextAttemptAtUtc] IS NOT NULL) OR ([Status] IN (3, 4, 5, 6, 7) AND [NextAttemptAtUtc] IS NULL)");
+                    "([Status] IN (1, 2) AND [NextAttemptAtUtc] IS NOT NULL) OR ([Status] BETWEEN 3 AND 9 AND [NextAttemptAtUtc] IS NULL)");
+                table.HasCheckConstraint(
+                    "CK_NotificationRecipients_CurrentAttempt",
+                    "[Status] IN (1, 2, 7) OR [CurrentAttemptId] IS NOT NULL");
             });
 
         builder.HasKey(recipient => recipient.Id);
@@ -41,6 +44,11 @@ internal sealed class NotificationRecipientConfiguration
         builder.Property(recipient => recipient.DeviceNameSnapshot)
             .HasMaxLength(250);
 
+        builder.Property(recipient => recipient.DeliveryKey)
+            .HasMaxLength(100)
+            .IsUnicode(false)
+            .IsRequired();
+
         builder.Property(recipient => recipient.LastTransport)
             .HasMaxLength(32)
             .IsUnicode(false);
@@ -53,20 +61,31 @@ internal sealed class NotificationRecipientConfiguration
             .IsRowVersion();
 
         builder.HasIndex(recipient => new
-            {
-                recipient.CampaignId,
-                recipient.MobileDeviceId
-            })
+        {
+            recipient.CampaignId,
+            recipient.MobileDeviceId
+        })
             .IsUnique()
             .HasDatabaseName(
                 "UX_NotificationRecipients_Campaign_Device");
 
+        builder.HasIndex(recipient => recipient.DeliveryKey)
+            .IsUnique()
+            .HasDatabaseName(
+                "UX_NotificationRecipients_DeliveryKey");
+
+        builder.HasIndex(recipient => recipient.CurrentAttemptId)
+            .IsUnique()
+            .HasFilter("[CurrentAttemptId] IS NOT NULL")
+            .HasDatabaseName(
+                "UX_NotificationRecipients_CurrentAttempt");
+
         builder.HasIndex(recipient => new
-            {
-                recipient.Status,
-                recipient.NextAttemptAtUtc,
-                recipient.LeaseExpiresAtUtc
-            })
+        {
+            recipient.Status,
+            recipient.NextAttemptAtUtc,
+            recipient.LeaseExpiresAtUtc
+        })
             .HasDatabaseName(
                 "IX_NotificationRecipients_DispatchWork");
 

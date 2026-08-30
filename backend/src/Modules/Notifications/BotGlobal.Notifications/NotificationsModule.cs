@@ -58,6 +58,7 @@ public static class NotificationsModule
         services.AddScoped<NotificationWorkClaimer>();
         services.AddScoped<NotificationAudienceExpander>();
         services.AddScoped<NotificationDeliveryAttemptProcessor>();
+        services.AddScoped<NotificationDeliveryRecoveryProcessor>();
         services.AddScoped<NotificationCampaignSummaryService>();
         services.AddScoped<NotificationExpiryProcessor>();
         services.AddHostedService<NotificationCampaignBackgroundService>();

@@ -13,6 +13,9 @@ public sealed class NotificationsDbContext(
     public DbSet<NotificationRecipient> Recipients =>
         Set<NotificationRecipient>();
 
+    public DbSet<NotificationDeliveryAttempt> DeliveryAttempts =>
+        Set<NotificationDeliveryAttempt>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(

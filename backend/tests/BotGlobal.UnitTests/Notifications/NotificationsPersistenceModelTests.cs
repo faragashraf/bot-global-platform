@@ -11,31 +11,43 @@ public sealed class NotificationsPersistenceModelTests
     private readonly NotificationsDbContext _context = CreateContext();
 
     [Fact]
-    public void Model_contains_only_two_notifications_schema_tables()
+    public void Model_contains_campaign_recipient_and_delivery_attempt_tables()
     {
         var tables = _context.Model.GetEntityTypes()
             .Select(entity => (entity.GetSchema(), entity.GetTableName()))
             .OrderBy(table => table.Item2)
             .ToArray();
 
-        Assert.Equal(2, tables.Length);
+        Assert.Equal(3, tables.Length);
         Assert.All(tables, table =>
             Assert.Equal(NotificationsModule.DatabaseSchema, table.Item1));
         Assert.Equal(
-            ["NotificationCampaigns", "NotificationRecipients"],
+            [
+                "NotificationCampaigns",
+                "NotificationDeliveryAttempts",
+                "NotificationRecipients"
+            ],
             tables.Select(table => table.Item2!).ToArray());
     }
 
     [Fact]
-    public void Only_recipient_to_campaign_foreign_key_exists()
+    public void Delivery_attempt_and_recipient_ownership_foreign_keys_exist()
     {
         var foreignKeys = _context.Model.GetEntityTypes()
             .SelectMany(entity => entity.GetForeignKeys())
             .ToArray();
 
-        var foreignKey = Assert.Single(foreignKeys);
-        Assert.Equal(typeof(NotificationRecipient), foreignKey.DeclaringEntityType.ClrType);
-        Assert.Equal(typeof(NotificationCampaign), foreignKey.PrincipalEntityType.ClrType);
+        Assert.Equal(2, foreignKeys.Length);
+        Assert.Contains(foreignKeys, foreignKey =>
+            foreignKey.DeclaringEntityType.ClrType
+                == typeof(NotificationRecipient)
+            && foreignKey.PrincipalEntityType.ClrType
+                == typeof(NotificationCampaign));
+        Assert.Contains(foreignKeys, foreignKey =>
+            foreignKey.DeclaringEntityType.ClrType
+                == typeof(NotificationDeliveryAttempt)
+            && foreignKey.PrincipalEntityType.ClrType
+                == typeof(NotificationRecipient));
     }
 
     [Fact]
@@ -43,6 +55,7 @@ public sealed class NotificationsPersistenceModelTests
     {
         var campaign = _context.Model.FindEntityType(typeof(NotificationCampaign))!;
         var recipient = _context.Model.FindEntityType(typeof(NotificationRecipient))!;
+        var attempt = _context.Model.FindEntityType(typeof(NotificationDeliveryAttempt))!;
 
         Assert.True(campaign.GetIndexes().Single(index =>
             index.GetDatabaseName() == "UX_NotificationCampaigns_Admin_IdempotencyKey").IsUnique);
@@ -52,15 +65,22 @@ public sealed class NotificationsPersistenceModelTests
             index.GetDatabaseName() == "UX_NotificationRecipients_Campaign_Device").IsUnique);
         Assert.NotNull(recipient.GetIndexes().SingleOrDefault(index =>
             index.GetDatabaseName() == "IX_NotificationRecipients_DispatchWork"));
+        Assert.True(recipient.GetIndexes().Single(index =>
+            index.GetDatabaseName() == "UX_NotificationRecipients_DeliveryKey").IsUnique);
+        Assert.True(attempt.GetIndexes().Single(index =>
+            index.GetDatabaseName() == "UX_NotificationDeliveryAttempts_Recipient_Number").IsUnique);
+        Assert.NotNull(attempt.GetIndexes().SingleOrDefault(index =>
+            index.GetDatabaseName() == "IX_NotificationDeliveryAttempts_Recovery"));
     }
 
     [Fact]
-    public void Both_aggregates_use_row_version_concurrency()
+    public void All_delivery_aggregates_use_row_version_concurrency()
     {
         foreach (var type in new[]
                  {
                      typeof(NotificationCampaign),
-                     typeof(NotificationRecipient)
+                     typeof(NotificationRecipient),
+                     typeof(NotificationDeliveryAttempt)
                  })
         {
             var rowVersion = _context.Model.FindEntityType(type)!

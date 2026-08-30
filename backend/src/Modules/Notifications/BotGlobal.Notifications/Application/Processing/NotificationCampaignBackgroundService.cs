@@ -68,6 +68,15 @@ internal sealed class NotificationCampaignBackgroundService(
                 cancellationToken);
         }
 
+        using (var summaryRepairScope = scopeFactory.CreateScope())
+        {
+            didWork |= await summaryRepairScope.ServiceProvider
+                .GetRequiredService<NotificationCampaignSummaryService>()
+                .RefreshNextDispatchingAsync(
+                    now,
+                    cancellationToken);
+        }
+
         ClaimedNotificationWork? audienceClaim;
         using (var claimScope = scopeFactory.CreateScope())
         {
@@ -100,6 +109,18 @@ internal sealed class NotificationCampaignBackgroundService(
                     configured.BatchSize,
                     cancellationToken);
             didWork |= expiredCampaigns.Count > 0;
+        }
+
+        IReadOnlySet<Guid> recoveredCampaigns;
+        using (var recoveryScope = scopeFactory.CreateScope())
+        {
+            recoveredCampaigns = await recoveryScope.ServiceProvider
+                .GetRequiredService<NotificationDeliveryRecoveryProcessor>()
+                .RecoverBatchAsync(
+                    now,
+                    configured.BatchSize,
+                    cancellationToken);
+            didWork |= recoveredCampaigns.Count > 0;
         }
 
         IReadOnlyList<ClaimedNotificationWork> recipientClaims;
@@ -152,6 +173,7 @@ internal sealed class NotificationCampaignBackgroundService(
             .Where(result => result.CampaignId != Guid.Empty)
             .Select(result => result.CampaignId)
             .Concat(expiredCampaigns)
+            .Concat(recoveredCampaigns)
             .Distinct()
             .ToArray();
 

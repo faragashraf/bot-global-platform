@@ -11,7 +11,8 @@ internal enum ApplicationPushDispatchKind
     MissingConfiguration = 3,
     RuntimeUnavailable = 4,
     TransientFailure = 5,
-    PermanentFailure = 6
+    PermanentFailure = 6,
+    Ambiguous = 7
 }
 
 internal sealed record ApplicationPushMessage(
@@ -25,7 +26,8 @@ internal sealed record ApplicationPushMessage(
 
 internal sealed record ApplicationPushDispatchResult(
     ApplicationPushDispatchKind Kind,
-    string? SafeErrorCode = null);
+    string? SafeErrorCode = null,
+    string? ProviderMessageId = null);
 
 internal interface IApplicationPushNotificationDispatcher
 {
@@ -91,7 +93,8 @@ internal sealed class ApplicationPushNotificationDispatcher(
             if (result.Accepted)
             {
                 return new ApplicationPushDispatchResult(
-                    ApplicationPushDispatchKind.Accepted);
+                    ApplicationPushDispatchKind.Accepted,
+                    ProviderMessageId: result.MessageId);
             }
 
             return new ApplicationPushDispatchResult(
@@ -112,7 +115,9 @@ internal sealed class ApplicationPushNotificationDispatcher(
             return new ApplicationPushDispatchResult(
                 IsPermanentFirebaseFailure(exception)
                     ? ApplicationPushDispatchKind.PermanentFailure
-                    : ApplicationPushDispatchKind.TransientFailure,
+                    : exception.HttpResponse is not null
+                        ? ApplicationPushDispatchKind.TransientFailure
+                        : ApplicationPushDispatchKind.Ambiguous,
                 code);
         }
         catch (ArgumentException)
@@ -124,8 +129,8 @@ internal sealed class ApplicationPushNotificationDispatcher(
         catch (Exception)
         {
             return new ApplicationPushDispatchResult(
-                ApplicationPushDispatchKind.TransientFailure,
-                "push-provider-unavailable");
+                ApplicationPushDispatchKind.Ambiguous,
+                "push-provider-outcome-unknown");
         }
     }
 

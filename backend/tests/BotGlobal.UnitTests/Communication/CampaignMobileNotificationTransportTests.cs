@@ -50,6 +50,14 @@ public sealed class CampaignMobileNotificationTransportTests
 
         Assert.Equal(MobileNotificationTransportOutcomeKind.FcmAccepted, outcome.Kind);
         Assert.Equal(TimeSpan.FromDays(9), push.LastMessage!.TimeToLive);
+        Assert.Equal("provider-message-id", outcome.ProviderMessageId);
+        Assert.Equal("Fcm", outcome.Transport);
+        Assert.Equal(
+            request.NotificationId,
+            push.LastMessage.Data["notificationId"]);
+        Assert.Equal(
+            request.DeliveryAttemptId.ToString("N"),
+            push.LastMessage.Data["deliveryAttemptId"]);
     }
 
     [Fact]
@@ -67,6 +75,28 @@ public sealed class CampaignMobileNotificationTransportTests
             CancellationToken.None);
 
         Assert.Equal(MobileNotificationTransportOutcomeKind.NoAvailableRoute, outcome.Kind);
+    }
+
+    [Fact]
+    public async Task Connected_delivery_exception_is_ambiguous_after_side_effect_starts()
+    {
+        var deviceId = Guid.NewGuid();
+        var connections = new MobileNotificationConnectionRegistry();
+        connections.Connected(deviceId);
+        var proxy = new RecordingClientProxy { ThrowOnSend = true };
+        var transport = CreateTransport(
+            connections,
+            proxy,
+            new PushResolver(null),
+            new DeviceStateReader(true, false),
+            new RecordingPushDispatcher());
+
+        var outcome = await transport.DispatchAsync(
+            Request(deviceId),
+            CancellationToken.None);
+
+        Assert.Equal(MobileNotificationTransportOutcomeKind.Ambiguous, outcome.Kind);
+        Assert.Equal("transport-outcome-unknown", outcome.SafeErrorCode);
     }
 
     [Theory]
@@ -153,16 +183,23 @@ public sealed class CampaignMobileNotificationTransportTests
             LastMessage = message;
             return Task.FromResult(
                 new ApplicationPushDispatchResult(
-                    ApplicationPushDispatchKind.Accepted));
+                    ApplicationPushDispatchKind.Accepted,
+                    ProviderMessageId: "provider-message-id"));
         }
     }
 
     private sealed class RecordingClientProxy : IClientProxy
     {
         public int SendCalls { get; private set; }
+        public bool ThrowOnSend { get; init; }
         public Task SendCoreAsync(string method, object?[] args, CancellationToken cancellationToken = default)
         {
             SendCalls++;
+            if (ThrowOnSend)
+            {
+                throw new InvalidOperationException("Synthetic SignalR delivery failure.");
+            }
+
             return Task.CompletedTask;
         }
     }

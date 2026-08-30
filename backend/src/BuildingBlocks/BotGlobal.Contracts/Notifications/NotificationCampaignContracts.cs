@@ -71,7 +71,8 @@ public enum MobileNotificationTransportOutcomeKind
     NoAvailableRoute = 3,
     TransientFailure = 4,
     PermanentFailure = 5,
-    DeviceRevoked = 6
+    DeviceRevoked = 6,
+    Ambiguous = 7
 }
 
 public sealed record MobileNotificationTransportRequest(
@@ -88,11 +89,14 @@ public sealed record MobileNotificationTransportRequest(
     string BodyEn,
     string Type,
     int Priority,
-    TimeSpan TimeToLive);
+    TimeSpan TimeToLive,
+    Guid DeliveryAttemptId = default);
 
 public sealed record MobileNotificationTransportOutcome(
     MobileNotificationTransportOutcomeKind Kind,
-    string? SafeErrorCode = null);
+    string? SafeErrorCode = null,
+    string? ProviderMessageId = null,
+    string? Transport = null);
 
 public interface IMobileNotificationTransport
 {

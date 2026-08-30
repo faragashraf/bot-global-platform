@@ -54,6 +54,7 @@ public sealed class NotificationCampaignProcessingTests
     [InlineData(MobileNotificationTransportOutcomeKind.TransientFailure, NotificationRecipientStatus.RetryScheduled, true)]
     [InlineData(MobileNotificationTransportOutcomeKind.PermanentFailure, NotificationRecipientStatus.FailedPermanent, false)]
     [InlineData(MobileNotificationTransportOutcomeKind.DeviceRevoked, NotificationRecipientStatus.SkippedRevoked, false)]
+    [InlineData(MobileNotificationTransportOutcomeKind.Ambiguous, NotificationRecipientStatus.Ambiguous, false)]
     public async Task Typed_transport_outcomes_map_to_durable_recipient_state(
         MobileNotificationTransportOutcomeKind outcome,
         NotificationRecipientStatus expectedStatus,
@@ -63,16 +64,21 @@ public sealed class NotificationCampaignProcessingTests
         await using var db = Context(new InMemoryDatabaseRoot(), $"outcome-{Guid.NewGuid():N}");
         var campaign = DispatchingCampaign(now);
         var recipient = Recipient(campaign, now);
-        recipient.Claim(Guid.NewGuid(), now.AddMinutes(2));
         db.AddRange(campaign, recipient);
         await db.SaveChangesAsync();
 
-        var claim = new ClaimedNotificationWork(recipient.Id, recipient.LeaseId!.Value);
+        var claim = await PrepareClaimAsync(
+            db,
+            campaign,
+            recipient,
+            now,
+            now.AddMinutes(2));
         var processor = new NotificationDeliveryAttemptProcessor(
             db,
             new FixedTransport(outcome),
             Options.Create(OptionsForTests()),
-            new MutableTimeProvider(now));
+            new MutableTimeProvider(now),
+            NullLogger<NotificationDeliveryAttemptProcessor>.Instance);
 
         await processor.ProcessAsync(claim, CancellationToken.None);
 
@@ -95,15 +101,18 @@ public sealed class NotificationCampaignProcessingTests
             db,
             new FixedTransport(MobileNotificationTransportOutcomeKind.TransientFailure),
             Options.Create(OptionsForTests()),
-            time);
+            time,
+            NullLogger<NotificationDeliveryAttemptProcessor>.Instance);
 
         for (var attempt = 0; attempt < 12; attempt++)
         {
-            recipient.Claim(Guid.NewGuid(), time.GetUtcNow().AddMinutes(2));
-            await db.SaveChangesAsync();
-            await processor.ProcessAsync(
-                new ClaimedNotificationWork(recipient.Id, recipient.LeaseId!.Value),
-                CancellationToken.None);
+            var claim = await PrepareClaimAsync(
+                db,
+                campaign,
+                recipient,
+                time.GetUtcNow(),
+                time.GetUtcNow().AddMinutes(2));
+            await processor.ProcessAsync(claim, CancellationToken.None);
             time.Set(recipient.NextAttemptAtUtc!.Value);
         }
 
@@ -119,19 +128,23 @@ public sealed class NotificationCampaignProcessingTests
         await using var db = Context(new InMemoryDatabaseRoot(), $"expiry-{Guid.NewGuid():N}");
         var campaign = DispatchingCampaign(created, lifetimeDays: 28);
         var recipient = Recipient(campaign, created);
-        recipient.Claim(Guid.NewGuid(), now.AddMinutes(2));
         db.AddRange(campaign, recipient);
         await db.SaveChangesAsync();
+        var claim = await PrepareClaimAsync(
+            db,
+            campaign,
+            recipient,
+            created,
+            now.AddMinutes(2));
         var transport = new RecordingTransport();
 
         var processor = new NotificationDeliveryAttemptProcessor(
             db,
             transport,
             Options.Create(OptionsForTests()),
-            new MutableTimeProvider(now));
-        await processor.ProcessAsync(
-            new ClaimedNotificationWork(recipient.Id, recipient.LeaseId!.Value),
-            CancellationToken.None);
+            new MutableTimeProvider(now),
+            NullLogger<NotificationDeliveryAttemptProcessor>.Instance);
+        await processor.ProcessAsync(claim, CancellationToken.None);
 
         Assert.Equal(NotificationRecipientStatus.Expired, recipient.Status);
         Assert.Equal(0, transport.Calls);
@@ -146,22 +159,24 @@ public sealed class NotificationCampaignProcessingTests
             $"application-context-{Guid.NewGuid():N}");
         var campaign = DispatchingCampaign(now);
         var recipient = Recipient(campaign, now);
-        recipient.Claim(Guid.NewGuid(), now.AddMinutes(2));
         db.AddRange(campaign, recipient);
         await db.SaveChangesAsync();
+        var claim = await PrepareClaimAsync(
+            db,
+            campaign,
+            recipient,
+            now,
+            now.AddMinutes(2));
         var transport = new RecordingTransport();
 
         var processor = new NotificationDeliveryAttemptProcessor(
             db,
             transport,
             Options.Create(OptionsForTests()),
-            new MutableTimeProvider(now));
+            new MutableTimeProvider(now),
+            NullLogger<NotificationDeliveryAttemptProcessor>.Instance);
 
-        await processor.ProcessAsync(
-            new ClaimedNotificationWork(
-                recipient.Id,
-                recipient.LeaseId!.Value),
-            CancellationToken.None);
+        await processor.ProcessAsync(claim, CancellationToken.None);
 
         Assert.NotNull(transport.LastRequest);
         Assert.Equal(
@@ -283,7 +298,7 @@ public sealed class NotificationCampaignProcessingTests
         Assert.Contains(recipients, recipient =>
             recipient.Status == NotificationRecipientStatus.SignalRDispatched);
         Assert.Contains(recipients, recipient =>
-            recipient.Status == NotificationRecipientStatus.Pending
+            recipient.Status == NotificationRecipientStatus.Sending
             && recipient.LeaseId.HasValue);
     }
 
@@ -324,6 +339,7 @@ public sealed class NotificationCampaignProcessingTests
         services.AddScoped<NotificationWorkClaimer>();
         services.AddScoped<NotificationAudienceExpander>();
         services.AddScoped<NotificationDeliveryAttemptProcessor>();
+        services.AddScoped<NotificationDeliveryRecoveryProcessor>();
         services.AddScoped<NotificationCampaignSummaryService>();
         services.AddScoped<NotificationExpiryProcessor>();
         return services.BuildServiceProvider();
@@ -401,6 +417,7 @@ public sealed class NotificationCampaignProcessingTests
         DateTimeOffset now)
     {
         return NotificationRecipient.Create(
+            campaign.PlatformClientId,
             campaign.Id,
             Guid.NewGuid(),
             $"installation-{Guid.NewGuid():N}",
@@ -408,6 +425,35 @@ public sealed class NotificationCampaignProcessingTests
             "Test device",
             now,
             campaign.ExpiresAtUtc);
+    }
+
+    private static async Task<ClaimedNotificationWork> PrepareClaimAsync(
+        NotificationsDbContext db,
+        NotificationCampaign campaign,
+        NotificationRecipient recipient,
+        DateTimeOffset now,
+        DateTimeOffset leaseExpiresAtUtc)
+    {
+        var leaseId = Guid.NewGuid();
+        var attempt = NotificationDeliveryAttempt.Create(
+            Guid.NewGuid(),
+            recipient.Id,
+            campaign.PlatformClientId,
+            campaign.Id,
+            recipient.MobileDeviceId,
+            recipient.DeliveryKey,
+            recipient.AttemptCount + 1,
+            leaseId,
+            now);
+        db.DeliveryAttempts.Add(attempt);
+        recipient.Claim(leaseId, leaseExpiresAtUtc, attempt.Id);
+        await db.SaveChangesAsync();
+        return new ClaimedNotificationWork(
+            recipient.Id,
+            leaseId,
+            attempt.Id,
+            recipient.DeliveryKey,
+            attempt.AttemptNumber);
     }
 
     private static NotificationsDbContext Context(
@@ -430,7 +476,8 @@ public sealed class NotificationCampaignProcessingTests
     private sealed class RecordingTransport : IMobileNotificationTransport
     {
         public int Calls { get; private set; }
-        public MobileNotificationTransportRequest? LastRequest {
+        public MobileNotificationTransportRequest? LastRequest
+        {
             get;
             private set;
         }

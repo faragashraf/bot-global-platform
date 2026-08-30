@@ -22,6 +22,26 @@ internal sealed class NotificationExpiryProcessor(
             .Take(batchSize)
             .ToArrayAsync(cancellationToken);
 
+        var preparedAttemptIds = recipients
+            .Where(recipient =>
+                recipient.Status == NotificationRecipientStatus.Pending
+                && recipient.CurrentAttemptId.HasValue)
+            .Select(recipient => recipient.CurrentAttemptId!.Value)
+            .ToArray();
+        var preparedAttempts = preparedAttemptIds.Length == 0
+            ? Array.Empty<NotificationDeliveryAttempt>()
+            : await dbContext.DeliveryAttempts
+                .Where(attempt =>
+                    preparedAttemptIds.Contains(attempt.Id)
+                    && attempt.Status
+                        == NotificationDeliveryAttemptStatus.Prepared)
+                .ToArrayAsync(cancellationToken);
+
+        foreach (var attempt in preparedAttempts)
+        {
+            attempt.ExpirePrepared(now);
+        }
+
         foreach (var recipient in recipients)
         {
             recipient.Expire();
