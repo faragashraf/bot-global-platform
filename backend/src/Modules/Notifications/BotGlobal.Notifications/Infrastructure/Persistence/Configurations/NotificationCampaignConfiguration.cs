@@ -16,7 +16,7 @@ internal sealed class NotificationCampaignConfiguration
             {
                 table.HasCheckConstraint(
                     "CK_NotificationCampaigns_Status",
-                    "[Status] BETWEEN 1 AND 7");
+                    "[Status] BETWEEN 1 AND 8");
                 table.HasCheckConstraint(
                     "CK_NotificationCampaigns_AudienceKind",
                     "[AudienceKind] = 1");

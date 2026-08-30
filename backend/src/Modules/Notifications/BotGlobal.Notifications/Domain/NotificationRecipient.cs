@@ -157,6 +157,22 @@ public sealed class NotificationRecipient
         LeaseExpiresAtUtc = null;
     }
 
+    public bool Cancel()
+    {
+        if (Status is not NotificationRecipientStatus.Pending
+            and not NotificationRecipientStatus.RetryScheduled)
+        {
+            return false;
+        }
+
+        Status = NotificationRecipientStatus.Cancelled;
+        NextAttemptAtUtc = null;
+        LastSafeErrorCode = "campaign-cancelled";
+        LeaseId = null;
+        LeaseExpiresAtUtc = null;
+        return true;
+    }
+
     public static string CreateDeliveryKey(
         Guid applicationId,
         Guid campaignId,

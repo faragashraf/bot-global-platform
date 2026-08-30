@@ -160,6 +160,19 @@ public sealed class NotificationDeliveryAttempt
         SafeErrorCode = "delivery-expired-before-send";
     }
 
+    public void CancelPrepared(DateTimeOffset now)
+    {
+        if (Status != NotificationDeliveryAttemptStatus.Prepared)
+        {
+            throw new InvalidOperationException(
+                "Only a prepared attempt can be cancelled before provider invocation.");
+        }
+
+        Status = NotificationDeliveryAttemptStatus.Cancelled;
+        CompletedAtUtc = now;
+        SafeErrorCode = "campaign-cancelled-before-send";
+    }
+
     private void EnsureOwnedPreparedAttempt(Guid leaseId)
     {
         if (Status != NotificationDeliveryAttemptStatus.Prepared

@@ -1,3 +1,4 @@
+using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -5,6 +6,7 @@ using BotGlobal.Contracts.Notifications;
 using BotGlobal.Notifications.Domain;
 using BotGlobal.Notifications.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 
 namespace BotGlobal.Notifications.Application;
@@ -269,6 +271,187 @@ internal sealed class NotificationCampaignService(
                 cancellationToken);
 
         return campaign is null ? null : ToSummary(campaign);
+    }
+
+    public async Task<NotificationCampaignSummaryResponse?> CancelAsync(
+        ApplicationAdministrationScope applicationScope,
+        Guid campaignId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(applicationScope);
+
+        if (campaignId == Guid.Empty)
+        {
+            throw Validation("campaignId", "A campaign is required.");
+        }
+
+        if (applicationScope.ApplicationId is not Guid applicationId)
+        {
+            throw Validation(
+                "platformClientId",
+                "An explicit application scope is required for cancellation.");
+        }
+
+        var descriptor = await platformClients.FindAsync(
+            applicationId,
+            cancellationToken);
+
+        if (descriptor is null
+            || descriptor.PlatformClientId != applicationId)
+        {
+            throw Validation(
+                "platformClientId",
+                "The selected application is not recognized.");
+        }
+
+        IDbContextTransaction? transaction = null;
+        if (dbContext.Database.IsRelational())
+        {
+            transaction = await dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+        }
+
+        try
+        {
+            NotificationCampaign? campaign;
+            if (dbContext.Database.IsSqlServer())
+            {
+                campaign = await dbContext.Campaigns
+                    .FromSqlInterpolated($"""
+                        SELECT TOP (1) *
+                        FROM [notifications].[NotificationCampaigns]
+                            WITH (UPDLOCK, ROWLOCK)
+                        WHERE [Id] = {campaignId}
+                            AND [PlatformClientId] = {applicationId}
+                        """)
+                    .SingleOrDefaultAsync(cancellationToken);
+            }
+            else
+            {
+                campaign = await dbContext.Campaigns
+                    .SingleOrDefaultAsync(candidate =>
+                        candidate.Id == campaignId
+                        && candidate.PlatformClientId == applicationId,
+                        cancellationToken);
+            }
+
+            if (campaign is null)
+            {
+                if (transaction is not null)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                }
+
+                return null;
+            }
+
+            if (campaign.Status is NotificationCampaignStatus.Cancelled
+                or NotificationCampaignStatus.Expired)
+            {
+                if (transaction is not null)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                }
+
+                return ToSummary(campaign);
+            }
+
+            NotificationRecipient[] recipients;
+            if (dbContext.Database.IsSqlServer())
+            {
+                recipients = await dbContext.Recipients
+                    .FromSqlInterpolated($"""
+                        SELECT recipient.*
+                        FROM [notifications].[NotificationRecipients] AS recipient
+                            WITH (UPDLOCK, ROWLOCK)
+                        WHERE recipient.[CampaignId] = {campaign.Id}
+                        """)
+                    .ToArrayAsync(cancellationToken);
+            }
+            else
+            {
+                recipients = await dbContext.Recipients
+                    .Where(recipient => recipient.CampaignId == campaign.Id)
+                    .ToArrayAsync(cancellationToken);
+            }
+
+            var currentAttemptIds = recipients
+                .Where(recipient => recipient.CurrentAttemptId.HasValue)
+                .Select(recipient => recipient.CurrentAttemptId!.Value)
+                .Distinct()
+                .ToArray();
+            var attempts = currentAttemptIds.Length == 0
+                ? new Dictionary<Guid, NotificationDeliveryAttempt>()
+                : await dbContext.DeliveryAttempts
+                    .Where(attempt => currentAttemptIds.Contains(attempt.Id))
+                    .ToDictionaryAsync(attempt => attempt.Id, cancellationToken);
+
+            var now = timeProvider.GetUtcNow();
+            var audienceWasComplete = campaign.IsAudienceExpansionComplete;
+            campaign.Cancel(now);
+
+            foreach (var recipient in recipients)
+            {
+                if (recipient.Status is not NotificationRecipientStatus.Pending
+                    and not NotificationRecipientStatus.RetryScheduled)
+                {
+                    continue;
+                }
+
+                if (recipient.CurrentAttemptId is Guid attemptId
+                    && attempts.TryGetValue(attemptId, out var attempt)
+                    && attempt.Status
+                        == NotificationDeliveryAttemptStatus.Prepared)
+                {
+                    attempt.CancelPrepared(now);
+                }
+
+                recipient.Cancel();
+            }
+
+            campaign.ApplySummary(
+                Count(NotificationRecipientStatus.Pending)
+                    + Count(NotificationRecipientStatus.RetryScheduled)
+                    + Count(NotificationRecipientStatus.Sending),
+                Count(NotificationRecipientStatus.SignalRDispatched),
+                Count(NotificationRecipientStatus.FcmAccepted),
+                Count(NotificationRecipientStatus.FailedPermanent)
+                    + Count(NotificationRecipientStatus.Ambiguous),
+                audienceWasComplete
+                    ? Count(NotificationRecipientStatus.SkippedRevoked)
+                        + Count(NotificationRecipientStatus.Cancelled)
+                    : campaign.AudienceDeviceCount,
+                Count(NotificationRecipientStatus.Expired),
+                now);
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            return ToSummary(campaign);
+
+            int Count(NotificationRecipientStatus status) =>
+                recipients.Count(recipient => recipient.Status == status);
+        }
+        catch
+        {
+            if (transaction is not null)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+            }
+
+            throw;
+        }
+        finally
+        {
+            if (transaction is not null)
+            {
+                await transaction.DisposeAsync();
+            }
+        }
     }
 
     private async Task<PlatformClientDescriptor>

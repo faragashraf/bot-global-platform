@@ -101,7 +101,8 @@ export class NotificationCenterPageComponent {
     'Completed',
     'CompletedWithFailures',
     'Expired',
-    'Failed'
+    'Failed',
+    'Cancelled'
   ];
 
   readonly lifetimeOptions = [1, 7, 14, 28] as const;
@@ -319,6 +320,7 @@ export class NotificationCenterPageComponent {
     switch (status) {
       case 'Completed': return 'success';
       case 'CompletedWithFailures': return 'warning';
+      case 'Cancelled': return 'warning';
       case 'Expired':
       case 'Failed': return 'danger';
       case 'Dispatching': return 'active';

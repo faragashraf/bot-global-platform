@@ -63,6 +63,27 @@ internal sealed class NotificationDeliveryAttemptProcessor(
                 null);
         }
 
+        if (recipient.Campaign.Status
+            == NotificationCampaignStatus.Cancelled)
+        {
+            attempt.CancelPrepared(now);
+            recipient.Cancel();
+            await SaveLocalTransitionAsync(cancellationToken);
+
+            logger.LogInformation(
+                "Notification delivery cancelled before provider invocation. DeliveryId={DeliveryId} ApplicationId={ApplicationId} CampaignId={CampaignId} AttemptId={AttemptId} AttemptNumber={AttemptNumber}",
+                recipient.DeliveryKey,
+                recipient.Campaign.PlatformClientId,
+                recipient.CampaignId,
+                attempt.Id,
+                attempt.AttemptNumber);
+
+            return new NotificationAttemptResult(
+                recipient.CampaignId,
+                true,
+                null);
+        }
+
         if (recipient.ExpiresAtUtc <= now
             || recipient.Campaign.ExpiresAtUtc <= now)
         {

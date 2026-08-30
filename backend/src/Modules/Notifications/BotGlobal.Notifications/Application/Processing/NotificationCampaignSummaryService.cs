@@ -87,7 +87,8 @@ internal sealed class NotificationCampaignSummaryService(
             Get(NotificationRecipientStatus.FcmAccepted),
             Get(NotificationRecipientStatus.FailedPermanent)
                 + Get(NotificationRecipientStatus.Ambiguous),
-            Get(NotificationRecipientStatus.SkippedRevoked),
+            Get(NotificationRecipientStatus.SkippedRevoked)
+                + Get(NotificationRecipientStatus.Cancelled),
             Get(NotificationRecipientStatus.Expired),
             now);
 
@@ -101,7 +102,8 @@ internal sealed class NotificationCampaignSummaryService(
             Get(NotificationRecipientStatus.FcmAccepted),
             Get(NotificationRecipientStatus.FailedPermanent)
                 + Get(NotificationRecipientStatus.Ambiguous),
-            Get(NotificationRecipientStatus.SkippedRevoked),
+            Get(NotificationRecipientStatus.SkippedRevoked)
+                + Get(NotificationRecipientStatus.Cancelled),
             Get(NotificationRecipientStatus.Expired),
             campaign.Status);
 

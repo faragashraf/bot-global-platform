@@ -44,6 +44,9 @@ public static class NotificationCampaignAdminEndpoints
         group.MapGet("/{campaignId:guid}", FindAsync)
             .WithName("AdminGetNotificationCampaign");
 
+        group.MapPost("/{campaignId:guid}/cancel", CancelAsync)
+            .WithName("AdminCancelNotificationCampaign");
+
         return endpoints;
     }
 
@@ -186,6 +189,35 @@ public static class NotificationCampaignAdminEndpoints
         {
             campaign = await service.FindAsync(
                 Scope(platformClientId),
+                campaignId,
+                cancellationToken);
+        }
+        catch (NotificationCampaignValidationException exception)
+        {
+            return Results.ValidationProblem(exception.Errors);
+        }
+        catch (ArgumentException exception)
+        {
+            return InvalidApplication(exception.Message);
+        }
+
+        return campaign is null
+            ? Results.NotFound()
+            : Results.Ok(campaign);
+    }
+
+    private static async Task<IResult> CancelAsync(
+        Guid campaignId,
+        Guid platformClientId,
+        INotificationCampaignService service,
+        CancellationToken cancellationToken)
+    {
+        NotificationCampaignSummaryResponse? campaign;
+        try
+        {
+            campaign = await service.CancelAsync(
+                ApplicationAdministrationScope.ForApplication(
+                    platformClientId),
                 campaignId,
                 cancellationToken);
         }

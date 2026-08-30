@@ -517,7 +517,8 @@
           "Completed": "مكتملة",
           "CompletedWithFailures": "مكتملة مع إخفاقات",
           "Expired": "منتهية",
-          "Failed": "فشلت"
+          "Failed": "فشلت",
+          "Cancelled": "ملغاة"
         },
         "history": {
           "eyebrow": "العمليات",

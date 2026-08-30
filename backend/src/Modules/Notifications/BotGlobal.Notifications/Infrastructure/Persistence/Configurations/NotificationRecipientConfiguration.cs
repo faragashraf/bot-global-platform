@@ -16,7 +16,7 @@ internal sealed class NotificationRecipientConfiguration
             {
                 table.HasCheckConstraint(
                     "CK_NotificationRecipients_Status",
-                    "[Status] BETWEEN 1 AND 9");
+                    "[Status] BETWEEN 1 AND 10");
                 table.HasCheckConstraint(
                     "CK_NotificationRecipients_AttemptCount",
                     "[AttemptCount] >= 0");
@@ -25,10 +25,10 @@ internal sealed class NotificationRecipientConfiguration
                     "([LeaseId] IS NULL AND [LeaseExpiresAtUtc] IS NULL) OR ([LeaseId] IS NOT NULL AND [LeaseExpiresAtUtc] IS NOT NULL)");
                 table.HasCheckConstraint(
                     "CK_NotificationRecipients_NextAttempt",
-                    "([Status] IN (1, 2) AND [NextAttemptAtUtc] IS NOT NULL) OR ([Status] BETWEEN 3 AND 9 AND [NextAttemptAtUtc] IS NULL)");
+                    "([Status] IN (1, 2) AND [NextAttemptAtUtc] IS NOT NULL) OR ([Status] BETWEEN 3 AND 10 AND [NextAttemptAtUtc] IS NULL)");
                 table.HasCheckConstraint(
                     "CK_NotificationRecipients_CurrentAttempt",
-                    "[Status] IN (1, 2, 7) OR [CurrentAttemptId] IS NOT NULL");
+                    "[Status] IN (1, 2, 7, 10) OR [CurrentAttemptId] IS NOT NULL");
             });
 
         builder.HasKey(recipient => recipient.Id);

@@ -12,6 +12,11 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropCheckConstraint(
+                name: "CK_NotificationCampaigns_Status",
+                schema: "notifications",
+                table: "NotificationCampaigns");
+
+            migrationBuilder.DropCheckConstraint(
                 name: "CK_NotificationRecipients_NextAttempt",
                 schema: "notifications",
                 table: "NotificationRecipients");
@@ -89,9 +94,9 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                 {
                     table.PrimaryKey("PK_NotificationDeliveryAttempts", x => x.Id);
                     table.CheckConstraint("CK_NotificationDeliveryAttempts_AttemptNumber", "[AttemptNumber] >= 1");
-                    table.CheckConstraint("CK_NotificationDeliveryAttempts_Completion", "([Status] IN (1, 2) AND [CompletedAtUtc] IS NULL) OR ([Status] BETWEEN 3 AND 9 AND [CompletedAtUtc] IS NOT NULL)");
-                    table.CheckConstraint("CK_NotificationDeliveryAttempts_Invocation", "([Status] = 1 AND [ProviderInvocationStartedAtUtc] IS NULL) OR ([Status] BETWEEN 2 AND 8 AND [ProviderInvocationStartedAtUtc] IS NOT NULL) OR ([Status] = 9)");
-                    table.CheckConstraint("CK_NotificationDeliveryAttempts_Status", "[Status] BETWEEN 1 AND 9");
+                    table.CheckConstraint("CK_NotificationDeliveryAttempts_Completion", "([Status] IN (1, 2) AND [CompletedAtUtc] IS NULL) OR ([Status] BETWEEN 3 AND 10 AND [CompletedAtUtc] IS NOT NULL)");
+                    table.CheckConstraint("CK_NotificationDeliveryAttempts_Invocation", "([Status] IN (1, 9, 10) AND [ProviderInvocationStartedAtUtc] IS NULL) OR ([Status] BETWEEN 2 AND 8 AND [ProviderInvocationStartedAtUtc] IS NOT NULL)");
+                    table.CheckConstraint("CK_NotificationDeliveryAttempts_Status", "[Status] BETWEEN 1 AND 10");
                     table.ForeignKey(
                         name: "FK_NotificationDeliveryAttempts_NotificationRecipients_NotificationRecipientId",
                         column: x => x.NotificationRecipientId,
@@ -104,9 +109,12 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
             migrationBuilder.Sql(
                 """
                 UPDATE [notifications].[NotificationRecipients]
-                SET [CurrentAttemptId] = NEWID()
-                WHERE [AttemptCount] > 0
-                    AND [Status] IN (2, 3, 4, 5, 6)
+                SET [AttemptCount] = CASE
+                        WHEN [AttemptCount] < 1 THEN 1
+                        ELSE [AttemptCount]
+                    END,
+                    [CurrentAttemptId] = NEWID()
+                WHERE [Status] IN (2, 3, 4, 5, 6)
                     AND [CurrentAttemptId] IS NULL;
 
                 INSERT INTO [notifications].[NotificationDeliveryAttempts]
@@ -143,9 +151,14 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                 INNER JOIN [notifications].[NotificationCampaigns] AS campaign
                     ON campaign.[Id] = recipient.[CampaignId]
                 WHERE recipient.[CurrentAttemptId] IS NOT NULL
-                    AND recipient.[AttemptCount] > 0
                     AND recipient.[Status] IN (2, 3, 4, 5, 6);
                 """);
+
+            migrationBuilder.AddCheckConstraint(
+                name: "CK_NotificationCampaigns_Status",
+                schema: "notifications",
+                table: "NotificationCampaigns",
+                sql: "[Status] BETWEEN 1 AND 8");
 
             migrationBuilder.CreateIndex(
                 name: "UX_NotificationRecipients_CurrentAttempt",
@@ -166,19 +179,19 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                 name: "CK_NotificationRecipients_CurrentAttempt",
                 schema: "notifications",
                 table: "NotificationRecipients",
-                sql: "[Status] IN (1, 2, 7) OR [CurrentAttemptId] IS NOT NULL");
+                sql: "[Status] IN (1, 2, 7, 10) OR [CurrentAttemptId] IS NOT NULL");
 
             migrationBuilder.AddCheckConstraint(
                 name: "CK_NotificationRecipients_NextAttempt",
                 schema: "notifications",
                 table: "NotificationRecipients",
-                sql: "([Status] IN (1, 2) AND [NextAttemptAtUtc] IS NOT NULL) OR ([Status] BETWEEN 3 AND 9 AND [NextAttemptAtUtc] IS NULL)");
+                sql: "([Status] IN (1, 2) AND [NextAttemptAtUtc] IS NOT NULL) OR ([Status] BETWEEN 3 AND 10 AND [NextAttemptAtUtc] IS NULL)");
 
             migrationBuilder.AddCheckConstraint(
                 name: "CK_NotificationRecipients_Status",
                 schema: "notifications",
                 table: "NotificationRecipients",
-                sql: "[Status] BETWEEN 1 AND 9");
+                sql: "[Status] BETWEEN 1 AND 10");
 
             migrationBuilder.CreateIndex(
                 name: "IX_NotificationDeliveryAttempts_Application_Campaign_Delivery",
@@ -203,19 +216,10 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "NotificationDeliveryAttempts",
-                schema: "notifications");
-
-            migrationBuilder.DropIndex(
-                name: "UX_NotificationRecipients_CurrentAttempt",
+            migrationBuilder.DropCheckConstraint(
+                name: "CK_NotificationCampaigns_Status",
                 schema: "notifications",
-                table: "NotificationRecipients");
-
-            migrationBuilder.DropIndex(
-                name: "UX_NotificationRecipients_DeliveryKey",
-                schema: "notifications",
-                table: "NotificationRecipients");
+                table: "NotificationCampaigns");
 
             migrationBuilder.DropCheckConstraint(
                 name: "CK_NotificationRecipients_CurrentAttempt",
@@ -229,6 +233,94 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropCheckConstraint(
                 name: "CK_NotificationRecipients_Status",
+                schema: "notifications",
+                table: "NotificationRecipients");
+
+            // The old schema cannot represent Sending, Ambiguous, or Cancelled.
+            // Reconcile Sending from its durable attempt where possible. An
+            // unresolved invocation and an explicitly Ambiguous outcome map to
+            // FailedPermanent, the safest old terminal state: rollback must not
+            // turn an uncertain provider acceptance into an automatic resend.
+            // Cancelled maps to the old non-delivery terminal SkippedRevoked.
+            // A cancelled campaign maps to CompletedWithFailures, the closest
+            // old terminal campaign state, so rollback cannot requeue it.
+            migrationBuilder.Sql(
+                """
+                UPDATE recipient
+                SET [Status] = CASE
+                        WHEN recipient.[Status] = 10 THEN 6
+                        WHEN attempt.[Status] = 3 THEN 3
+                        WHEN attempt.[Status] = 4 THEN 4
+                        WHEN attempt.[Status] = 5 THEN 2
+                        WHEN attempt.[Status] = 6 THEN 5
+                        WHEN attempt.[Status] = 7 THEN 6
+                        WHEN attempt.[Status] = 9 THEN 7
+                        WHEN attempt.[Status] = 10 THEN 6
+                        WHEN recipient.[Status] IN (8, 9)
+                            OR attempt.[Status] IN (2, 8) THEN 5
+                        WHEN attempt.[Status] = 1 THEN 1
+                        ELSE recipient.[Status]
+                    END,
+                    [NextAttemptAtUtc] = CASE
+                        WHEN attempt.[Status] IN (1, 5)
+                            THEN COALESCE(recipient.[NextAttemptAtUtc], SYSDATETIMEOFFSET())
+                        ELSE NULL
+                    END,
+                    [LeaseId] = NULL,
+                    [LeaseExpiresAtUtc] = NULL,
+                    [LastSafeErrorCode] = CASE
+                        WHEN recipient.[Status] = 10
+                            THEN COALESCE(recipient.[LastSafeErrorCode], 'campaign-cancelled')
+                        WHEN recipient.[Status] IN (8, 9)
+                            OR attempt.[Status] IN (2, 8)
+                            THEN COALESCE(recipient.[LastSafeErrorCode], 'provider-outcome-unknown')
+                        ELSE recipient.[LastSafeErrorCode]
+                    END
+                FROM [notifications].[NotificationRecipients] AS recipient
+                LEFT JOIN [notifications].[NotificationDeliveryAttempts] AS attempt
+                    ON attempt.[Id] = recipient.[CurrentAttemptId]
+                WHERE recipient.[Status] IN (8, 9, 10);
+
+                UPDATE [notifications].[NotificationCampaigns]
+                SET [Status] = 5,
+                    [CompletedAtUtc] = COALESCE([CompletedAtUtc], SYSDATETIMEOFFSET()),
+                    [AudienceLeaseId] = NULL,
+                    [AudienceLeaseExpiresAtUtc] = NULL
+                WHERE [Status] = 8;
+
+                UPDATE campaign
+                SET [PendingCount] = aggregate.[PendingCount],
+                    [SignalRDispatchedCount] = aggregate.[SignalRDispatchedCount],
+                    [FcmAcceptedCount] = aggregate.[FcmAcceptedCount],
+                    [FailedCount] = aggregate.[FailedCount],
+                    [SkippedCount] = aggregate.[SkippedCount],
+                    [ExpiredCount] = aggregate.[ExpiredCount]
+                FROM [notifications].[NotificationCampaigns] AS campaign
+                CROSS APPLY
+                (
+                    SELECT
+                        COALESCE(SUM(CASE WHEN recipient.[Status] IN (1, 2) THEN 1 ELSE 0 END), 0) AS [PendingCount],
+                        COALESCE(SUM(CASE WHEN recipient.[Status] = 3 THEN 1 ELSE 0 END), 0) AS [SignalRDispatchedCount],
+                        COALESCE(SUM(CASE WHEN recipient.[Status] = 4 THEN 1 ELSE 0 END), 0) AS [FcmAcceptedCount],
+                        COALESCE(SUM(CASE WHEN recipient.[Status] = 5 THEN 1 ELSE 0 END), 0) AS [FailedCount],
+                        COALESCE(SUM(CASE WHEN recipient.[Status] = 6 THEN 1 ELSE 0 END), 0) AS [SkippedCount],
+                        COALESCE(SUM(CASE WHEN recipient.[Status] = 7 THEN 1 ELSE 0 END), 0) AS [ExpiredCount]
+                    FROM [notifications].[NotificationRecipients] AS recipient
+                    WHERE recipient.[CampaignId] = campaign.[Id]
+                ) AS aggregate;
+                """);
+
+            migrationBuilder.DropTable(
+                name: "NotificationDeliveryAttempts",
+                schema: "notifications");
+
+            migrationBuilder.DropIndex(
+                name: "UX_NotificationRecipients_CurrentAttempt",
+                schema: "notifications",
+                table: "NotificationRecipients");
+
+            migrationBuilder.DropIndex(
+                name: "UX_NotificationRecipients_DeliveryKey",
                 schema: "notifications",
                 table: "NotificationRecipients");
 
@@ -252,6 +344,12 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                 name: "CK_NotificationRecipients_Status",
                 schema: "notifications",
                 table: "NotificationRecipients",
+                sql: "[Status] BETWEEN 1 AND 7");
+
+            migrationBuilder.AddCheckConstraint(
+                name: "CK_NotificationCampaigns_Status",
+                schema: "notifications",
+                table: "NotificationCampaigns",
                 sql: "[Status] BETWEEN 1 AND 7");
         }
     }

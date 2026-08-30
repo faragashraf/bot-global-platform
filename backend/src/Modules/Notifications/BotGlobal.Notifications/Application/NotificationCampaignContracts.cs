@@ -95,6 +95,11 @@ public interface INotificationCampaignService
         ApplicationAdministrationScope applicationScope,
         Guid campaignId,
         CancellationToken cancellationToken);
+
+    Task<NotificationCampaignSummaryResponse?> CancelAsync(
+        ApplicationAdministrationScope applicationScope,
+        Guid campaignId,
+        CancellationToken cancellationToken);
 }
 
 public sealed class NotificationCampaignValidationException(

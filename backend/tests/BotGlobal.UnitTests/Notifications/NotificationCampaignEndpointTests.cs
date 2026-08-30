@@ -32,7 +32,7 @@ public sealed class NotificationCampaignEndpointTests
                 StringComparison.Ordinal) == true)
             .ToArray();
 
-        Assert.Equal(4, routes.Length);
+        Assert.Equal(5, routes.Length);
         Assert.All(routes, route =>
         {
             var authorization = route.Metadata.GetOrderedMetadata<IAuthorizeData>();
@@ -156,6 +156,7 @@ public sealed class NotificationCampaignEndpointTests
         public Task<NotificationCampaignAcceptedResponse> CreateAsync(CreateNotificationCampaignCommand command, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<NotificationCampaignPageResponse> ListAsync(NotificationCampaignListQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<NotificationCampaignSummaryResponse?> FindAsync(ApplicationAdministrationScope applicationScope, Guid campaignId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<NotificationCampaignSummaryResponse?> CancelAsync(ApplicationAdministrationScope applicationScope, Guid campaignId, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class StubAdministratorReader

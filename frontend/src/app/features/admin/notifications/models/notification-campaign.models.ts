@@ -14,7 +14,8 @@ export type NotificationCampaignStatus =
   | 'Completed'
   | 'CompletedWithFailures'
   | 'Expired'
-  | 'Failed';
+  | 'Failed'
+  | 'Cancelled';
 
 export interface NotificationCampaignDraft {
   platformClientId: string;

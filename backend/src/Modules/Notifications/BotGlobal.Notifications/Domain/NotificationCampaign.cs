@@ -180,6 +180,22 @@ public sealed class NotificationCampaign
         AudienceLeaseExpiresAtUtc = null;
     }
 
+    public bool Cancel(DateTimeOffset now)
+    {
+        if (Status is NotificationCampaignStatus.Cancelled
+            or NotificationCampaignStatus.Expired)
+        {
+            return false;
+        }
+
+        Status = NotificationCampaignStatus.Cancelled;
+        IsAudienceExpansionComplete = true;
+        CompletedAtUtc ??= now;
+        AudienceLeaseId = null;
+        AudienceLeaseExpiresAtUtc = null;
+        return true;
+    }
+
     public void ApplySummary(
         int pending,
         int signalRDispatched,
@@ -195,6 +211,11 @@ public sealed class NotificationCampaign
         FailedCount = failed;
         SkippedCount = skipped;
         ExpiredCount = expired;
+
+        if (Status == NotificationCampaignStatus.Cancelled)
+        {
+            return;
+        }
 
         if (!IsAudienceExpansionComplete)
         {

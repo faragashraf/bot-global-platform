@@ -13,7 +13,8 @@ public enum NotificationCampaignStatus
     Completed = 4,
     CompletedWithFailures = 5,
     Expired = 6,
-    Failed = 7
+    Failed = 7,
+    Cancelled = 8
 }
 
 public enum NotificationRecipientStatus
@@ -26,7 +27,8 @@ public enum NotificationRecipientStatus
     SkippedRevoked = 6,
     Expired = 7,
     Sending = 8,
-    Ambiguous = 9
+    Ambiguous = 9,
+    Cancelled = 10
 }
 
 public enum NotificationDeliveryAttemptStatus
@@ -39,7 +41,8 @@ public enum NotificationDeliveryAttemptStatus
     PermanentFailure = 6,
     DeviceRevoked = 7,
     Ambiguous = 8,
-    Expired = 9
+    Expired = 9,
+    Cancelled = 10
 }
 
 public enum NotificationPriority

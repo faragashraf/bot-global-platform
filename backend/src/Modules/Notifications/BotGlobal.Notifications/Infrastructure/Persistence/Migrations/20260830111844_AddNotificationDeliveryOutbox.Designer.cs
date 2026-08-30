@@ -183,7 +183,7 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_NotificationCampaigns_Priority", "[Priority] IN (1, 2)");
 
-                            t.HasCheckConstraint("CK_NotificationCampaigns_Status", "[Status] BETWEEN 1 AND 7");
+                            t.HasCheckConstraint("CK_NotificationCampaigns_Status", "[Status] BETWEEN 1 AND 8");
                         });
                 });
 
@@ -266,11 +266,11 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_NotificationDeliveryAttempts_AttemptNumber", "[AttemptNumber] >= 1");
 
-                            t.HasCheckConstraint("CK_NotificationDeliveryAttempts_Completion", "([Status] IN (1, 2) AND [CompletedAtUtc] IS NULL) OR ([Status] BETWEEN 3 AND 9 AND [CompletedAtUtc] IS NOT NULL)");
+                            t.HasCheckConstraint("CK_NotificationDeliveryAttempts_Completion", "([Status] IN (1, 2) AND [CompletedAtUtc] IS NULL) OR ([Status] BETWEEN 3 AND 10 AND [CompletedAtUtc] IS NOT NULL)");
 
-                            t.HasCheckConstraint("CK_NotificationDeliveryAttempts_Invocation", "([Status] = 1 AND [ProviderInvocationStartedAtUtc] IS NULL) OR ([Status] BETWEEN 2 AND 8 AND [ProviderInvocationStartedAtUtc] IS NOT NULL) OR ([Status] = 9)");
+                            t.HasCheckConstraint("CK_NotificationDeliveryAttempts_Invocation", "([Status] IN (1, 9, 10) AND [ProviderInvocationStartedAtUtc] IS NULL) OR ([Status] BETWEEN 2 AND 8 AND [ProviderInvocationStartedAtUtc] IS NOT NULL)");
 
-                            t.HasCheckConstraint("CK_NotificationDeliveryAttempts_Status", "[Status] BETWEEN 1 AND 9");
+                            t.HasCheckConstraint("CK_NotificationDeliveryAttempts_Status", "[Status] BETWEEN 1 AND 10");
                         });
                 });
 
@@ -371,13 +371,13 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_NotificationRecipients_AttemptCount", "[AttemptCount] >= 0");
 
-                            t.HasCheckConstraint("CK_NotificationRecipients_CurrentAttempt", "[Status] IN (1, 2, 7) OR [CurrentAttemptId] IS NOT NULL");
+                            t.HasCheckConstraint("CK_NotificationRecipients_CurrentAttempt", "[Status] IN (1, 2, 7, 10) OR [CurrentAttemptId] IS NOT NULL");
 
                             t.HasCheckConstraint("CK_NotificationRecipients_Lease", "([LeaseId] IS NULL AND [LeaseExpiresAtUtc] IS NULL) OR ([LeaseId] IS NOT NULL AND [LeaseExpiresAtUtc] IS NOT NULL)");
 
-                            t.HasCheckConstraint("CK_NotificationRecipients_NextAttempt", "([Status] IN (1, 2) AND [NextAttemptAtUtc] IS NOT NULL) OR ([Status] BETWEEN 3 AND 9 AND [NextAttemptAtUtc] IS NULL)");
+                            t.HasCheckConstraint("CK_NotificationRecipients_NextAttempt", "([Status] IN (1, 2) AND [NextAttemptAtUtc] IS NOT NULL) OR ([Status] BETWEEN 3 AND 10 AND [NextAttemptAtUtc] IS NULL)");
 
-                            t.HasCheckConstraint("CK_NotificationRecipients_Status", "[Status] BETWEEN 1 AND 9");
+                            t.HasCheckConstraint("CK_NotificationRecipients_Status", "[Status] BETWEEN 1 AND 10");
                         });
                 });
 

@@ -17,16 +17,16 @@ internal sealed class NotificationDeliveryAttemptConfiguration
             {
                 table.HasCheckConstraint(
                     "CK_NotificationDeliveryAttempts_Status",
-                    "[Status] BETWEEN 1 AND 9");
+                    "[Status] BETWEEN 1 AND 10");
                 table.HasCheckConstraint(
                     "CK_NotificationDeliveryAttempts_AttemptNumber",
                     "[AttemptNumber] >= 1");
                 table.HasCheckConstraint(
                     "CK_NotificationDeliveryAttempts_Completion",
-                    "([Status] IN (1, 2) AND [CompletedAtUtc] IS NULL) OR ([Status] BETWEEN 3 AND 9 AND [CompletedAtUtc] IS NOT NULL)");
+                    "([Status] IN (1, 2) AND [CompletedAtUtc] IS NULL) OR ([Status] BETWEEN 3 AND 10 AND [CompletedAtUtc] IS NOT NULL)");
                 table.HasCheckConstraint(
                     "CK_NotificationDeliveryAttempts_Invocation",
-                    "([Status] = 1 AND [ProviderInvocationStartedAtUtc] IS NULL) OR ([Status] BETWEEN 2 AND 8 AND [ProviderInvocationStartedAtUtc] IS NOT NULL) OR ([Status] = 9)");
+                    "([Status] IN (1, 9, 10) AND [ProviderInvocationStartedAtUtc] IS NULL) OR ([Status] BETWEEN 2 AND 8 AND [ProviderInvocationStartedAtUtc] IS NOT NULL)");
             });
 
         builder.HasKey(attempt => attempt.Id);

@@ -517,7 +517,8 @@
           "Completed": "Completed",
           "CompletedWithFailures": "Completed with failures",
           "Expired": "Expired",
-          "Failed": "Failed"
+          "Failed": "Failed",
+          "Cancelled": "Cancelled"
         },
         "history": {
           "eyebrow": "Operations",
