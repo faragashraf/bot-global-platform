@@ -13,6 +13,7 @@ public sealed class NotificationCampaignOptions
 
 public sealed class NotificationWorkerOptions
 {
+    public bool Enabled { get; init; } = true;
     public int BatchSize { get; init; } = 100;
     public int PollIntervalSeconds { get; init; } = 10;
     public int LeaseSeconds { get; init; } = 120;

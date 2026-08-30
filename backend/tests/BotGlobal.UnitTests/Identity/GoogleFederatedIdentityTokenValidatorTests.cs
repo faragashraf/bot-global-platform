@@ -7,6 +7,20 @@ namespace BotGlobal.UnitTests.Identity;
 public sealed class GoogleFederatedIdentityTokenValidatorTests
 {
     [Fact]
+    public async Task RuntimeVerifier_RejectsMalformedToken()
+    {
+        var verifier = new GoogleIdTokenVerifier();
+
+        var result = await verifier.VerifyAsync(
+            "malformed-token",
+            "server-client.apps.googleusercontent.com",
+            CancellationToken.None);
+
+        Assert.Null(result.Claims);
+        Assert.Equal("invalid_google_token", result.Error);
+    }
+
+    [Fact]
     public async Task MissingServerAudience_IsRejectedBeforeTokenVerification()
     {
         var verifier = new FakeVerifier(SuccessfulClaims());

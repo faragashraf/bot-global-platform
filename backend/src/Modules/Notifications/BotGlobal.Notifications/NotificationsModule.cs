@@ -45,8 +45,13 @@ public static class NotificationsModule
                     MigrationsHistoryTableName,
                     DatabaseSchema)));
 
+        var notificationsSection = configuration.GetSection(
+            NotificationCampaignOptions.SectionName);
+        var campaignOptions = notificationsSection.Get<NotificationCampaignOptions>()
+            ?? new NotificationCampaignOptions();
+
         services.AddOptions<NotificationCampaignOptions>()
-            .Bind(configuration.GetSection(NotificationCampaignOptions.SectionName))
+            .Bind(notificationsSection)
             .Validate(ValidateOptions, "Notifications options are invalid.")
             .ValidateOnStart();
 
@@ -61,7 +66,10 @@ public static class NotificationsModule
         services.AddScoped<NotificationDeliveryRecoveryProcessor>();
         services.AddScoped<NotificationCampaignSummaryService>();
         services.AddScoped<NotificationExpiryProcessor>();
-        services.AddHostedService<NotificationCampaignBackgroundService>();
+        if (campaignOptions.Worker.Enabled)
+        {
+            services.AddHostedService<NotificationCampaignBackgroundService>();
+        }
 
         services.AddRateLimiter(rateLimiter =>
         {
