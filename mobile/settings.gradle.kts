@@ -35,3 +35,5 @@ plugins {
 include(":shared")
 include(":FamilyGamesMobile:composeApp")
 include(":FamilyGamesMobile:androidApp")
+include(":NqrbMobile:composeApp")
+include(":NqrbMobile:androidApp")
