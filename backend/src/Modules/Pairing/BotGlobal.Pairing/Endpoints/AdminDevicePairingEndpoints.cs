@@ -33,21 +33,49 @@ public static class AdminDevicePairingEndpoints
     }
 
     private static async Task<IResult> ListAsync(
+        Guid? platformClientId,
         IAdminDevicePairingService service,
         CancellationToken cancellationToken)
     {
-        return Results.Ok(
-            await service.ListAsync(cancellationToken));
+        try
+        {
+            return Results.Ok(
+                await service.ListAsync(
+                    Scope(platformClientId),
+                    cancellationToken));
+        }
+        catch (AdminDeviceApplicationScopeException exception)
+        {
+            return InvalidApplication(exception);
+        }
+        catch (ArgumentException exception)
+        {
+            return InvalidApplication(exception.Message);
+        }
     }
 
     private static async Task<IResult> FindAsync(
         Guid deviceId,
+        Guid? platformClientId,
         IAdminDevicePairingService service,
         CancellationToken cancellationToken)
     {
-        var detail = await service.FindAsync(
-            deviceId,
-            cancellationToken);
+        AdminDevicePairingDetail? detail;
+        try
+        {
+            detail = await service.FindAsync(
+                Scope(platformClientId),
+                deviceId,
+                cancellationToken);
+        }
+        catch (AdminDeviceApplicationScopeException exception)
+        {
+            return InvalidApplication(exception);
+        }
+        catch (ArgumentException exception)
+        {
+            return InvalidApplication(exception.Message);
+        }
 
         return detail is null
             ? Results.NotFound()
@@ -56,6 +84,7 @@ public static class AdminDevicePairingEndpoints
 
     private static async Task<IResult> RevokeAsync(
         Guid deviceId,
+        Guid? platformClientId,
         AdminRevokeDeviceRequest request,
         ClaimsPrincipal principal,
         IAdminDevicePairingService service,
@@ -84,6 +113,7 @@ public static class AdminDevicePairingEndpoints
             var result = await service.RevokeAsync(
                 new AdminRevokeDeviceCommand(
                     deviceId,
+                    Scope(platformClientId),
                     request?.PurgeHistory ?? false,
                     userId,
                     administrator.DisplayName),
@@ -98,5 +128,32 @@ public static class AdminDevicePairingEndpoints
                 title: "Device not found",
                 detail: exception.Message);
         }
+        catch (AdminDeviceApplicationScopeException exception)
+        {
+            return InvalidApplication(exception);
+        }
+        catch (ArgumentException exception)
+        {
+            return InvalidApplication(exception.Message);
+        }
     }
+
+    private static ApplicationAdministrationScope Scope(
+        Guid? platformClientId) =>
+        platformClientId.HasValue
+            ? ApplicationAdministrationScope.ForApplication(
+                platformClientId.Value)
+            : ApplicationAdministrationScope.PlatformGlobal;
+
+    private static IResult InvalidApplication(
+        AdminDeviceApplicationScopeException exception) =>
+        InvalidApplication(exception.Message);
+
+    private static IResult InvalidApplication(
+        string message) =>
+        Results.ValidationProblem(
+            new Dictionary<string, string[]>
+            {
+                ["platformClientId"] = [message]
+            });
 }

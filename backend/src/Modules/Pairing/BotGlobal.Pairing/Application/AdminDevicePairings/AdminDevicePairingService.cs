@@ -43,6 +43,7 @@ public sealed record AdminDevicePushRegistrationItem(
 
 public sealed record AdminRevokeDeviceCommand(
     Guid DeviceId,
+    ApplicationAdministrationScope ApplicationScope,
     bool PurgeHistory,
     Guid AdministratorUserId,
     string AdministratorDisplayName);
@@ -54,12 +55,17 @@ public sealed record AdminRevokeDeviceResult(
     int PurgedAuditEntries,
     int PurgedDeliveryEntries);
 
+public sealed class AdminDeviceApplicationScopeException(string message)
+    : Exception(message);
+
 public interface IAdminDevicePairingService
 {
     Task<IReadOnlyList<AdminDevicePairingListItem>> ListAsync(
+        ApplicationAdministrationScope applicationScope,
         CancellationToken cancellationToken);
 
     Task<AdminDevicePairingDetail?> FindAsync(
+        ApplicationAdministrationScope applicationScope,
         Guid deviceId,
         CancellationToken cancellationToken);
 
@@ -77,19 +83,38 @@ internal sealed class AdminDevicePairingService(
     : IAdminDevicePairingService
 {
     public async Task<IReadOnlyList<AdminDevicePairingListItem>>
-        ListAsync(CancellationToken cancellationToken)
+        ListAsync(
+            ApplicationAdministrationScope applicationScope,
+            CancellationToken cancellationToken)
     {
-        var devices = await dbContext.Devices
-            .AsNoTracking()
+        ArgumentNullException.ThrowIfNull(applicationScope);
+        await ValidateScopeAsync(applicationScope, cancellationToken);
+
+        var deviceQuery = dbContext.Devices.AsNoTracking();
+
+        if (applicationScope.ApplicationId is Guid applicationId)
+        {
+            deviceQuery = deviceQuery.Where(
+                device => device.PlatformClientId == applicationId);
+        }
+
+        var devices = await deviceQuery
             .OrderByDescending(device => device.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
-        var activeRegistrations = await dbContext.PushRegistrations
-            .AsNoTracking()
-            .Where(registration => registration.InvalidatedAtUtc == null)
-            .Select(registration => registration.MobileDeviceId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
+        var scopedDeviceIds = devices
+            .Select(device => device.Id)
+            .ToArray();
+        var activeRegistrations = scopedDeviceIds.Length == 0
+            ? []
+            : await dbContext.PushRegistrations
+                .AsNoTracking()
+                .Where(registration =>
+                    scopedDeviceIds.Contains(registration.MobileDeviceId)
+                    && registration.InvalidatedAtUtc == null)
+                .Select(registration => registration.MobileDeviceId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
 
         var activeRegistrationSet =
             activeRegistrations.ToHashSet();
@@ -130,13 +155,21 @@ internal sealed class AdminDevicePairingService(
     }
 
     public async Task<AdminDevicePairingDetail?> FindAsync(
+        ApplicationAdministrationScope applicationScope,
         Guid deviceId,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(applicationScope);
+        await ValidateScopeAsync(applicationScope, cancellationToken);
+
         var device = await dbContext.Devices
             .AsNoTracking()
             .SingleOrDefaultAsync(
-                candidate => candidate.Id == deviceId,
+                candidate =>
+                    candidate.Id == deviceId
+                    && (applicationScope.ApplicationId == null
+                        || candidate.PlatformClientId
+                            == applicationScope.ApplicationId),
                 cancellationToken);
 
         if (device is null)
@@ -162,6 +195,8 @@ internal sealed class AdminDevicePairingService(
             .ToListAsync(cancellationToken);
 
         var deliveryLogs = await notificationLogs.ReadForDeviceAsync(
+            new NotificationApplicationContext(
+                device.PlatformClientId),
             deviceId,
             cancellationToken);
 
@@ -202,9 +237,19 @@ internal sealed class AdminDevicePairingService(
         AdminRevokeDeviceCommand command,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(command.ApplicationScope);
+        await ValidateScopeAsync(
+            command.ApplicationScope,
+            cancellationToken);
+
         var device = await dbContext.Devices
             .SingleOrDefaultAsync(
-                candidate => candidate.Id == command.DeviceId,
+                candidate =>
+                    candidate.Id == command.DeviceId
+                    && (command.ApplicationScope.ApplicationId == null
+                        || candidate.PlatformClientId
+                            == command.ApplicationScope.ApplicationId),
                 cancellationToken);
 
         if (device is null)
@@ -263,6 +308,8 @@ internal sealed class AdminDevicePairingService(
 
             purgedDeliveryEntries =
                 await notificationLogs.PurgeForDeviceAsync(
+                    new NotificationApplicationContext(
+                        device.PlatformClientId),
                     device.Id,
                     cancellationToken);
 
@@ -284,6 +331,28 @@ internal sealed class AdminDevicePairingService(
             command.PurgeHistory && !alreadyRevoked,
             purgedAuditEntries,
             purgedDeliveryEntries);
+    }
+
+    private async Task ValidateScopeAsync(
+        ApplicationAdministrationScope applicationScope,
+        CancellationToken cancellationToken)
+    {
+        if (applicationScope.IsPlatformGlobal)
+        {
+            return;
+        }
+
+        var descriptor = await platformClients.FindAsync(
+            applicationScope.ApplicationId!.Value,
+            cancellationToken);
+
+        if (descriptor is null
+            || descriptor.PlatformClientId
+                != applicationScope.ApplicationId.Value)
+        {
+            throw new AdminDeviceApplicationScopeException(
+                "The selected application is not recognized.");
+        }
     }
 
     private static List<AdminDevicePairingTimelineEntry> BuildTimeline(

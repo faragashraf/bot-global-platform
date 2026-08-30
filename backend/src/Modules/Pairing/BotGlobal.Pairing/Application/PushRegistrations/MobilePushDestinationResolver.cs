@@ -1,4 +1,5 @@
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Notifications;
 using BotGlobal.Pairing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,10 +10,13 @@ internal sealed class MobilePushDestinationResolver(
     : IMobilePushDestinationResolver
 {
     public async Task<MobilePushDestination?> ResolveActiveAsync(
+        NotificationApplicationContext application,
         Guid deviceId,
         string provider,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(application);
+
         if (deviceId == Guid.Empty ||
             string.IsNullOrWhiteSpace(provider))
         {
@@ -30,6 +34,7 @@ internal sealed class MobilePushDestinationResolver(
                 registration.MobileDeviceId == deviceId
                 && registration.Provider == normalizedProvider
                 && registration.InvalidatedAtUtc == null
+                && device.PlatformClientId == application.ApplicationId
                 && device.RevokedAtUtc == null
             select new MobilePushDestination(
                 registration.MobileDeviceId,

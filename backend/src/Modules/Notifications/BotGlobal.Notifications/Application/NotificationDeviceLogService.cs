@@ -11,13 +11,19 @@ internal sealed class NotificationDeviceLogService(
 {
     public async Task<IReadOnlyList<MobileDeviceDeliveryLogEntry>>
         ReadForDeviceAsync(
+            NotificationApplicationContext application,
             Guid mobileDeviceId,
             CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(application);
+
         var entries = await dbContext.Recipients
             .AsNoTracking()
             .Include(candidate => candidate.Campaign)
-            .Where(candidate => candidate.MobileDeviceId == mobileDeviceId)
+            .Where(candidate =>
+                candidate.MobileDeviceId == mobileDeviceId
+                && candidate.Campaign.PlatformClientId
+                    == application.ApplicationId)
             .OrderByDescending(candidate =>
                 candidate.LastAttemptAtUtc
                 ?? candidate.DispatchedAtUtc
@@ -37,11 +43,17 @@ internal sealed class NotificationDeviceLogService(
     }
 
     public async Task<int> PurgeForDeviceAsync(
+        NotificationApplicationContext application,
         Guid mobileDeviceId,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(application);
+
         var purged = await dbContext.Recipients
-            .Where(candidate => candidate.MobileDeviceId == mobileDeviceId)
+            .Where(candidate =>
+                candidate.MobileDeviceId == mobileDeviceId
+                && candidate.Campaign.PlatformClientId
+                    == application.ApplicationId)
             .ExecuteDeleteAsync(cancellationToken);
 
         return purged;

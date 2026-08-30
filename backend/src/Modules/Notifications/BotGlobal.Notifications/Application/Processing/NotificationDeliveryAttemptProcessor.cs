@@ -65,7 +65,8 @@ internal sealed class NotificationDeliveryAttemptProcessor(
         var outcome = await transport.DispatchAsync(
             new MobileNotificationTransportRequest(
                 recipient.Campaign.Id,
-                recipient.Campaign.PlatformClientId,
+                new NotificationApplicationContext(
+                    recipient.Campaign.PlatformClientId),
                 recipient.MobileDeviceId,
                 recipient.InstallationIdSnapshot,
                 recipient.PlatformSnapshot,

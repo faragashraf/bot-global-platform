@@ -1,6 +1,7 @@
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Communication.Application.MobileNotifications;
 using BotGlobal.Communication.Contracts.MobileNotifications;
+using BotGlobal.Contracts.Notifications;
 
 namespace BotGlobal.UnitTests.Communication;
 
@@ -122,11 +123,11 @@ public sealed class MobileNotificationServiceTests
 
         public Task<IReadOnlyList<MobileRecipientDevice>>
             ResolveActiveDevicesAsync(
-                Guid platformClientId,
+                NotificationApplicationContext application,
                 string externalSubjectId,
                 CancellationToken cancellationToken)
         {
-            PlatformClientId = platformClientId;
+            PlatformClientId = application.ApplicationId;
             ExternalSubjectId = externalSubjectId;
 
             return Task.FromResult(devices);
@@ -147,10 +148,12 @@ public sealed class MobileNotificationServiceTests
         } = [];
 
         public Task<MobileNotificationDeliveryResult> DeliverAsync(
+            NotificationApplicationContext application,
             MobileNotificationEnvelope notification,
             IReadOnlyList<MobileRecipientDevice> devices,
             CancellationToken cancellationToken)
         {
+            Assert.NotNull(application);
             Notification = notification;
             Devices = devices;
 

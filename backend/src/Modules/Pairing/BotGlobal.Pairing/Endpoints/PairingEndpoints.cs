@@ -1,5 +1,6 @@
 using BotGlobal.Pairing.Application.PushRegistrations;
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Notifications;
 using System.Security.Claims;
 using BotGlobal.Pairing.Application;
 using BotGlobal.Pairing.Contracts;
@@ -67,10 +68,16 @@ public static class PairingEndpoints
                     var rawDeviceId =
                         principal.FindFirstValue(
                             MobileDeviceAuthenticationDefaults.DeviceIdClaim);
+                    var rawApplicationId =
+                        principal.FindFirstValue(
+                            MobileDeviceAuthenticationDefaults.PlatformClientIdClaim);
 
                     if (!Guid.TryParse(
                             rawDeviceId,
-                            out var deviceId))
+                            out var deviceId)
+                        || !Guid.TryParse(
+                            rawApplicationId,
+                            out var applicationId))
                     {
                         return Results.Unauthorized();
                     }
@@ -79,6 +86,7 @@ public static class PairingEndpoints
                     {
                         var result =
                             await service.RegisterAsync(
+                                new NotificationApplicationContext(applicationId),
                                 deviceId,
                                 request,
                                 cancellationToken);

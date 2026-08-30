@@ -37,7 +37,8 @@ internal sealed class NotificationAudienceExpander(
         try
         {
             page = await audienceReader.ReadPageAsync(
-                campaign.PlatformClientId,
+                new NotificationApplicationContext(
+                    campaign.PlatformClientId),
                 campaign.AudienceAsOfUtc,
                 campaign.AudienceExpansionCursor,
                 pageSize,

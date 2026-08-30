@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using BotGlobal.Pairing.Application.PushRegistrations;
+using BotGlobal.Contracts.Notifications;
 
 namespace BotGlobal.UnitTests.Pairing;
 
@@ -182,12 +183,14 @@ public sealed class PairingEndpointContractTests
         : IMobilePushRegistrationService
     {
         public Task<MobilePushRegistrationResult> RegisterAsync(
+            NotificationApplicationContext application,
             Guid deviceId,
             RegisterMobilePushRequest request,
             CancellationToken cancellationToken)
             => Task.FromResult(
                 new MobilePushRegistrationResult(
                     deviceId,
+                    application.ApplicationId,
                     request.Provider,
                     DateTimeOffset.UtcNow));
 
@@ -201,11 +204,13 @@ public sealed class PairingEndpointContractTests
         : BotGlobal.Pairing.Application.AdminDevicePairings.IAdminDevicePairingService
     {
         public Task<IReadOnlyList<BotGlobal.Pairing.Application.AdminDevicePairings.AdminDevicePairingListItem>> ListAsync(
+            ApplicationAdministrationScope applicationScope,
             CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<BotGlobal.Pairing.Application.AdminDevicePairings.AdminDevicePairingListItem>>(
                 []);
 
         public Task<BotGlobal.Pairing.Application.AdminDevicePairings.AdminDevicePairingDetail?> FindAsync(
+            ApplicationAdministrationScope applicationScope,
             Guid deviceId,
             CancellationToken cancellationToken)
             => Task.FromResult<BotGlobal.Pairing.Application.AdminDevicePairings.AdminDevicePairingDetail?>(null);

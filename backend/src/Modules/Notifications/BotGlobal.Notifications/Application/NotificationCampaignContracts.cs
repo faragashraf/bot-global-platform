@@ -1,3 +1,5 @@
+using BotGlobal.Contracts.Notifications;
+
 namespace BotGlobal.Notifications.Application;
 
 public sealed record CreateNotificationCampaignCommand(
@@ -34,7 +36,7 @@ public sealed record NotificationCampaignAcceptedResponse(
     DateTimeOffset ExpiresAtUtc);
 
 public sealed record NotificationCampaignListQuery(
-    Guid? PlatformClientId,
+    ApplicationAdministrationScope ApplicationScope,
     string? Status,
     DateTimeOffset? FromUtc,
     DateTimeOffset? ToUtc,
@@ -90,6 +92,7 @@ public interface INotificationCampaignService
         CancellationToken cancellationToken);
 
     Task<NotificationCampaignSummaryResponse?> FindAsync(
+        ApplicationAdministrationScope applicationScope,
         Guid campaignId,
         CancellationToken cancellationToken);
 }

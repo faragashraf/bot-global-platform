@@ -12,10 +12,12 @@ public sealed record MobileDeviceDeliveryLogEntry(
 public interface INotificationDeviceLogReader
 {
     Task<IReadOnlyList<MobileDeviceDeliveryLogEntry>> ReadForDeviceAsync(
+        NotificationApplicationContext application,
         Guid mobileDeviceId,
         CancellationToken cancellationToken);
 
     Task<int> PurgeForDeviceAsync(
+        NotificationApplicationContext application,
         Guid mobileDeviceId,
         CancellationToken cancellationToken);
 }

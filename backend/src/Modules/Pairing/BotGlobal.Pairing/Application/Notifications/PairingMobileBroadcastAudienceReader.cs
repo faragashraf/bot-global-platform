@@ -9,12 +9,14 @@ internal sealed class PairingMobileBroadcastAudienceReader(
     : IMobileBroadcastAudienceReader
 {
     public async Task<MobileBroadcastAudiencePreview> PreviewAsync(
-        Guid platformClientId,
+        NotificationApplicationContext application,
         DateTimeOffset audienceAsOfUtc,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(application);
+
         var audience = SnapshotQuery(
-            platformClientId,
+            application,
             audienceAsOfUtc);
 
         var subjectCount = await audience
@@ -42,19 +44,21 @@ internal sealed class PairingMobileBroadcastAudienceReader(
     }
 
     public async Task<MobileBroadcastAudiencePage> ReadPageAsync(
-        Guid platformClientId,
+        NotificationApplicationContext application,
         DateTimeOffset audienceAsOfUtc,
         Guid? afterDeviceId,
         int pageSize,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(application);
+
         if (pageSize is < 1 or > 1000)
         {
             throw new ArgumentOutOfRangeException(nameof(pageSize));
         }
 
         var query = SnapshotQuery(
-            platformClientId,
+            application,
             audienceAsOfUtc);
 
         if (afterDeviceId.HasValue)
@@ -81,15 +85,17 @@ internal sealed class PairingMobileBroadcastAudienceReader(
 
     public async Task<MobileBroadcastDeviceState>
         GetCurrentDeviceStateAsync(
-            Guid platformClientId,
+            NotificationApplicationContext application,
             Guid deviceId,
             CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(application);
+
         var device = await dbContext.Devices
             .AsNoTracking()
             .Where(candidate =>
                 candidate.Id == deviceId
-                && candidate.PlatformClientId == platformClientId)
+                && candidate.PlatformClientId == application.ApplicationId)
             .Select(candidate => new
             {
                 candidate.RevokedAtUtc
@@ -104,13 +110,13 @@ internal sealed class PairingMobileBroadcastAudienceReader(
     }
 
     private IQueryable<Domain.MobileDevice> SnapshotQuery(
-        Guid platformClientId,
+        NotificationApplicationContext application,
         DateTimeOffset audienceAsOfUtc)
     {
         return dbContext.Devices
             .AsNoTracking()
             .Where(device =>
-                device.PlatformClientId == platformClientId
+                device.PlatformClientId == application.ApplicationId
                 && device.CreatedAtUtc <= audienceAsOfUtc
                 && device.LastPairedAtUtc <= audienceAsOfUtc
                 && (device.RevokedAtUtc == null

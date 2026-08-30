@@ -155,7 +155,7 @@ public sealed class NotificationCampaignEndpointTests
                 1));
         public Task<NotificationCampaignAcceptedResponse> CreateAsync(CreateNotificationCampaignCommand command, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<NotificationCampaignPageResponse> ListAsync(NotificationCampaignListQuery query, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<NotificationCampaignSummaryResponse?> FindAsync(Guid campaignId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<NotificationCampaignSummaryResponse?> FindAsync(ApplicationAdministrationScope applicationScope, Guid campaignId, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class StubAdministratorReader

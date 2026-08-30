@@ -18,6 +18,19 @@ internal static class FirebaseAdminFactory
                 "Firebase messaging is disabled.");
         }
 
+        if (options.ApplicationId == Guid.Empty)
+        {
+            throw new InvalidOperationException(
+                "Firebase ApplicationId is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(
+                options.ConfigurationReference))
+        {
+            throw new InvalidOperationException(
+                "Firebase ConfigurationReference is required.");
+        }
+
         if (string.IsNullOrWhiteSpace(
                 options.ProjectId))
         {
@@ -46,7 +59,7 @@ internal static class FirebaseAdminFactory
                 .ToGoogleCredential();
 
         var appName =
-            $"botglobal-{options.ProjectId}";
+            $"botglobal-{options.ApplicationId:N}-{options.ProjectId}";
 
         var app =
             FirebaseApp.GetInstance(

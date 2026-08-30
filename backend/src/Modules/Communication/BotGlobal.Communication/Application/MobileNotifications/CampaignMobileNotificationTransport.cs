@@ -1,8 +1,7 @@
-using BotGlobal.Communication.Application.MobileNotifications.Fcm;
+using BotGlobal.Communication.Application.MobileNotifications.Push;
 using BotGlobal.Communication.Contracts.MobileNotifications;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Notifications;
-using FirebaseAdmin.Messaging;
 
 namespace BotGlobal.Communication.Application.MobileNotifications;
 
@@ -11,7 +10,7 @@ internal sealed class CampaignMobileNotificationTransport(
     IMobileNotificationConnectionRegistry connections,
     IMobilePushDestinationResolver pushDestinations,
     IMobileBroadcastAudienceReader audienceReader,
-    IFcmPushSender fcm)
+    IApplicationPushNotificationDispatcher push)
     : IMobileNotificationTransport
 {
     public async Task<MobileNotificationTransportOutcome> DispatchAsync(
@@ -22,7 +21,7 @@ internal sealed class CampaignMobileNotificationTransport(
 
         var deviceState = await audienceReader
             .GetCurrentDeviceStateAsync(
-                request.PlatformClientId,
+                request.Application,
                 request.MobileDeviceId,
                 cancellationToken);
 
@@ -54,6 +53,7 @@ internal sealed class CampaignMobileNotificationTransport(
             if (connections.IsConnected(request.MobileDeviceId))
             {
                 await signalR.DeliverAsync(
+                    request.Application,
                     envelope,
                     [new MobileRecipientDevice(
                         request.MobileDeviceId,
@@ -67,8 +67,9 @@ internal sealed class CampaignMobileNotificationTransport(
             }
 
             var destination = await pushDestinations.ResolveActiveAsync(
+                request.Application,
                 request.MobileDeviceId,
-                "fcm",
+                PushProviderNames.FirebaseCloudMessaging,
                 cancellationToken);
 
             if (destination is null)
@@ -98,8 +99,10 @@ internal sealed class CampaignMobileNotificationTransport(
                 pushData["actionUrl"] = actionUrl;
             }
 
-            var pushResult = await fcm.SendAsync(
-                new FcmPushMessage(
+            var pushResult = await push.DispatchAsync(
+                new ApplicationPushMessage(
+                    request.Application,
+                    destination.Provider,
                     destination.RegistrationToken,
                     request.TitleAr,
                     request.BodyAr,
@@ -107,27 +110,34 @@ internal sealed class CampaignMobileNotificationTransport(
                     request.TimeToLive),
                 cancellationToken);
 
-            return pushResult.Accepted
-                ? new MobileNotificationTransportOutcome(
-                    MobileNotificationTransportOutcomeKind.FcmAccepted)
-                : new MobileNotificationTransportOutcome(
-                    MobileNotificationTransportOutcomeKind.TransientFailure,
-                    "fcm-not-accepted");
+            return pushResult.Kind switch
+            {
+                ApplicationPushDispatchKind.Accepted =>
+                    new MobileNotificationTransportOutcome(
+                        MobileNotificationTransportOutcomeKind.FcmAccepted),
+
+                ApplicationPushDispatchKind.PermanentFailure =>
+                    new MobileNotificationTransportOutcome(
+                        MobileNotificationTransportOutcomeKind.PermanentFailure,
+                        pushResult.SafeErrorCode),
+
+                ApplicationPushDispatchKind.ProviderDisabled
+                    or ApplicationPushDispatchKind.MissingConfiguration
+                    or ApplicationPushDispatchKind.RuntimeUnavailable =>
+                    new MobileNotificationTransportOutcome(
+                        MobileNotificationTransportOutcomeKind.NoAvailableRoute,
+                        pushResult.SafeErrorCode),
+
+                _ =>
+                    new MobileNotificationTransportOutcome(
+                        MobileNotificationTransportOutcomeKind.TransientFailure,
+                        pushResult.SafeErrorCode)
+            };
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
         {
             throw;
-        }
-        catch (FirebaseMessagingException exception)
-        {
-            var code = SanitizeFirebaseCode(exception);
-
-            return new MobileNotificationTransportOutcome(
-                IsPermanentFirebaseFailure(exception)
-                    ? MobileNotificationTransportOutcomeKind.PermanentFailure
-                    : MobileNotificationTransportOutcomeKind.TransientFailure,
-                code);
         }
         catch (ArgumentException)
         {
@@ -168,27 +178,4 @@ internal sealed class CampaignMobileNotificationTransport(
         return null;
     }
 
-    private static bool IsPermanentFirebaseFailure(
-        FirebaseMessagingException exception)
-    {
-        var code = exception.MessagingErrorCode?.ToString();
-
-        return code is "InvalidArgument"
-            or "SenderIdMismatch"
-            or "ThirdPartyAuthError"
-            or "Unregistered";
-    }
-
-    private static string SanitizeFirebaseCode(
-        FirebaseMessagingException exception)
-    {
-        var code = exception.MessagingErrorCode?.ToString();
-
-        if (string.IsNullOrWhiteSpace(code))
-        {
-            return "fcm-error";
-        }
-
-        return $"fcm-{code.ToLowerInvariant()}";
-    }
 }

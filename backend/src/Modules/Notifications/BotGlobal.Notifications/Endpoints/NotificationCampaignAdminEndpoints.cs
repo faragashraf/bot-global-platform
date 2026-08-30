@@ -63,6 +63,10 @@ public static class NotificationCampaignAdminEndpoints
         {
             return Results.ValidationProblem(exception.Errors);
         }
+        catch (ArgumentException exception)
+        {
+            return InvalidApplication(exception.Message);
+        }
     }
 
     private static async Task<IResult> CreateAsync(
@@ -128,6 +132,10 @@ public static class NotificationCampaignAdminEndpoints
         {
             return Results.ValidationProblem(exception.Errors);
         }
+        catch (ArgumentException exception)
+        {
+            return InvalidApplication(exception.Message);
+        }
         catch (NotificationCampaignConflictException exception)
         {
             return Results.Conflict(new { message = exception.Message });
@@ -149,7 +157,7 @@ public static class NotificationCampaignAdminEndpoints
             return Results.Ok(
                 await service.ListAsync(
                     new NotificationCampaignListQuery(
-                        platformClientId,
+                        Scope(platformClientId),
                         status,
                         fromUtc,
                         toUtc,
@@ -161,19 +169,51 @@ public static class NotificationCampaignAdminEndpoints
         {
             return Results.ValidationProblem(exception.Errors);
         }
+        catch (ArgumentException exception)
+        {
+            return InvalidApplication(exception.Message);
+        }
     }
 
     private static async Task<IResult> FindAsync(
         Guid campaignId,
+        Guid? platformClientId,
         INotificationCampaignService service,
         CancellationToken cancellationToken)
     {
-        var campaign = await service.FindAsync(
-            campaignId,
-            cancellationToken);
+        NotificationCampaignSummaryResponse? campaign;
+        try
+        {
+            campaign = await service.FindAsync(
+                Scope(platformClientId),
+                campaignId,
+                cancellationToken);
+        }
+        catch (NotificationCampaignValidationException exception)
+        {
+            return Results.ValidationProblem(exception.Errors);
+        }
+        catch (ArgumentException exception)
+        {
+            return InvalidApplication(exception.Message);
+        }
 
         return campaign is null
             ? Results.NotFound()
             : Results.Ok(campaign);
     }
+
+    private static ApplicationAdministrationScope Scope(
+        Guid? platformClientId) =>
+        platformClientId.HasValue
+            ? ApplicationAdministrationScope.ForApplication(
+                platformClientId.Value)
+            : ApplicationAdministrationScope.PlatformGlobal;
+
+    private static IResult InvalidApplication(string message) =>
+        Results.ValidationProblem(
+            new Dictionary<string, string[]>
+            {
+                ["platformClientId"] = [message]
+            });
 }

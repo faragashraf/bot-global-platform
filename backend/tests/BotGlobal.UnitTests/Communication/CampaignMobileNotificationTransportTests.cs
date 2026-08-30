@@ -1,5 +1,5 @@
 using BotGlobal.Communication.Application.MobileNotifications;
-using BotGlobal.Communication.Application.MobileNotifications.Fcm;
+using BotGlobal.Communication.Application.MobileNotifications.Push;
 using BotGlobal.Communication.Hubs;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Notifications;
@@ -16,13 +16,13 @@ public sealed class CampaignMobileNotificationTransportTests
         var connections = new MobileNotificationConnectionRegistry();
         connections.Connected(deviceId);
         var proxy = new RecordingClientProxy();
-        var fcm = new RecordingFcmSender();
+        var push = new RecordingPushDispatcher();
         var transport = CreateTransport(
             connections,
             proxy,
             new PushResolver(null),
             new DeviceStateReader(true, false),
-            fcm);
+            push);
 
         var outcome = await transport.DispatchAsync(
             Request(deviceId),
@@ -30,26 +30,26 @@ public sealed class CampaignMobileNotificationTransportTests
 
         Assert.Equal(MobileNotificationTransportOutcomeKind.SignalRDispatched, outcome.Kind);
         Assert.Equal(1, proxy.SendCalls);
-        Assert.Equal(0, fcm.Calls);
+        Assert.Equal(0, push.Calls);
     }
 
     [Fact]
     public async Task Offline_push_capable_device_is_fcm_accepted_with_caller_ttl()
     {
         var deviceId = Guid.NewGuid();
-        var fcm = new RecordingFcmSender();
+        var push = new RecordingPushDispatcher();
         var transport = CreateTransport(
             new MobileNotificationConnectionRegistry(),
             new RecordingClientProxy(),
             new PushResolver(new MobilePushDestination(deviceId, "fcm", "sensitive-test-token")),
             new DeviceStateReader(true, false),
-            fcm);
+            push);
 
         var request = Request(deviceId) with { TimeToLive = TimeSpan.FromDays(9) };
         var outcome = await transport.DispatchAsync(request, CancellationToken.None);
 
         Assert.Equal(MobileNotificationTransportOutcomeKind.FcmAccepted, outcome.Kind);
-        Assert.Equal(TimeSpan.FromDays(9), fcm.LastMessage!.TimeToLive);
+        Assert.Equal(TimeSpan.FromDays(9), push.LastMessage!.TimeToLive);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class CampaignMobileNotificationTransportTests
             new RecordingClientProxy(),
             new PushResolver(null),
             new DeviceStateReader(true, false),
-            new RecordingFcmSender());
+            new RecordingPushDispatcher());
 
         var outcome = await transport.DispatchAsync(
             Request(Guid.NewGuid()),
@@ -77,13 +77,13 @@ public sealed class CampaignMobileNotificationTransportTests
         bool revoked)
     {
         var proxy = new RecordingClientProxy();
-        var fcm = new RecordingFcmSender();
+        var push = new RecordingPushDispatcher();
         var transport = CreateTransport(
             new MobileNotificationConnectionRegistry(),
             proxy,
             new PushResolver(new MobilePushDestination(Guid.NewGuid(), "fcm", "token")),
             new DeviceStateReader(existsForPlatform, revoked),
-            fcm);
+            push);
 
         var outcome = await transport.DispatchAsync(
             Request(Guid.NewGuid()),
@@ -91,7 +91,7 @@ public sealed class CampaignMobileNotificationTransportTests
 
         Assert.Equal(MobileNotificationTransportOutcomeKind.DeviceRevoked, outcome.Kind);
         Assert.Equal(0, proxy.SendCalls);
-        Assert.Equal(0, fcm.Calls);
+        Assert.Equal(0, push.Calls);
     }
 
     private static CampaignMobileNotificationTransport CreateTransport(
@@ -99,7 +99,7 @@ public sealed class CampaignMobileNotificationTransportTests
         RecordingClientProxy proxy,
         IMobilePushDestinationResolver resolver,
         IMobileBroadcastAudienceReader audience,
-        IFcmPushSender fcm)
+        IApplicationPushNotificationDispatcher push)
     {
         var hubContext = new TestHubContext(proxy);
         return new CampaignMobileNotificationTransport(
@@ -107,12 +107,12 @@ public sealed class CampaignMobileNotificationTransportTests
             connections,
             resolver,
             audience,
-            fcm);
+            push);
     }
 
     private static MobileNotificationTransportRequest Request(Guid deviceId) => new(
         Guid.NewGuid(),
-        Guid.NewGuid(),
+        new NotificationApplicationContext(Guid.NewGuid()),
         deviceId,
         "installation",
         "android",
@@ -129,26 +129,31 @@ public sealed class CampaignMobileNotificationTransportTests
     private sealed class DeviceStateReader(bool exists, bool revoked)
         : IMobileBroadcastAudienceReader
     {
-        public Task<MobileBroadcastAudiencePreview> PreviewAsync(Guid platformClientId, DateTimeOffset audienceAsOfUtc, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<MobileBroadcastAudiencePage> ReadPageAsync(Guid platformClientId, DateTimeOffset audienceAsOfUtc, Guid? afterDeviceId, int pageSize, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<MobileBroadcastDeviceState> GetCurrentDeviceStateAsync(Guid platformClientId, Guid deviceId, CancellationToken cancellationToken) => Task.FromResult(new MobileBroadcastDeviceState(exists, revoked));
+        public Task<MobileBroadcastAudiencePreview> PreviewAsync(NotificationApplicationContext application, DateTimeOffset audienceAsOfUtc, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<MobileBroadcastAudiencePage> ReadPageAsync(NotificationApplicationContext application, DateTimeOffset audienceAsOfUtc, Guid? afterDeviceId, int pageSize, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<MobileBroadcastDeviceState> GetCurrentDeviceStateAsync(NotificationApplicationContext application, Guid deviceId, CancellationToken cancellationToken) => Task.FromResult(new MobileBroadcastDeviceState(exists, revoked));
     }
 
     private sealed class PushResolver(MobilePushDestination? destination)
         : IMobilePushDestinationResolver
     {
-        public Task<MobilePushDestination?> ResolveActiveAsync(Guid deviceId, string provider, CancellationToken cancellationToken) => Task.FromResult(destination);
+        public Task<MobilePushDestination?> ResolveActiveAsync(NotificationApplicationContext application, Guid deviceId, string provider, CancellationToken cancellationToken) => Task.FromResult(destination);
     }
 
-    private sealed class RecordingFcmSender : IFcmPushSender
+    private sealed class RecordingPushDispatcher
+        : IApplicationPushNotificationDispatcher
     {
         public int Calls { get; private set; }
-        public FcmPushMessage? LastMessage { get; private set; }
-        public Task<FcmPushSendResult> SendAsync(FcmPushMessage message, CancellationToken cancellationToken)
+        public ApplicationPushMessage? LastMessage { get; private set; }
+        public Task<ApplicationPushDispatchResult> DispatchAsync(
+            ApplicationPushMessage message,
+            CancellationToken cancellationToken)
         {
             Calls++;
             LastMessage = message;
-            return Task.FromResult(new FcmPushSendResult(true, "message-id"));
+            return Task.FromResult(
+                new ApplicationPushDispatchResult(
+                    ApplicationPushDispatchKind.Accepted));
         }
     }
 

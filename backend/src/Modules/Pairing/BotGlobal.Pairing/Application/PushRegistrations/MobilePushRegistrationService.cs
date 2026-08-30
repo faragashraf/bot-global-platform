@@ -1,3 +1,4 @@
+using BotGlobal.Contracts.Notifications;
 using BotGlobal.Pairing.Domain;
 using BotGlobal.Pairing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -10,12 +11,14 @@ public sealed record RegisterMobilePushRequest(
 
 public sealed record MobilePushRegistrationResult(
     Guid DeviceId,
+    Guid ApplicationId,
     string Provider,
     DateTimeOffset UpdatedAtUtc);
 
 public interface IMobilePushRegistrationService
 {
     Task<MobilePushRegistrationResult> RegisterAsync(
+        NotificationApplicationContext application,
         Guid deviceId,
         RegisterMobilePushRequest request,
         CancellationToken cancellationToken);
@@ -32,10 +35,12 @@ internal sealed class MobilePushRegistrationService(
     : IMobilePushRegistrationService
 {
     public async Task<MobilePushRegistrationResult> RegisterAsync(
+        NotificationApplicationContext application,
         Guid deviceId,
         RegisterMobilePushRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(application);
         ArgumentNullException.ThrowIfNull(request);
 
         if (deviceId == Guid.Empty)
@@ -69,6 +74,7 @@ internal sealed class MobilePushRegistrationService(
                 .AnyAsync(
                     device =>
                         device.Id == deviceId
+                        && device.PlatformClientId == application.ApplicationId
                         && device.RevokedAtUtc == null,
                     cancellationToken);
 
@@ -140,6 +146,7 @@ internal sealed class MobilePushRegistrationService(
 
         return new MobilePushRegistrationResult(
             deviceId,
+            application.ApplicationId,
             provider,
             now);
     }

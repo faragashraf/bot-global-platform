@@ -1,4 +1,5 @@
 using BotGlobal.Pairing.Application.Notifications;
+using BotGlobal.Contracts.Notifications;
 using BotGlobal.Pairing.Domain;
 using BotGlobal.Pairing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -27,8 +28,9 @@ public sealed class MobileBroadcastAudienceReaderTests
         await db.SaveChangesAsync();
 
         var reader = new PairingMobileBroadcastAudienceReader(db);
-        var preview = await reader.PreviewAsync(platformA, asOf, CancellationToken.None);
-        var page = await reader.ReadPageAsync(platformA, asOf, null, 100, CancellationToken.None);
+        var application = new NotificationApplicationContext(platformA);
+        var preview = await reader.PreviewAsync(application, asOf, CancellationToken.None);
+        var page = await reader.ReadPageAsync(application, asOf, null, 100, CancellationToken.None);
 
         Assert.Equal(2, preview.DistinctExternalSubjectCount);
         Assert.Equal(2, preview.ActiveDeviceCount);
@@ -56,7 +58,10 @@ public sealed class MobileBroadcastAudienceReaderTests
         await db.SaveChangesAsync();
 
         var reader = new PairingMobileBroadcastAudienceReader(db);
-        var preview = await reader.PreviewAsync(platform, asOf, CancellationToken.None);
+        var preview = await reader.PreviewAsync(
+            new NotificationApplicationContext(platform),
+            asOf,
+            CancellationToken.None);
 
         Assert.Equal(1, preview.DistinctExternalSubjectCount);
         Assert.Equal(2, preview.ActiveDeviceCount);
@@ -78,9 +83,10 @@ public sealed class MobileBroadcastAudienceReaderTests
         await db.SaveChangesAsync();
 
         var reader = new PairingMobileBroadcastAudienceReader(db);
-        var first = await reader.ReadPageAsync(platform, asOf, null, 2, CancellationToken.None);
+        var application = new NotificationApplicationContext(platform);
+        var first = await reader.ReadPageAsync(application, asOf, null, 2, CancellationToken.None);
         var second = await reader.ReadPageAsync(
-            platform,
+            application,
             asOf,
             first.Devices[^1].DeviceId,
             2,

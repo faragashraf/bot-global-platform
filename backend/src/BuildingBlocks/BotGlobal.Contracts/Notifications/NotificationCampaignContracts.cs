@@ -47,19 +47,19 @@ public sealed record MobileBroadcastDeviceState(
 public interface IMobileBroadcastAudienceReader
 {
     Task<MobileBroadcastAudiencePreview> PreviewAsync(
-        Guid platformClientId,
+        NotificationApplicationContext application,
         DateTimeOffset audienceAsOfUtc,
         CancellationToken cancellationToken);
 
     Task<MobileBroadcastAudiencePage> ReadPageAsync(
-        Guid platformClientId,
+        NotificationApplicationContext application,
         DateTimeOffset audienceAsOfUtc,
         Guid? afterDeviceId,
         int pageSize,
         CancellationToken cancellationToken);
 
     Task<MobileBroadcastDeviceState> GetCurrentDeviceStateAsync(
-        Guid platformClientId,
+        NotificationApplicationContext application,
         Guid deviceId,
         CancellationToken cancellationToken);
 }
@@ -76,7 +76,7 @@ public enum MobileNotificationTransportOutcomeKind
 
 public sealed record MobileNotificationTransportRequest(
     Guid CampaignId,
-    Guid PlatformClientId,
+    NotificationApplicationContext Application,
     Guid MobileDeviceId,
     string InstallationId,
     string Platform,

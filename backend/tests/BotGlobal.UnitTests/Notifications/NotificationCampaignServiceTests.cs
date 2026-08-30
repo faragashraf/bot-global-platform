@@ -30,6 +30,51 @@ public sealed class NotificationCampaignServiceTests
     }
 
     [Fact]
+    public async Task Client_cannot_spoof_application_id_with_a_mismatched_descriptor()
+    {
+        await using var db = CreateContext();
+        var command = Command();
+        var service = CreateService(
+            db,
+            new PlatformClientDescriptor(
+                Guid.NewGuid(),
+                "different-app",
+                "Different application",
+                true));
+
+        var error =
+            await Assert.ThrowsAsync<NotificationCampaignValidationException>(
+                () => service.CreateAsync(
+                    command,
+                    CancellationToken.None));
+
+        Assert.Contains("platformClientId", error.Errors.Keys);
+        Assert.Empty(db.Campaigns);
+    }
+
+    [Fact]
+    public async Task Unrecognized_application_filter_is_rejected()
+    {
+        await using var db = CreateContext();
+        var service = CreateService(db, descriptor: null);
+
+        var error =
+            await Assert.ThrowsAsync<NotificationCampaignValidationException>(
+                () => service.ListAsync(
+                    new NotificationCampaignListQuery(
+                        ApplicationAdministrationScope.ForApplication(
+                            Guid.NewGuid()),
+                        null,
+                        null,
+                        null,
+                        1,
+                        25),
+                    CancellationToken.None));
+
+        Assert.Contains("platformClientId", error.Errors.Keys);
+    }
+
+    [Fact]
     public async Task Active_platform_client_and_nonempty_audience_are_durably_accepted()
     {
         await using var db = CreateContext();
@@ -186,9 +231,9 @@ public sealed class NotificationCampaignServiceTests
     private sealed class AudienceReader(MobileBroadcastAudiencePreview preview)
         : IMobileBroadcastAudienceReader
     {
-        public Task<MobileBroadcastAudiencePreview> PreviewAsync(Guid platformClientId, DateTimeOffset audienceAsOfUtc, CancellationToken cancellationToken) => Task.FromResult(preview);
-        public Task<MobileBroadcastAudiencePage> ReadPageAsync(Guid platformClientId, DateTimeOffset audienceAsOfUtc, Guid? afterDeviceId, int pageSize, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<MobileBroadcastDeviceState> GetCurrentDeviceStateAsync(Guid platformClientId, Guid deviceId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<MobileBroadcastAudiencePreview> PreviewAsync(NotificationApplicationContext application, DateTimeOffset audienceAsOfUtc, CancellationToken cancellationToken) => Task.FromResult(preview);
+        public Task<MobileBroadcastAudiencePage> ReadPageAsync(NotificationApplicationContext application, DateTimeOffset audienceAsOfUtc, Guid? afterDeviceId, int pageSize, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<MobileBroadcastDeviceState> GetCurrentDeviceStateAsync(NotificationApplicationContext application, Guid deviceId, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

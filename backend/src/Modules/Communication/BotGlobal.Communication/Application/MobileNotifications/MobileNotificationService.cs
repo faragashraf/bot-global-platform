@@ -1,4 +1,5 @@
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Notifications;
 using BotGlobal.Communication.Contracts.MobileNotifications;
 
 namespace BotGlobal.Communication.Application.MobileNotifications;
@@ -28,10 +29,12 @@ internal sealed class MobileNotificationService(
 
         var subjectId =
             request.RecipientExternalSubjectId.Trim();
+        var application =
+            new NotificationApplicationContext(platformClientId);
 
         var devices =
             await recipientResolver.ResolveActiveDevicesAsync(
-                platformClientId,
+                application,
                 subjectId,
                 cancellationToken);
 
@@ -49,6 +52,7 @@ internal sealed class MobileNotificationService(
 
         var result =
             await delivery.DeliverAsync(
+                application,
                 notification,
                 devices,
                 cancellationToken);

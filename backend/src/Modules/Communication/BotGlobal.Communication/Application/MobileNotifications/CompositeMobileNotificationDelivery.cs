@@ -1,6 +1,7 @@
-using BotGlobal.Communication.Application.MobileNotifications.Fcm;
+using BotGlobal.Communication.Application.MobileNotifications.Push;
 using BotGlobal.Communication.Contracts.MobileNotifications;
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Notifications;
 using Microsoft.Extensions.Options;
 
 namespace BotGlobal.Communication.Application.MobileNotifications;
@@ -9,15 +10,17 @@ internal sealed class CompositeMobileNotificationDelivery(
     SignalRMobileNotificationDelivery signalR,
     IMobileNotificationConnectionRegistry connections,
     IMobilePushDestinationResolver pushDestinations,
-    IFcmPushSender fcm,
-    IOptions<FcmOptions> fcmOptions)
+    IApplicationPushNotificationDispatcher push,
+    IOptions<ApplicationPushProviderOptions> pushOptions)
     : IMobileNotificationDelivery
 {
     public async Task<MobileNotificationDeliveryResult> DeliverAsync(
+        NotificationApplicationContext application,
         MobileNotificationEnvelope notification,
         IReadOnlyList<MobileRecipientDevice> devices,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(application);
         ArgumentNullException.ThrowIfNull(notification);
         ArgumentNullException.ThrowIfNull(devices);
 
@@ -30,7 +33,8 @@ internal sealed class CompositeMobileNotificationDelivery(
             if (connections.IsConnected(device.DeviceId))
             {
                 var realtimeResult =
-                    await signalR.DeliverAsync(
+                await signalR.DeliverAsync(
+                        application,
                         notification,
                         [device],
                         cancellationToken);
@@ -46,8 +50,9 @@ internal sealed class CompositeMobileNotificationDelivery(
 
             var destination =
                 await pushDestinations.ResolveActiveAsync(
+                    application,
                     device.DeviceId,
-                    "fcm",
+                    PushProviderNames.FirebaseCloudMessaging,
                     cancellationToken);
 
             if (destination is null)
@@ -56,8 +61,10 @@ internal sealed class CompositeMobileNotificationDelivery(
             }
 
             var pushResult =
-                await fcm.SendAsync(
-                    new FcmPushMessage(
+                await push.DispatchAsync(
+                    new ApplicationPushMessage(
+                        application,
+                        destination.Provider,
                         destination.RegistrationToken,
                         notification.TitleAr,
                         notification.BodyAr,
@@ -80,12 +87,13 @@ internal sealed class CompositeMobileNotificationDelivery(
                         },
                         TimeSpan.FromDays(
                             Math.Clamp(
-                                fcmOptions.Value.DefaultTimeToLiveDays,
+                                pushOptions.Value.DefaultTimeToLiveDays,
                                 1,
                                 28))),
                     cancellationToken);
 
-            if (pushResult.Accepted)
+            if (pushResult.Kind
+                == ApplicationPushDispatchKind.Accepted)
             {
                 delivered++;
                 fcmDelivered++;

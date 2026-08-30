@@ -1,4 +1,5 @@
 using FirebaseAdmin.Messaging;
+using BotGlobal.Communication.Application.MobileNotifications.Push;
 using Microsoft.Extensions.Logging;
 
 namespace BotGlobal.Communication.Application.MobileNotifications.Fcm;
@@ -10,10 +11,36 @@ internal sealed class FirebaseAdminFcmPushSender(
     : IFcmPushSender
 {
     public async Task<FcmPushSendResult> SendAsync(
+        ResolvedApplicationPushProvider configuration,
         FcmPushMessage message,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(message);
+
+        if (configuration.Application.ApplicationId
+                != options.Value.ApplicationId
+            || !string.Equals(
+                configuration.ConfigurationReference,
+                options.Value.ConfigurationReference,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                configuration.FirebaseProjectId,
+                options.Value.ProjectId,
+                StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(
+                configuration.AndroidPackageName))
+        {
+            logger.LogError(
+                "FCM runtime configuration does not match the requested application/provider scope. ApplicationId={ApplicationId}",
+                configuration.Application.ApplicationId);
+
+            return new FcmPushSendResult(
+                Accepted: false,
+                MessageId: null,
+                SafeErrorCode: "fcm-runtime-scope-mismatch",
+                IsPermanentFailure: true);
+        }
 
         if (string.IsNullOrWhiteSpace(
                 message.RegistrationToken))
@@ -52,7 +79,7 @@ internal sealed class FirebaseAdminFcmPushSender(
         var firebaseMessage =
             new Message
             {
-                Token =
+                Fid =
                     message.RegistrationToken,
 
                 Data =
@@ -68,7 +95,7 @@ internal sealed class FirebaseAdminFcmPushSender(
                             timeToLive,
 
                         RestrictedPackageName =
-                            options.Value.RestrictedPackageName
+                            configuration.AndroidPackageName
                     }
             };
 

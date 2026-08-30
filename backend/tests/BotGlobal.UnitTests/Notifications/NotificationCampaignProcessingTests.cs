@@ -138,6 +138,39 @@ public sealed class NotificationCampaignProcessingTests
     }
 
     [Fact]
+    public async Task Delivery_attempt_retains_originating_application_context()
+    {
+        var now = DateTimeOffset.UtcNow;
+        await using var db = Context(
+            new InMemoryDatabaseRoot(),
+            $"application-context-{Guid.NewGuid():N}");
+        var campaign = DispatchingCampaign(now);
+        var recipient = Recipient(campaign, now);
+        recipient.Claim(Guid.NewGuid(), now.AddMinutes(2));
+        db.AddRange(campaign, recipient);
+        await db.SaveChangesAsync();
+        var transport = new RecordingTransport();
+
+        var processor = new NotificationDeliveryAttemptProcessor(
+            db,
+            transport,
+            Options.Create(OptionsForTests()),
+            new MutableTimeProvider(now));
+
+        await processor.ProcessAsync(
+            new ClaimedNotificationWork(
+                recipient.Id,
+                recipient.LeaseId!.Value),
+            CancellationToken.None);
+
+        Assert.NotNull(transport.LastRequest);
+        Assert.Equal(
+            campaign.PlatformClientId,
+            transport.LastRequest!.Application.ApplicationId);
+        Assert.Equal(campaign.Id, transport.LastRequest.CampaignId);
+    }
+
+    [Fact]
     public async Task Stale_lease_is_recovered_but_live_lease_is_not_double_claimed()
     {
         var now = DateTimeOffset.UtcNow;
@@ -397,9 +430,15 @@ public sealed class NotificationCampaignProcessingTests
     private sealed class RecordingTransport : IMobileNotificationTransport
     {
         public int Calls { get; private set; }
+        public MobileNotificationTransportRequest? LastRequest {
+            get;
+            private set;
+        }
+
         public Task<MobileNotificationTransportOutcome> DispatchAsync(MobileNotificationTransportRequest request, CancellationToken cancellationToken)
         {
             Calls++;
+            LastRequest = request;
             return Task.FromResult(new MobileNotificationTransportOutcome(MobileNotificationTransportOutcomeKind.SignalRDispatched));
         }
     }
@@ -431,10 +470,10 @@ public sealed class NotificationCampaignProcessingTests
         IReadOnlyList<MobileBroadcastAudienceDevice> devices)
         : IMobileBroadcastAudienceReader
     {
-        public Task<MobileBroadcastAudiencePreview> PreviewAsync(Guid platformClientId, DateTimeOffset audienceAsOfUtc, CancellationToken cancellationToken) =>
+        public Task<MobileBroadcastAudiencePreview> PreviewAsync(NotificationApplicationContext application, DateTimeOffset audienceAsOfUtc, CancellationToken cancellationToken) =>
             Task.FromResult(new MobileBroadcastAudiencePreview(devices.Count, devices.Count, 0));
 
-        public Task<MobileBroadcastAudiencePage> ReadPageAsync(Guid platformClientId, DateTimeOffset audienceAsOfUtc, Guid? afterDeviceId, int pageSize, CancellationToken cancellationToken)
+        public Task<MobileBroadcastAudiencePage> ReadPageAsync(NotificationApplicationContext application, DateTimeOffset audienceAsOfUtc, Guid? afterDeviceId, int pageSize, CancellationToken cancellationToken)
         {
             var page = devices
                 .Where(device => !afterDeviceId.HasValue || device.DeviceId.CompareTo(afterDeviceId.Value) > 0)
@@ -446,7 +485,7 @@ public sealed class NotificationCampaignProcessingTests
                 page.Length > pageSize));
         }
 
-        public Task<MobileBroadcastDeviceState> GetCurrentDeviceStateAsync(Guid platformClientId, Guid deviceId, CancellationToken cancellationToken) =>
+        public Task<MobileBroadcastDeviceState> GetCurrentDeviceStateAsync(NotificationApplicationContext application, Guid deviceId, CancellationToken cancellationToken) =>
             Task.FromResult(new MobileBroadcastDeviceState(true, false));
     }
 

@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using BotGlobal.Pairing.Contracts;
 using BotGlobal.Pairing.Domain;
-using BotGlobal.Pairing.Domain;
 using BotGlobal.Pairing.Infrastructure.Persistence;
 using BotGlobal.Pairing.Security;
 using Microsoft.EntityFrameworkCore;

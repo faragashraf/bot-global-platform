@@ -13,6 +13,8 @@ A bilingual (Arabic/English), theme-aware digital platform for Bot Global.
 - Frontend: Core + Shared UI + Capability Features
 - Backend: Modular Monolith by Capability
 - Mobile: Kotlin Multiplatform + Compose Multiplatform (`mobile/shared` + application modules)
+- Notifications: shared semantic capability with
+  [server-authoritative application isolation](docs/architecture/09-application-scoped-notifications.md)
 
 ## Current scope
 Foundation only. Existing products such as WhatsApp SaaS are intentionally

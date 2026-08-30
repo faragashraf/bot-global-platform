@@ -27,20 +27,14 @@ internal sealed class NotificationCampaignService(
             throw Validation("platformClientId", "An application is required.");
         }
 
-        var descriptor = await platformClients.FindAsync(
+        var descriptor = await ResolveActiveApplicationAsync(
             platformClientId,
             cancellationToken);
 
-        if (descriptor is null || !descriptor.IsActive)
-        {
-            throw Validation(
-                "platformClientId",
-                "The selected application is missing or inactive.");
-        }
-
         var asOf = timeProvider.GetUtcNow();
         var preview = await audienceReader.PreviewAsync(
-            platformClientId,
+            new NotificationApplicationContext(
+                descriptor.PlatformClientId),
             asOf,
             cancellationToken);
 
@@ -62,6 +56,9 @@ internal sealed class NotificationCampaignService(
 
         var normalized = ValidateAndNormalize(command);
         var fingerprint = CreateFingerprint(normalized);
+        var descriptor = await ResolveActiveApplicationAsync(
+            normalized.PlatformClientId,
+            cancellationToken);
 
         var existing = await FindIdempotentAsync(
             normalized.CreatedByUserId,
@@ -73,20 +70,10 @@ internal sealed class NotificationCampaignService(
             return ResolveIdempotent(existing, fingerprint);
         }
 
-        var descriptor = await platformClients.FindAsync(
-            normalized.PlatformClientId,
-            cancellationToken);
-
-        if (descriptor is null || !descriptor.IsActive)
-        {
-            throw Validation(
-                "platformClientId",
-                "The selected application is missing or inactive.");
-        }
-
         var now = timeProvider.GetUtcNow();
         var preview = await audienceReader.PreviewAsync(
-            normalized.PlatformClientId,
+            new NotificationApplicationContext(
+                descriptor.PlatformClientId),
             now,
             cancellationToken);
 
@@ -148,6 +135,9 @@ internal sealed class NotificationCampaignService(
         NotificationCampaignListQuery query,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(query.ApplicationScope);
+
         var page = Math.Max(1, query.Page);
         var pageSize = Math.Clamp(query.PageSize, 1, 100);
 
@@ -176,10 +166,24 @@ internal sealed class NotificationCampaignService(
 
         var campaigns = dbContext.Campaigns.AsNoTracking();
 
-        if (query.PlatformClientId.HasValue)
+        if (query.ApplicationScope.ApplicationId
+            is Guid applicationId)
         {
+            var descriptor = await platformClients.FindAsync(
+                applicationId,
+                cancellationToken);
+
+            if (descriptor is null
+                || descriptor.PlatformClientId
+                    != applicationId)
+            {
+                throw Validation(
+                    "platformClientId",
+                    "The selected application is not recognized.");
+            }
+
             campaigns = campaigns.Where(campaign =>
-                campaign.PlatformClientId == query.PlatformClientId.Value);
+                campaign.PlatformClientId == descriptor.PlatformClientId);
         }
 
         if (status.HasValue)
@@ -234,16 +238,58 @@ internal sealed class NotificationCampaignService(
     }
 
     public async Task<NotificationCampaignSummaryResponse?> FindAsync(
+        ApplicationAdministrationScope applicationScope,
         Guid campaignId,
         CancellationToken cancellationToken)
     {
-        var campaign = await dbContext.Campaigns
-            .AsNoTracking()
+        ArgumentNullException.ThrowIfNull(applicationScope);
+
+        var campaigns = dbContext.Campaigns.AsNoTracking();
+        if (applicationScope.ApplicationId is Guid applicationId)
+        {
+            var descriptor = await platformClients.FindAsync(
+                applicationId,
+                cancellationToken);
+
+            if (descriptor is null
+                || descriptor.PlatformClientId != applicationId)
+            {
+                throw Validation(
+                    "platformClientId",
+                    "The selected application is not recognized.");
+            }
+
+            campaigns = campaigns.Where(candidate =>
+                candidate.PlatformClientId == applicationId);
+        }
+
+        var campaign = await campaigns
             .SingleOrDefaultAsync(
                 candidate => candidate.Id == campaignId,
                 cancellationToken);
 
         return campaign is null ? null : ToSummary(campaign);
+    }
+
+    private async Task<PlatformClientDescriptor>
+        ResolveActiveApplicationAsync(
+            Guid requestedApplicationId,
+            CancellationToken cancellationToken)
+    {
+        var descriptor = await platformClients.FindAsync(
+            requestedApplicationId,
+            cancellationToken);
+
+        if (descriptor is null
+            || descriptor.PlatformClientId != requestedApplicationId
+            || !descriptor.IsActive)
+        {
+            throw Validation(
+                "platformClientId",
+                "The selected application is missing or inactive.");
+        }
+
+        return descriptor;
     }
 
     private async Task<NotificationCampaign?> FindIdempotentAsync(
