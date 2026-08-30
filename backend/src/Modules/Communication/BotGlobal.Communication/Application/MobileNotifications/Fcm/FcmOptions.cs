@@ -12,4 +12,9 @@ public sealed class FcmOptions
 
     public string CredentialPath { get; init; } =
         string.Empty;
+
+    public int DefaultTimeToLiveDays { get; init; } = 3;
+
+    public string RestrictedPackageName { get; init; } =
+        "com.enpo.connect";
 }

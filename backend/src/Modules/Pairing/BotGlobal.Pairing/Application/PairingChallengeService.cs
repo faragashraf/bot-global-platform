@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using BotGlobal.Pairing.Contracts;
 using BotGlobal.Pairing.Domain;
+using BotGlobal.Pairing.Domain;
 using BotGlobal.Pairing.Infrastructure.Persistence;
 using BotGlobal.Pairing.Security;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,7 @@ public sealed partial class PairingChallengeService(
     PairingDbContext dbContext,
     IPairingTokenService tokenService,
     IMobileDeviceCredentialService deviceCredentialService,
+    MobileDeviceAuditRecorder auditRecorder,
     TimeProvider timeProvider)
     : IPairingChallengeService
 {
@@ -137,6 +139,15 @@ public sealed partial class PairingChallengeService(
                             completedAtUtc);
 
                     dbContext.Devices.Add(mobileDevice);
+
+                    auditRecorder.Record(
+                        mobileDevice.Id,
+                        challenge.PlatformClientId,
+                        MobileDeviceAuditKinds.Paired,
+                        MobileDeviceAuditActorTypes.Device,
+                        null,
+                        $"platform={device.Platform}; installation={device.InstallationId}",
+                        completedAtUtc);
                 }
                 else
                 {
@@ -148,6 +159,15 @@ public sealed partial class PairingChallengeService(
                         device.Platform,
                         device.DeviceName,
                         device.AppVersion,
+                        completedAtUtc);
+
+                    auditRecorder.Record(
+                        mobileDevice.Id,
+                        challenge.PlatformClientId,
+                        MobileDeviceAuditKinds.RePaired,
+                        MobileDeviceAuditActorTypes.Device,
+                        null,
+                        $"platform={device.Platform}; installation={device.InstallationId}",
                         completedAtUtc);
                 }
 

@@ -1,0 +1,347 @@
+<section class="devices">
+  <header class="devices__head">
+    <div>
+      <p class="devices__eyebrow">
+        {{ 'auth.management.devicePairing.eyebrow' | translate }}
+      </p>
+      <h1 class="devices__title">
+        {{ 'auth.management.devicePairing.title' | translate }}
+      </h1>
+      <p class="devices__subtitle">
+        {{ 'auth.management.devicePairing.subtitle' | translate }}
+      </p>
+    </div>
+
+    <div class="devices__stats">
+      <span class="stat-chip stat-chip--active">
+        {{ activeCount() }} {{ 'auth.management.devicePairing.stats.active' | translate }}
+      </span>
+      <span class="stat-chip stat-chip--revoked">
+        {{ revokedCount() }} {{ 'auth.management.devicePairing.stats.revoked' | translate }}
+      </span>
+    </div>
+  </header>
+
+  <div class="devices__toolbar">
+    <label class="input-shell devices__search">
+      <i class="pi pi-search" aria-hidden="true"></i>
+      <input
+        type="search"
+        [ngModel]="search()"
+        (ngModelChange)="onSearchChange($event)"
+        [placeholder]="'auth.management.devicePairing.searchPlaceholder' | translate"
+      />
+    </label>
+
+    <button
+      type="button"
+      class="btn btn--secondary btn--compact"
+      (click)="load()"
+      [disabled]="loading()"
+    >
+      <i class="pi pi-refresh" aria-hidden="true"></i>
+      {{ 'auth.management.devicePairing.refresh' | translate }}
+    </button>
+  </div>
+
+  @if (error()) {
+    <div class="devices__state devices__state--error" role="alert">
+      {{ error() | translate }}
+    </div>
+  }
+
+  @if (loading()) {
+    <div class="devices__grid" aria-hidden="true">
+      @for (index of [0, 1, 2]; track index) {
+        <article class="device-card device-card--skeleton">
+          <div class="skeleton skeleton--title"></div>
+          <div class="skeleton skeleton--line"></div>
+          <div class="skeleton skeleton--line skeleton--short"></div>
+        </article>
+      }
+    </div>
+  } @else if (!filteredDevices().length) {
+    <div class="devices__state">
+      {{ 'auth.management.devicePairing.empty' | translate }}
+    </div>
+  } @else {
+    <div class="devices__table-wrap">
+      <table class="devices-table">
+        <thead>
+          <tr>
+            <th>{{ 'auth.management.devicePairing.columns.device' | translate }}</th>
+            <th>{{ 'auth.management.devicePairing.columns.application' | translate }}</th>
+            <th>{{ 'auth.management.devicePairing.columns.subject' | translate }}</th>
+            <th>{{ 'auth.management.devicePairing.columns.push' | translate }}</th>
+            <th>{{ 'auth.management.devicePairing.columns.pairedAt' | translate }}</th>
+            <th>{{ 'auth.management.devicePairing.columns.status' | translate }}</th>
+            <th class="devices-table__actions-head"></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (device of filteredDevices(); track device.deviceId) {
+            <tr
+              class="device-row"
+              (click)="openDetail(device)"
+              tabindex="0"
+              (keydown.enter)="openDetail(device)"
+            >
+              <td [attr.data-label]="'auth.management.devicePairing.columns.device' | translate">
+                <span class="device-row__name">
+                  <i
+                    class="pi"
+                    [ngClass]="device.platform === 'android' ? 'pi-android' : 'pi-apple'"
+                    aria-hidden="true"
+                  ></i>
+                  {{ device.deviceName ?? device.platform }}
+                </span>
+                <span class="device-row__meta mono">{{ device.installationId }}</span>
+              </td>
+              <td [attr.data-label]="'auth.management.devicePairing.columns.application' | translate">
+                {{ device.platformClientDisplayName }}
+              </td>
+              <td [attr.data-label]="'auth.management.devicePairing.columns.subject' | translate" class="mono">
+                {{ device.externalSubjectId ?? '—' }}
+              </td>
+              <td [attr.data-label]="'auth.management.devicePairing.columns.push' | translate">
+                @if (device.hasActivePushRegistration) {
+                  <span class="badge badge--ok">
+                    <i class="pi pi-bell" aria-hidden="true"></i>
+                    FCM
+                  </span>
+                } @else {
+                  <span class="badge badge--muted">
+                    {{ 'auth.management.devicePairing.push.none' | translate }}
+                  </span>
+                }
+              </td>
+              <td [attr.data-label]="'auth.management.devicePairing.columns.pairedAt' | translate">
+                {{ device.lastPairedAtUtc | date: 'medium' : '' : dateLocale() }}
+              </td>
+              <td [attr.data-label]="'auth.management.devicePairing.columns.status' | translate">
+                @if (device.isActive) {
+                  <span class="badge badge--ok">{{ 'auth.management.devicePairing.status.active' | translate }}</span>
+                } @else {
+                  <span class="badge badge--danger">{{ 'auth.management.devicePairing.status.revoked' | translate }}</span>
+                }
+              </td>
+              <td class="devices-table__actions" data-label="">
+                <button
+                  type="button"
+                  class="btn btn--compact btn--ghost"
+                  (click)="$event.stopPropagation(); openDetail(device)"
+                >
+                  <i class="pi pi-history" aria-hidden="true"></i>
+                  {{ 'auth.management.devicePairing.actions.log' | translate }}
+                </button>
+
+                @if (device.isActive) {
+                  <button
+                    type="button"
+                    class="btn btn--compact btn--danger"
+                    (click)="requestRevoke(device, $event)"
+                  >
+                    <i class="pi pi-times-circle" aria-hidden="true"></i>
+                    {{ 'auth.management.devicePairing.actions.revoke' | translate }}
+                  </button>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <p-dialog
+    [visible]="detailOpen()"
+    [modal]="true"
+    [draggable]="false"
+    [resizable]="false"
+    [closable]="!detailLoading()"
+    [style]="{ width: 'min(56rem, calc(100vw - 2rem))' }"
+    (onHide)="closeDetail()"
+    [header]="(detail()?.device?.deviceName ?? detail()?.device?.platform ?? '') "
+  >
+    @if (detailLoading()) {
+      <div class="detail-loading">
+        <div class="skeleton skeleton--line"></div>
+        <div class="skeleton skeleton--line skeleton--short"></div>
+        <div class="skeleton skeleton--line"></div>
+      </div>
+    } @else if (detail(); as data) {
+      <dl class="detail-grid">
+        <div class="detail-grid__item">
+          <dt>{{ 'auth.management.devicePairing.detail.installationId' | translate }}</dt>
+          <dd class="mono">{{ data.device.installationId }}</dd>
+        </div>
+        <div class="detail-grid__item">
+          <dt>{{ 'auth.management.devicePairing.detail.appVersion' | translate }}</dt>
+          <dd>{{ data.device.appVersion ?? '—' }}</dd>
+        </div>
+        <div class="detail-grid__item">
+          <dt>{{ 'auth.management.devicePairing.detail.subject' | translate }}</dt>
+          <dd class="mono">{{ data.device.externalSubjectId ?? '—' }}</dd>
+        </div>
+        <div class="detail-grid__item">
+          <dt>{{ 'auth.management.devicePairing.detail.firstPaired' | translate }}</dt>
+          <dd>{{ data.device.createdAtUtc | date: 'medium' : '' : dateLocale() }}</dd>
+        </div>
+        <div class="detail-grid__item">
+          <dt>{{ 'auth.management.devicePairing.detail.deliveries' | translate }}</dt>
+          <dd>{{ data.deliveryLogCount }}</dd>
+        </div>
+        <div class="detail-grid__item">
+          <dt>{{ 'auth.management.devicePairing.detail.status' | translate }}</dt>
+          <dd>
+            @if (data.device.isActive) {
+              <span class="badge badge--ok">{{ 'auth.management.devicePairing.status.active' | translate }}</span>
+            } @else {
+              <span class="badge badge--danger">{{ 'auth.management.devicePairing.status.revoked' | translate }}</span>
+            }
+          </dd>
+        </div>
+      </dl>
+
+      <h3 class="timeline__heading">
+        <i class="pi pi-history" aria-hidden="true"></i>
+        {{ 'auth.management.devicePairing.timeline.title' | translate }}
+        <span class="timeline__count">{{ data.timeline.length }}</span>
+      </h3>
+
+      @if (!data.timeline.length) {
+        <p class="timeline__empty">
+          {{ 'auth.management.devicePairing.timeline.empty' | translate }}
+        </p>
+      } @else {
+        <ol class="timeline">
+          @for (entry of data.timeline; track entry.occurredAtUtc + entry.kind + entry.detail) {
+            <li class="timeline__item">
+              <span
+                class="timeline__dot"
+                [ngClass]="'timeline__dot--' + (entry.kind.includes('invalidated') || entry.kind.includes('revoked') || entry.kind.includes('purged') ? 'warn' : 'ok')"
+                aria-hidden="true"
+              ></span>
+              <div class="timeline__body">
+                <div class="timeline__top">
+                  <strong>{{ kindLabel(entry.kind) | translate }}</strong>
+                  <time>{{ entry.occurredAtUtc | date: 'medium' : '' : dateLocale() }}</time>
+                </div>
+                <div class="timeline__meta">
+                  <span class="badge badge--muted">{{ actorLabel(entry.actorType) | translate }}</span>
+                  @if (entry.actorDisplayName) {
+                    <span class="timeline__actor">{{ entry.actorDisplayName }}</span>
+                  }
+                  @if (entry.source === 'derived') {
+                    <span class="badge badge--derived">{{ 'auth.management.devicePairing.timeline.derived' | translate }}</span>
+                  }
+                </div>
+                @if (entry.detail) {
+                  <p class="timeline__detail mono">{{ entry.detail }}</p>
+                }
+              </div>
+            </li>
+          }
+        </ol>
+      }
+    }
+
+    <ng-template #footer>
+      @if (detail(); as data) {
+        @if (data.device.isActive) {
+          <button
+            type="button"
+            class="btn btn--danger"
+            (click)="requestRevoke(data.device)"
+          >
+            <i class="pi pi-times-circle" aria-hidden="true"></i>
+            {{ 'auth.management.devicePairing.actions.revoke' | translate }}
+          </button>
+        }
+      }
+      <button
+        type="button"
+        class="btn btn--secondary"
+        (click)="closeDetail()"
+      >
+        {{ 'auth.management.devicePairing.detail.close' | translate }}
+      </button>
+    </ng-template>
+  </p-dialog>
+
+  <p-dialog
+    [visible]="revokeTarget() !== null"
+    [modal]="true"
+    [draggable]="false"
+    [resizable]="false"
+    [closable]="!revoking()"
+    [style]="{ width: 'min(30rem, calc(100vw - 2rem))' }"
+    (onHide)="cancelRevoke()"
+    [header]="'auth.management.devicePairing.revoke.title' | translate"
+  >
+    @if (revokeTarget(); as target) {
+      <p class="revoke__lead">
+        {{
+          'auth.management.devicePairing.revoke.lead'
+            | translate: { device: target.deviceName ?? target.platform }
+        }}
+      </p>
+
+      <label class="revoke__option">
+        <input
+          type="radio"
+          name="purgeHistory"
+          [ngModel]="purgeHistory()"
+          (ngModelChange)="purgeHistory.set($event)"
+          [value]="false"
+        />
+        <span>
+          <strong>{{ 'auth.management.devicePairing.revoke.keepTitle' | translate }}</strong>
+          <small>{{ 'auth.management.devicePairing.revoke.keepHint' | translate }}</small>
+        </span>
+      </label>
+
+      <label class="revoke__option revoke__option--danger">
+        <input
+          type="radio"
+          name="purgeHistory"
+          [ngModel]="purgeHistory()"
+          (ngModelChange)="purgeHistory.set($event)"
+          [value]="true"
+        />
+        <span>
+          <strong>{{ 'auth.management.devicePairing.revoke.purgeTitle' | translate }}</strong>
+          <small>{{ 'auth.management.devicePairing.revoke.purgeHint' | translate }}</small>
+        </span>
+      </label>
+    }
+
+    @if (revoking()) {
+      <p class="revoke__busy">{{ 'auth.management.devicePairing.revoke.busy' | translate }}</p>
+    }
+
+    <ng-template #footer>
+      <button
+        type="button"
+        class="btn btn--secondary"
+        (click)="cancelRevoke()"
+        [disabled]="revoking()"
+      >
+        {{ 'auth.management.devicePairing.revoke.cancel' | translate }}
+      </button>
+      <button
+        type="button"
+        class="btn btn--danger"
+        (click)="confirmRevoke()"
+        [disabled]="revoking()"
+      >
+        <i class="pi pi-times-circle" aria-hidden="true"></i>
+        {{ 'auth.management.devicePairing.revoke.submit' | translate }}
+      </button>
+    </ng-template>
+  </p-dialog>
+
+  @if (revokeResult(); as message) {
+    <div class="devices__toast" role="status">{{ message }}</div>
+  }
+</section>

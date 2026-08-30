@@ -4,7 +4,8 @@ public sealed record FcmPushMessage(
     string RegistrationToken,
     string Title,
     string Body,
-    IReadOnlyDictionary<string, string>? Data = null);
+    IReadOnlyDictionary<string, string>? Data,
+    TimeSpan TimeToLive);
 
 public sealed record FcmPushSendResult(
     bool Accepted,

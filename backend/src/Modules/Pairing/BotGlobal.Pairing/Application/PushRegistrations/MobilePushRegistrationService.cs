@@ -27,6 +27,7 @@ public interface IMobilePushRegistrationService
 
 internal sealed class MobilePushRegistrationService(
     PairingDbContext dbContext,
+    MobileDeviceAuditRecorder auditRecorder,
     TimeProvider timeProvider)
     : IMobilePushRegistrationService
 {
@@ -99,11 +100,38 @@ internal sealed class MobilePushRegistrationService(
 
             dbContext.PushRegistrations.Add(
                 registration);
+
+            auditRecorder.Record(
+                deviceId,
+                await ResolvePlatformClientIdAsync(
+                    deviceId,
+                    cancellationToken),
+                MobileDeviceAuditKinds.PushRegistered,
+                MobileDeviceAuditActorTypes.Device,
+                null,
+                $"provider={provider}",
+                now);
         }
         else
         {
+            var wasInvalidated =
+                registration.InvalidatedAtUtc is not null;
+
             registration.Refresh(
                 request.RegistrationToken,
+                now);
+
+            auditRecorder.Record(
+                deviceId,
+                await ResolvePlatformClientIdAsync(
+                    deviceId,
+                    cancellationToken),
+                wasInvalidated
+                    ? MobileDeviceAuditKinds.PushRegistered
+                    : MobileDeviceAuditKinds.PushRefreshed,
+                MobileDeviceAuditActorTypes.Device,
+                null,
+                $"provider={provider}",
                 now);
         }
 
@@ -136,12 +164,41 @@ internal sealed class MobilePushRegistrationService(
         var now =
             timeProvider.GetUtcNow();
 
+        var platformClientId =
+            await ResolvePlatformClientIdAsync(
+                deviceId,
+                cancellationToken);
+
         foreach (var registration in registrations)
         {
             registration.Invalidate(now);
+
+            auditRecorder.Record(
+                deviceId,
+                platformClientId,
+                MobileDeviceAuditKinds.PushInvalidated,
+                MobileDeviceAuditActorTypes.System,
+                null,
+                $"provider={registration.Provider}",
+                now);
         }
 
         await dbContext.SaveChangesAsync(
             cancellationToken);
+    }
+
+    private async Task<Guid> ResolvePlatformClientIdAsync(
+        Guid deviceId,
+        CancellationToken cancellationToken)
+    {
+        var platformClientId = await dbContext.Devices
+            .AsNoTracking()
+            .Where(device => device.Id == deviceId)
+            .Select(device => (Guid?)device.PlatformClientId)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return platformClientId
+            ?? throw new InvalidOperationException(
+                "Authenticated mobile device is unavailable or revoked.");
     }
 }

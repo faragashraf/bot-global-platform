@@ -1,6 +1,7 @@
 using BotGlobal.Communication.Application.MobileNotifications.Fcm;
 using BotGlobal.Communication.Contracts.MobileNotifications;
 using BotGlobal.Contracts.Mobile;
+using Microsoft.Extensions.Options;
 
 namespace BotGlobal.Communication.Application.MobileNotifications;
 
@@ -8,7 +9,8 @@ internal sealed class CompositeMobileNotificationDelivery(
     SignalRMobileNotificationDelivery signalR,
     IMobileNotificationConnectionRegistry connections,
     IMobilePushDestinationResolver pushDestinations,
-    IFcmPushSender fcm)
+    IFcmPushSender fcm,
+    IOptions<FcmOptions> fcmOptions)
     : IMobileNotificationDelivery
 {
     public async Task<MobileNotificationDeliveryResult> DeliverAsync(
@@ -75,7 +77,12 @@ internal sealed class CompositeMobileNotificationDelivery(
                                 notification.BodyEn,
                             ["priority"] =
                                 notification.Priority.ToString()
-                        }),
+                        },
+                        TimeSpan.FromDays(
+                            Math.Clamp(
+                                fcmOptions.Value.DefaultTimeToLiveDays,
+                                1,
+                                28))),
                     cancellationToken);
 
             if (pushResult.Accepted)

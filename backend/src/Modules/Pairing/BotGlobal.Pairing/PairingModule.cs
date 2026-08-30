@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using BotGlobal.Contracts.Notifications;
 
 namespace BotGlobal.Pairing;
 
@@ -57,11 +58,21 @@ public static class PairingModule
             IMobileRecipientResolver,
             PairingMobileNotificationRecipientResolver>();
 
+        services.AddScoped<
+            IMobileBroadcastAudienceReader,
+            PairingMobileBroadcastAudienceReader>();
+
         services.AddScoped<IMobileDeviceLifecycleService, MobileDeviceLifecycleService>();
         services.AddSingleton<IMobileDeviceCredentialService, MobileDeviceCredentialService>();
         services.AddScoped<
             IMobileDeviceAuthenticator,
             MobileDeviceAuthenticator>();
+
+        services.AddScoped<MobileDeviceAuditRecorder>();
+
+        services.AddScoped<
+            Application.AdminDevicePairings.IAdminDevicePairingService,
+            Application.AdminDevicePairings.AdminDevicePairingService>();
 
         services.AddScoped<
             IMobilePushRegistrationService,
@@ -122,6 +133,7 @@ public static class PairingModule
         ArgumentNullException.ThrowIfNull(machineAuthorization);
 
         endpoints.MapPairingEndpoints(machineAuthorization);
+        endpoints.MapAdminDevicePairingEndpoints();
         return endpoints;
     }
 

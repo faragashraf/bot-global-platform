@@ -5,6 +5,7 @@ namespace BotGlobal.Communication.Application.MobileNotifications.Fcm;
 
 internal sealed class FirebaseAdminFcmPushSender(
     FirebaseMessaging messaging,
+    Microsoft.Extensions.Options.IOptions<FcmOptions> options,
     ILogger<FirebaseAdminFcmPushSender> logger)
     : IFcmPushSender
 {
@@ -34,6 +35,20 @@ internal sealed class FirebaseAdminFcmPushSender(
         data["body"] =
             message.Body;
 
+        var timeToLive = message.TimeToLive;
+
+        if (timeToLive <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(message),
+                "FCM time-to-live must be positive.");
+        }
+
+        var maximumTimeToLive = TimeSpan.FromDays(28);
+        timeToLive = timeToLive > maximumTimeToLive
+            ? maximumTimeToLive
+            : timeToLive;
+
         var firebaseMessage =
             new Message
             {
@@ -50,10 +65,10 @@ internal sealed class FirebaseAdminFcmPushSender(
                             Priority.High,
 
                         TimeToLive =
-                            TimeSpan.FromDays(3),
+                            timeToLive,
 
                         RestrictedPackageName =
-                            "com.enpo.connect"
+                            options.Value.RestrictedPackageName
                     }
             };
 
@@ -75,7 +90,6 @@ internal sealed class FirebaseAdminFcmPushSender(
         catch (FirebaseMessagingException exception)
         {
             logger.LogError(
-                exception,
                 "FCM send failed. ErrorCode={ErrorCode}, MessagingErrorCode={MessagingErrorCode}, HttpStatus={HttpStatus}",
                 exception.ErrorCode,
                 exception.MessagingErrorCode,

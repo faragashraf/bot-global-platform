@@ -267,7 +267,9 @@
       "nav": {
         "dashboard": "لوحة التحكم",
         "catalog": "الكتالوج",
-        "platformClients": "عملاء المنصة"
+        "platformClients": "عملاء المنصة",
+        "notifications": "الإشعارات",
+        "devicePairing": "الأجهزة"
       },
       "dashboard": {
         "eyebrow": "نظرة عامة",
@@ -427,6 +429,150 @@
           }
         }
       },
+      "notifications": {
+        "eyebrow": "بث الإدارة",
+        "title": "مركز الإشعارات",
+        "description": "إنشاء حملات ثنائية اللغة ودائمة لكل الأجهزة النشطة الحالية داخل تطبيق واحد.",
+        "metrics": {
+          "label": "ملخص الحملات",
+          "period": "الحملات في الفترة",
+          "processing": "في الانتظار أو المعالجة",
+          "completed": "مكتملة",
+          "attention": "بها إخفاقات أو منتهية"
+        },
+        "composer": {
+          "eyebrow": "حملة جديدة",
+          "title": "إنشاء بث إشعار",
+          "description": "اكتب إشعارًا عربيًا وإنجليزيًا لكل الأجهزة النشطة الحالية في التطبيق المحدد.",
+          "durable": "محفوظة في طابور دائم",
+          "application": "التطبيق",
+          "applicationPlaceholder": "ابحث في التطبيقات النشطة",
+          "applicationHint": "يظل الجمهور معزولًا داخل ملكية هذا التطبيق.",
+          "arabic": "المحتوى العربي",
+          "english": "المحتوى الإنجليزي",
+          "notificationTitle": "العنوان",
+          "notificationBody": "الرسالة",
+          "priority": "الأولوية",
+          "deliveryWindow": "نافذة التسليم المتقدمة",
+          "deliveryWindowHint": "تظل الأجهزة غير المتاحة مؤهلة حتى انتهاء هذه النافذة.",
+          "days": "{{count}} يوم",
+          "disclaimer": "يعرض هذا الإصدار إرسال النقل أو قبوله فقط، ولا يدّعي استلام الجهاز للرسالة أو قراءتها."
+        },
+        "audience": {
+          "title": "معاينة الجمهور الحالي",
+          "snapshot": "لقطة قبل الإرسال",
+          "users": "المستخدمون المميزون",
+          "devices": "الأجهزة النشطة",
+          "pushCapable": "تدعم الإشعار الخارجي",
+          "loading": "جارٍ حساب الجمهور الحالي…",
+          "error": "معاينة الجمهور غير متاحة.",
+          "selectApplication": "حدد تطبيقًا لحساب جمهوره الحالي."
+        },
+        "priorities": {
+          "Normal": "عادية",
+          "High": "مرتفعة",
+          "normalHint": "أولوية إشعار قياسية",
+          "highHint": "أولوية نقل مرتفعة"
+        },
+        "preview": {
+          "label": "معاينة إشعار الهاتف",
+          "titlePlaceholderAr": "عنوان الإشعار",
+          "bodyPlaceholderAr": "سيظهر نص الإشعار العربي هنا.",
+          "titlePlaceholderEn": "Notification title",
+          "bodyPlaceholderEn": "The English notification message will appear here.",
+          "now": "الآن"
+        },
+        "validation": {
+          "required": "هذا الحقل مطلوب."
+        },
+        "actions": {
+          "refresh": "تحديث",
+          "review": "مراجعة البث",
+          "apply": "تطبيق",
+          "reset": "إعادة ضبط",
+          "retry": "إعادة المحاولة",
+          "previous": "الصفحة السابقة",
+          "next": "الصفحة التالية",
+          "details": "عرض تفاصيل الحملة",
+          "cancel": "إلغاء",
+          "confirm": "تأكيد البث",
+          "sending": "جارٍ قبول الحملة…"
+        },
+        "success": {
+          "title": "تم قبول الحملة",
+          "description": "قُبلت الحملة بصورة دائمة لعدد {{count}} من الأجهزة الحالية."
+        },
+        "errors": {
+          "title": "لم تُقبل الحملة",
+          "applications": "تعذر تحميل التطبيقات النشطة.",
+          "history": "تعذر تحميل سجل الحملات.",
+          "conflict": "لا يوجد جمهور حالي لهذا التطبيق، أو يتعارض مفتاح الإرسال مع طلب آخر.",
+          "validation": "راجع حقول الحملة وحاول مجددًا.",
+          "send": "تعذر قبول الحملة بصورة دائمة. أعد محاولة الإرسال نفسه."
+        },
+        "statuses": {
+          "Queued": "في الانتظار",
+          "PreparingAudience": "جارٍ إعداد الجمهور",
+          "Dispatching": "جارٍ الإرسال",
+          "Completed": "مكتملة",
+          "CompletedWithFailures": "مكتملة مع إخفاقات",
+          "Expired": "منتهية",
+          "Failed": "فشلت"
+        },
+        "history": {
+          "eyebrow": "العمليات",
+          "title": "سجل الحملات",
+          "description": "تقدم مجمع للنقل دون عرض أي معرّفات للمستلمين.",
+          "application": "التطبيق",
+          "allApplications": "كل التطبيقات",
+          "status": "الحالة",
+          "allStatuses": "كل الحالات",
+          "period": "الفترة",
+          "lastDays": "آخر {{count}} يوم",
+          "loading": "جارٍ تحميل سجل الحملات…",
+          "empty": "لا توجد حملات مطابقة لعوامل التصفية.",
+          "devices": "جهاز",
+          "pending": "معلق",
+          "dispatched": "أُرسل",
+          "accepted": "قُبل",
+          "failedExpired": "فشل/انتهى",
+          "page": "الصفحة {{page}} من {{pages}} · {{count}} حملة",
+          "columns": {
+            "campaign": "الحملة",
+            "status": "الحالة",
+            "audience": "الجمهور",
+            "progress": "المعلق",
+            "outcomes": "نتائج النقل",
+            "creator": "المنشئ / الانتهاء",
+            "actions": "الإجراءات"
+          }
+        },
+        "confirm": {
+          "title": "تأكيد البث للتطبيق",
+          "description": "يُثبّت الجمهور وقت الإرسال ولا يشمل الأجهزة التي تُقرن لاحقًا.",
+          "application": "التطبيق",
+          "users": "المستخدمون الحاليون",
+          "devices": "الأجهزة الحالية",
+          "window": "نافذة التسليم",
+          "terminology": "يظهر SignalR بلفظ «أُرسل» وFCM بلفظ «قُبل»؛ ولا يعني أي منهما استلام الجهاز أو القراءة."
+        },
+        "detail": {
+          "title": "تفاصيل الحملة",
+          "loading": "جارٍ تحميل تفاصيل الحملة المجمعة…",
+          "audienceUsers": "مستخدمو الجمهور",
+          "audienceDevices": "أجهزة الجمهور",
+          "pending": "معلق",
+          "signalr": "أُرسل عبر SignalR",
+          "fcm": "قُبل عبر FCM",
+          "failed": "فشل",
+          "skipped": "تخطٍ بسبب الإلغاء",
+          "expired": "منتهي",
+          "created": "تاريخ الإنشاء",
+          "expires": "تاريخ الانتهاء",
+          "creator": "أنشأها",
+          "note": "لا تتوفر معرّفات المستلمين أو الأجهزة في هذه الشاشة عن قصد."
+        }
+      },
       "platformClients": {
         "eyebrow": "الأمان والتكاملات",
         "title": "عملاء المنصة",
@@ -498,6 +644,84 @@
         "capabilities": {
           "cancel": "إلغاء",
           "save": "حفظ التغييرات"
+        }
+      },
+      "devicePairing": {
+        "eyebrow": "الأجهزة والاقتران",
+        "title": "إدارة اقتران الأجهزة",
+        "subtitle": "تابع حالة اقتران كل جهاز، راجع سجل أحداثه الكامل، وألغِ الاقتران عند الحاجة.",
+        "loadError": "تعذر تحميل الأجهزة المقترنة.",
+        "empty": "لا توجد أجهزة مقترنة مطابقة.",
+        "searchPlaceholder": "ابحث بالجهاز أو المستخدم أو التطبيق…",
+        "refresh": "تحديث",
+        "stats": {
+          "active": "نشط",
+          "revoked": "ملغي"
+        },
+        "columns": {
+          "device": "الجهاز",
+          "application": "التطبيق",
+          "subject": "المستخدم",
+          "push": "الإشعارات",
+          "pairedAt": "آخر اقتران",
+          "status": "الحالة"
+        },
+        "push": {
+          "none": "بدون توكن"
+        },
+        "status": {
+          "active": "مقترن",
+          "revoked": "ملغي"
+        },
+        "actions": {
+          "log": "السجل",
+          "revoke": "إلغاء الاقتران"
+        },
+        "detail": {
+          "installationId": "معرّف التثبيت",
+          "appVersion": "إصدار التطبيق",
+          "subject": "المستخدم",
+          "firstPaired": "أول اقتران",
+          "deliveries": "رسائل مُسلّمة",
+          "status": "الحالة",
+          "close": "إغلاق"
+        },
+        "timeline": {
+          "title": "سجل الجهاز",
+          "empty": "لا توجد أحداث مسجلة لهذا الجهاز بعد.",
+          "derived": "مستنبط",
+          "kinds": {
+            "paired": "اقتران جديد",
+            "re-paired": "إعادة اقتران",
+            "push-registered": "تسجيل توكن الإشعارات",
+            "push-refreshed": "تجديد توكن الإشعارات",
+            "push-invalidated": "إبطال توكن الإشعارات",
+            "unpaired-by-device": "إلغاء من الجهاز",
+            "revoked-by-administrator": "إلغاء بواسطة المدير",
+            "history-purged-by-administrator": "مسح السجل بواسطة المدير",
+            "notification-delivery": "محاولة تسليم إشعار"
+          },
+          "actors": {
+            "device": "الجهاز",
+            "administrator": "مدير",
+            "system": "النظام"
+          }
+        },
+        "revoke": {
+          "title": "إلغاء اقتران الجهاز",
+          "lead": "سيتم إلغاء اقتران «{{device}}» فورًا: لن يستطيع الجهاز الاتصال أو استقبال الإشعارات، وسيُبطل توكن الإشعارات الخاص به.",
+          "keepTitle": "الاحتفاظ بالسجل",
+          "keepHint": "يبقى سجل الأحداث وسجل الرسائل محفوظين للمراجعة.",
+          "purgeTitle": "مسح السجل بالكامل",
+          "purgeHint": "حذف نهائي لكل سجل الأحداث والرسائل الخاصة بهذا الجهاز. لا يمكن التراجع.",
+          "busy": "جارٍ تنفيذ إلغاء الاقتران…",
+          "confirmText": "تأكيد إلغاء اقتران «{{device}}»؟",
+          "submit": "تأكيد الإلغاء",
+          "cancel": "رجوع",
+          "error": "تعذر إلغاء الاقتران.",
+          "resultKept": "تم إلغاء الاقتران مع الاحتفاظ بالسجل.",
+          "resultPurged": "تم إلغاء الاقتران ومسح {{audit}} حدث و{{delivery}} رسالة.",
+          "resultAlreadyRevoked": "هذا الجهاز ملغي بالفعل."
         }
       }
     }

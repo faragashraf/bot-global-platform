@@ -1,0 +1,472 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using BotGlobal.Contracts.Notifications;
+using BotGlobal.Notifications.Domain;
+using BotGlobal.Notifications.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+
+namespace BotGlobal.Notifications.Application;
+
+internal sealed class NotificationCampaignService(
+    NotificationsDbContext dbContext,
+    IPlatformClientDescriptorReader platformClients,
+    IMobileBroadcastAudienceReader audienceReader,
+    IOptions<NotificationCampaignOptions> options,
+    TimeProvider timeProvider)
+    : INotificationCampaignService
+{
+    public async Task<NotificationAudiencePreviewResponse>
+        PreviewAudienceAsync(
+            Guid platformClientId,
+            CancellationToken cancellationToken)
+    {
+        if (platformClientId == Guid.Empty)
+        {
+            throw Validation("platformClientId", "An application is required.");
+        }
+
+        var descriptor = await platformClients.FindAsync(
+            platformClientId,
+            cancellationToken);
+
+        if (descriptor is null || !descriptor.IsActive)
+        {
+            throw Validation(
+                "platformClientId",
+                "The selected application is missing or inactive.");
+        }
+
+        var asOf = timeProvider.GetUtcNow();
+        var preview = await audienceReader.PreviewAsync(
+            platformClientId,
+            asOf,
+            cancellationToken);
+
+        return new NotificationAudiencePreviewResponse(
+            descriptor.PlatformClientId,
+            descriptor.ClientKey,
+            descriptor.DisplayName,
+            asOf,
+            preview.DistinctExternalSubjectCount,
+            preview.ActiveDeviceCount,
+            preview.PushCapableDeviceCount);
+    }
+
+    public async Task<NotificationCampaignAcceptedResponse> CreateAsync(
+        CreateNotificationCampaignCommand command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        var normalized = ValidateAndNormalize(command);
+        var fingerprint = CreateFingerprint(normalized);
+
+        var existing = await FindIdempotentAsync(
+            normalized.CreatedByUserId,
+            normalized.IdempotencyKey,
+            cancellationToken);
+
+        if (existing is not null)
+        {
+            return ResolveIdempotent(existing, fingerprint);
+        }
+
+        var descriptor = await platformClients.FindAsync(
+            normalized.PlatformClientId,
+            cancellationToken);
+
+        if (descriptor is null || !descriptor.IsActive)
+        {
+            throw Validation(
+                "platformClientId",
+                "The selected application is missing or inactive.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var preview = await audienceReader.PreviewAsync(
+            normalized.PlatformClientId,
+            now,
+            cancellationToken);
+
+        if (preview.ActiveDeviceCount == 0)
+        {
+            throw new NotificationCampaignConflictException(
+                "The selected application has no current active mobile devices.");
+        }
+
+        var campaign = NotificationCampaign.Create(
+            descriptor.PlatformClientId,
+            descriptor.ClientKey,
+            descriptor.DisplayName,
+            NotificationAudienceKind.AllCurrentActiveDevices,
+            now,
+            normalized.TitleAr,
+            normalized.TitleEn,
+            normalized.BodyAr,
+            normalized.BodyEn,
+            normalized.Type,
+            normalized.Priority,
+            normalized.IdempotencyKey,
+            fingerprint,
+            normalized.CreatedByUserId,
+            normalized.CreatedByDisplayName,
+            now,
+            now.AddDays(normalized.LifetimeDays),
+            preview.DistinctExternalSubjectCount,
+            preview.ActiveDeviceCount,
+            preview.PushCapableDeviceCount);
+
+        dbContext.Campaigns.Add(campaign);
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            dbContext.ChangeTracker.Clear();
+
+            existing = await FindIdempotentAsync(
+                normalized.CreatedByUserId,
+                normalized.IdempotencyKey,
+                cancellationToken);
+
+            if (existing is null)
+            {
+                throw;
+            }
+
+            return ResolveIdempotent(existing, fingerprint);
+        }
+
+        return ToAccepted(campaign);
+    }
+
+    public async Task<NotificationCampaignPageResponse> ListAsync(
+        NotificationCampaignListQuery query,
+        CancellationToken cancellationToken)
+    {
+        var page = Math.Max(1, query.Page);
+        var pageSize = Math.Clamp(query.PageSize, 1, 100);
+
+        if (query.FromUtc.HasValue && query.ToUtc.HasValue
+            && query.FromUtc > query.ToUtc)
+        {
+            throw Validation(
+                "dateRange",
+                "The start date must not be after the end date.");
+        }
+
+        NotificationCampaignStatus? status = null;
+        if (!string.IsNullOrWhiteSpace(query.Status))
+        {
+            if (!Enum.TryParse<NotificationCampaignStatus>(
+                    query.Status,
+                    true,
+                    out var parsedStatus)
+                || !Enum.IsDefined(parsedStatus))
+            {
+                throw Validation("status", "Campaign status is invalid.");
+            }
+
+            status = parsedStatus;
+        }
+
+        var campaigns = dbContext.Campaigns.AsNoTracking();
+
+        if (query.PlatformClientId.HasValue)
+        {
+            campaigns = campaigns.Where(campaign =>
+                campaign.PlatformClientId == query.PlatformClientId.Value);
+        }
+
+        if (status.HasValue)
+        {
+            campaigns = campaigns.Where(campaign =>
+                campaign.Status == status.Value);
+        }
+
+        if (query.FromUtc.HasValue)
+        {
+            campaigns = campaigns.Where(campaign =>
+                campaign.CreatedAtUtc >= query.FromUtc.Value);
+        }
+
+        if (query.ToUtc.HasValue)
+        {
+            campaigns = campaigns.Where(campaign =>
+                campaign.CreatedAtUtc <= query.ToUtc.Value);
+        }
+
+        var totalCount = await campaigns.CountAsync(cancellationToken);
+        var queuedOrProcessingCount = await campaigns.CountAsync(
+            campaign =>
+                campaign.Status == NotificationCampaignStatus.Queued
+                || campaign.Status == NotificationCampaignStatus.PreparingAudience
+                || campaign.Status == NotificationCampaignStatus.Dispatching,
+            cancellationToken);
+        var completedCount = await campaigns.CountAsync(
+            campaign => campaign.Status == NotificationCampaignStatus.Completed,
+            cancellationToken);
+        var completedWithFailuresOrExpiredCount = await campaigns.CountAsync(
+            campaign =>
+                campaign.Status == NotificationCampaignStatus.CompletedWithFailures
+                || campaign.Status == NotificationCampaignStatus.Expired
+                || campaign.Status == NotificationCampaignStatus.Failed,
+            cancellationToken);
+        var entities = await campaigns
+            .OrderByDescending(campaign => campaign.CreatedAtUtc)
+            .ThenByDescending(campaign => campaign.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToArrayAsync(cancellationToken);
+
+        return new NotificationCampaignPageResponse(
+            entities.Select(ToSummary).ToArray(),
+            page,
+            pageSize,
+            totalCount,
+            queuedOrProcessingCount,
+            completedCount,
+            completedWithFailuresOrExpiredCount);
+    }
+
+    public async Task<NotificationCampaignSummaryResponse?> FindAsync(
+        Guid campaignId,
+        CancellationToken cancellationToken)
+    {
+        var campaign = await dbContext.Campaigns
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                candidate => candidate.Id == campaignId,
+                cancellationToken);
+
+        return campaign is null ? null : ToSummary(campaign);
+    }
+
+    private async Task<NotificationCampaign?> FindIdempotentAsync(
+        Guid createdByUserId,
+        string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.Campaigns
+            .AsNoTracking()
+            .SingleOrDefaultAsync(campaign =>
+                campaign.CreatedByUserId == createdByUserId
+                && campaign.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+    }
+
+    private static NotificationCampaignAcceptedResponse ResolveIdempotent(
+        NotificationCampaign existing,
+        string requestFingerprint)
+    {
+        if (!CryptographicOperations.FixedTimeEquals(
+                Encoding.ASCII.GetBytes(existing.RequestFingerprint),
+                Encoding.ASCII.GetBytes(requestFingerprint)))
+        {
+            throw new NotificationCampaignConflictException(
+                "The Idempotency-Key was already used for a different campaign request.");
+        }
+
+        return ToAccepted(existing);
+    }
+
+    private NormalizedCreateCommand ValidateAndNormalize(
+        CreateNotificationCampaignCommand command)
+    {
+        var errors = new Dictionary<string, string[]>(
+            StringComparer.OrdinalIgnoreCase);
+
+        if (command.PlatformClientId == Guid.Empty)
+        {
+            errors["platformClientId"] = ["An application is required."];
+        }
+
+        if (command.CreatedByUserId == Guid.Empty)
+        {
+            errors["createdByUserId"] = ["An authenticated administrator is required."];
+        }
+
+        var titleAr = Require(command.TitleAr, "titleAr", 200, errors);
+        var titleEn = Require(command.TitleEn, "titleEn", 200, errors);
+        var bodyAr = Require(command.BodyAr, "bodyAr", 4000, errors);
+        var bodyEn = Require(command.BodyEn, "bodyEn", 4000, errors);
+        var type = Require(command.Type, "type", 100, errors);
+        var actor = Require(
+            command.CreatedByDisplayName,
+            "createdByDisplayName",
+            200,
+            errors);
+        var key = Require(command.IdempotencyKey, "idempotencyKey", 200, errors);
+
+        if (!string.Equals(
+                command.AudienceKind,
+                nameof(NotificationAudienceKind.AllCurrentActiveDevices),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            errors["audienceKind"] = ["The requested audience kind is not supported."];
+        }
+
+        if (!Enum.TryParse<NotificationPriority>(
+                command.Priority,
+                true,
+                out var priority)
+            || !Enum.IsDefined(priority))
+        {
+            errors["priority"] = ["Priority must be Normal or High."];
+        }
+
+        var configured = options.Value;
+        var lifetimeDays = command.LifetimeDays
+            ?? configured.DefaultCampaignLifetimeDays;
+
+        var maximumLifetime = Math.Min(
+            configured.MaximumCampaignLifetimeDays,
+            28);
+
+        if (lifetimeDays < configured.MinimumCampaignLifetimeDays
+            || lifetimeDays > maximumLifetime)
+        {
+            errors["lifetimeDays"] =
+            [
+                $"Lifetime must be between {configured.MinimumCampaignLifetimeDays} and {maximumLifetime} days."
+            ];
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new NotificationCampaignValidationException(errors);
+        }
+
+        return new NormalizedCreateCommand(
+            command.PlatformClientId,
+            titleAr,
+            titleEn,
+            bodyAr,
+            bodyEn,
+            type,
+            priority,
+            lifetimeDays,
+            nameof(NotificationAudienceKind.AllCurrentActiveDevices),
+            key,
+            command.CreatedByUserId,
+            actor);
+    }
+
+    private static string Require(
+        string? value,
+        string field,
+        int maximumLength,
+        IDictionary<string, string[]> errors)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+
+        if (normalized.Length == 0)
+        {
+            errors[field] = ["This field is required."];
+        }
+        else if (normalized.Length > maximumLength)
+        {
+            errors[field] = [$"This field cannot exceed {maximumLength} characters."];
+        }
+
+        return normalized;
+    }
+
+    private static NotificationCampaignValidationException Validation(
+        string field,
+        string message)
+    {
+        return new NotificationCampaignValidationException(
+            new Dictionary<string, string[]>
+            {
+                [field] = [message]
+            });
+    }
+
+    private static string CreateFingerprint(NormalizedCreateCommand command)
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            command.PlatformClientId,
+            command.TitleAr,
+            command.TitleEn,
+            command.BodyAr,
+            command.BodyEn,
+            command.Type,
+            command.Priority,
+            command.LifetimeDays,
+            command.AudienceKind
+        });
+
+        return Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+    }
+
+    private static NotificationCampaignAcceptedResponse ToAccepted(
+        NotificationCampaign campaign)
+    {
+        var actual = campaign.PendingCount
+            + campaign.SignalRDispatchedCount
+            + campaign.FcmAcceptedCount
+            + campaign.FailedCount
+            + campaign.SkippedCount
+            + campaign.ExpiredCount;
+
+        return new NotificationCampaignAcceptedResponse(
+            campaign.Id,
+            campaign.Status.ToString(),
+            campaign.AudienceAsOfUtc,
+            campaign.AudienceSubjectCount,
+            campaign.AudienceDeviceCount,
+            actual,
+            campaign.CreatedAtUtc,
+            campaign.ExpiresAtUtc);
+    }
+
+    private static NotificationCampaignSummaryResponse ToSummary(
+        NotificationCampaign campaign)
+    {
+        return new NotificationCampaignSummaryResponse(
+            campaign.Id,
+            campaign.PlatformClientId,
+            campaign.PlatformClientKeySnapshot,
+            campaign.PlatformClientDisplayNameSnapshot,
+            campaign.AudienceKind.ToString(),
+            campaign.Priority.ToString(),
+            campaign.Type,
+            campaign.Status.ToString(),
+            campaign.AudienceAsOfUtc,
+            campaign.CreatedAtUtc,
+            campaign.ExpiresAtUtc,
+            campaign.ProcessingStartedAtUtc,
+            campaign.CompletedAtUtc,
+            campaign.CreatedByDisplayNameSnapshot,
+            campaign.AudienceSubjectCount,
+            campaign.AudienceDeviceCount,
+            campaign.PushCapableDeviceCount,
+            campaign.PendingCount,
+            campaign.SignalRDispatchedCount,
+            campaign.FcmAcceptedCount,
+            campaign.FailedCount,
+            campaign.SkippedCount,
+            campaign.ExpiredCount);
+    }
+
+    private sealed record NormalizedCreateCommand(
+        Guid PlatformClientId,
+        string TitleAr,
+        string TitleEn,
+        string BodyAr,
+        string BodyEn,
+        string Type,
+        NotificationPriority Priority,
+        int LifetimeDays,
+        string AudienceKind,
+        string IdempotencyKey,
+        Guid CreatedByUserId,
+        string CreatedByDisplayName);
+}

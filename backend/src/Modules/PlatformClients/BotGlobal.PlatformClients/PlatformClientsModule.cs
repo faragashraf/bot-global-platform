@@ -15,6 +15,7 @@ using BotGlobal.PlatformClients.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using BotGlobal.Contracts.Notifications;
 
 namespace BotGlobal.PlatformClients;
 
@@ -88,6 +89,10 @@ public static class PlatformClientsModule
         services.AddScoped<
             IPlatformClientQueryService,
             PlatformClientQueryService>();
+
+        services.AddScoped<
+            IPlatformClientDescriptorReader,
+            PlatformClientDescriptorReader>();
 
 
         services.AddScoped<

@@ -12,6 +12,7 @@ using BotGlobal.PlatformClients.Authentication;
 using BotGlobal.PlatformClients.Authorization;
 using BotGlobal.Pairing;
 using BotGlobal.Pairing.Endpoints;
+using BotGlobal.Notifications;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +39,7 @@ builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddCommunicationModule(builder.Configuration);
 builder.Services.AddPlatformClientsModule(builder.Configuration);
 builder.Services.AddPairingModule(builder.Configuration);
+builder.Services.AddNotificationsModule(builder.Configuration);
 
 var frontendOrigins =
     builder.Configuration
@@ -100,6 +102,7 @@ app.MapPairingModule(
     new PairingMachineAuthorizationOptions(
         PlatformClientAuthenticationDefaults.ClientIdClaim,
         PlatformClientPolicies.Capability));
+app.MapNotificationsModule();
 
 app.Run();
 

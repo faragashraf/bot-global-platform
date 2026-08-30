@@ -3,6 +3,8 @@ import {
   provideHttpClient,
   withInterceptors
 } from '@angular/common/http';
+import { registerLocaleData } from '@angular/common';
+import localeArEG from '@angular/common/locales/ar-EG';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideRouter } from '@angular/router';
 import { providePrimeNG } from 'primeng/config';
@@ -15,6 +17,9 @@ import { CATALOG_REPOSITORY } from './features/catalog/services/catalog.reposito
 import { HttpCatalogRepository } from './features/catalog/services/http-catalog.repository';
 
 import { apiBaseUrlInterceptor } from './core/http/api-base-url.interceptor';
+
+registerLocaleData(localeArEG);
+
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),

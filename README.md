@@ -26,3 +26,13 @@ cd ../backend
 dotnet build BotGlobal.sln
 dotnet test BotGlobal.sln
 ```
+
+## Run locally
+Start SQL Server first, then from the repository root run:
+
+```bash
+./dev.sh
+```
+
+The Angular app runs at `http://localhost:4200` and proxies `/api` to the
+ASP.NET Core API at `http://localhost:5062`. Press `Ctrl+C` to stop both.

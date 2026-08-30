@@ -50,6 +50,24 @@ export const ADMIN_ROUTES: Routes = [
             .then((m) => m.CatalogProductFormPageComponent)
       },
       {
+        path: ADMIN_SECTIONS.notifications.path,
+        data: {
+          [ADMIN_SECTION_DATA_KEY]: ADMIN_SECTIONS.notifications
+        },
+        loadComponent: () =>
+          import('./notifications/pages/notification-center-page/notification-center-page.component')
+            .then((m) => m.NotificationCenterPageComponent)
+      },
+      {
+        path: ADMIN_SECTIONS.devicePairing.path,
+        data: {
+          [ADMIN_SECTION_DATA_KEY]: ADMIN_SECTIONS.devicePairing
+        },
+        loadComponent: () =>
+          import('./device-pairing/pages/device-pairing-page/device-pairing-page.component')
+            .then((m) => m.DevicePairingPageComponent)
+      },
+      {
         path: ADMIN_SECTIONS.platformClients.path,
         data: {
           [ADMIN_SECTION_DATA_KEY]: ADMIN_SECTIONS.platformClients

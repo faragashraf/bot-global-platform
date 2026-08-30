@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using BotGlobal.Contracts.Notifications;
 
 namespace BotGlobal.Identity;
 
@@ -107,6 +108,10 @@ public static class IdentityModule
         services.Configure<BootstrapAdminOptions>(
             configuration.GetSection(
                 BootstrapAdminOptions.SectionName));
+
+        services.AddScoped<
+            IAdministratorDescriptorReader,
+            AdministratorDescriptorReader>();
 
         return services;
     }

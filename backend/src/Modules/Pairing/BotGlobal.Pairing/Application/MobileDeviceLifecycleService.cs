@@ -1,3 +1,4 @@
+using BotGlobal.Pairing.Domain;
 using BotGlobal.Pairing.Infrastructure.Persistence;
 using BotGlobal.Pairing.Security;
 using Microsoft.EntityFrameworkCore;
@@ -7,6 +8,7 @@ namespace BotGlobal.Pairing.Application;
 public sealed class MobileDeviceLifecycleService(
     PairingDbContext dbContext,
     IMobileDeviceCredentialService credentialService,
+    MobileDeviceAuditRecorder auditRecorder,
     TimeProvider timeProvider)
     : IMobileDeviceLifecycleService
 {
@@ -41,6 +43,15 @@ public sealed class MobileDeviceLifecycleService(
 
         device.Revoke(now);
 
+        auditRecorder.Record(
+            device.Id,
+            device.PlatformClientId,
+            MobileDeviceAuditKinds.UnpairedByDevice,
+            MobileDeviceAuditActorTypes.Device,
+            null,
+            $"platform={device.Platform}",
+            now);
+
         var pushRegistrations =
             await dbContext.PushRegistrations
                 .Where(
@@ -52,6 +63,15 @@ public sealed class MobileDeviceLifecycleService(
         foreach (var registration in pushRegistrations)
         {
             registration.Invalidate(now);
+
+            auditRecorder.Record(
+                device.Id,
+                device.PlatformClientId,
+                MobileDeviceAuditKinds.PushInvalidated,
+                MobileDeviceAuditActorTypes.System,
+                null,
+                $"provider={registration.Provider}",
+                now);
         }
 
         await dbContext.SaveChangesAsync(

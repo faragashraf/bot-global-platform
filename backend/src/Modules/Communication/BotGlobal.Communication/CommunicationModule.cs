@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using BotGlobal.Contracts.Notifications;
 
 namespace BotGlobal.Communication;
 
@@ -51,22 +52,29 @@ public static class CommunicationModule
             configuration.GetSection(
                 FcmOptions.SectionName));
 
-        services.AddSingleton(
-            provider =>
-            {
-                var options =
-                    provider
-                        .GetRequiredService<
-                            Microsoft.Extensions.Options.IOptions<FcmOptions>>()
-                        .Value;
+        var fcmOptions =
+            configuration
+                .GetSection(FcmOptions.SectionName)
+                .Get<FcmOptions>()
+            ?? new FcmOptions();
 
-                return FirebaseAdminFactory.CreateMessaging(
-                    options);
-            });
+        if (fcmOptions.Enabled)
+        {
+            // Fail fast at startup when enabled but misconfigured.
+            services.AddSingleton(
+                FirebaseAdminFactory.CreateMessaging(
+                    fcmOptions));
 
-        services.AddSingleton<
-            IFcmPushSender,
-            FirebaseAdminFcmPushSender>();
+            services.AddSingleton<
+                IFcmPushSender,
+                FirebaseAdminFcmPushSender>();
+        }
+        else
+        {
+            services.AddSingleton<
+                IFcmPushSender,
+                DisabledFcmPushSender>();
+        }
 
 
         services.AddScoped<
@@ -87,6 +95,10 @@ public static class CommunicationModule
         services.AddScoped<
             IMobileNotificationDelivery,
             CompositeMobileNotificationDelivery>();
+
+        services.AddScoped<
+            IMobileNotificationTransport,
+            CampaignMobileNotificationTransport>();
 
 
         services.AddSingleton<UserConnectionTracker>();
