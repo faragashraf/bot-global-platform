@@ -1,18 +1,19 @@
-using Microsoft.AspNetCore.Authentication;
-using BotGlobal.Pairing.Security;
-using BotGlobal.Contracts.Mobile;
-using Microsoft.AspNetCore.Http;
-using BotGlobal.Communication.Endpoints;
-using BotGlobal.Communication;
-using BotGlobal.Identity;
 using BotGlobal.Catalog;
 using BotGlobal.Catalog.Endpoints;
+using BotGlobal.Communication;
+using BotGlobal.Communication.Endpoints;
+using BotGlobal.Contracts.Mobile;
+using BotGlobal.Games;
+using BotGlobal.Identity;
+using BotGlobal.Notifications;
+using BotGlobal.Pairing;
+using BotGlobal.Pairing.Endpoints;
+using BotGlobal.Pairing.Security;
 using BotGlobal.PlatformClients;
 using BotGlobal.PlatformClients.Authentication;
 using BotGlobal.PlatformClients.Authorization;
-using BotGlobal.Pairing;
-using BotGlobal.Pairing.Endpoints;
-using BotGlobal.Notifications;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,6 +41,7 @@ builder.Services.AddCommunicationModule(builder.Configuration);
 builder.Services.AddPlatformClientsModule(builder.Configuration);
 builder.Services.AddPairingModule(builder.Configuration);
 builder.Services.AddNotificationsModule(builder.Configuration);
+builder.Services.AddGamesModule(builder.Configuration);
 
 var frontendOrigins =
     builder.Configuration
@@ -103,6 +105,7 @@ app.MapPairingModule(
         PlatformClientAuthenticationDefaults.ClientIdClaim,
         PlatformClientPolicies.Capability));
 app.MapNotificationsModule();
+app.MapGamesModule();
 
 app.Run();
 
