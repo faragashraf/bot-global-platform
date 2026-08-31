@@ -12,7 +12,8 @@ data class NqrbStrings(
     val system: String, val light: String, val dark: String,
     val historyTitle: String, val historyBody: String, val peopleTitle: String, val peopleBody: String,
     val profileTitle: String, val profileBody: String, val selected: String,
-    val signInTitle: String, val signInBody: String, val continueWithGoogle: String,
+    val signInTitle: String, val signInBody: String, val restoringTitle: String, val restoringBody: String,
+    val continueWithGoogle: String,
     val googleConfigurationMissing: String, val googleUnavailable: String, val googleSignInFailed: String,
     val googleRejected: String, val accountLinkRequired: String, val networkFailure: String, val signInPrivacy: String,
     val contactsOnboardingTitle: String, val contactsOnboardingBody: String, val contactsStayLocal: String,
@@ -21,7 +22,8 @@ data class NqrbStrings(
     val startCall: String, val microphoneTitle: String, val microphoneBody: String,
     val continueCall: String, val cancel: String, val connecting: String, val ringing: String,
     val activeCall: String, val reconnecting: String, val endingCall: String, val callFailed: String,
-    val mute: String, val unmute: String, val speaker: String, val earpiece: String, val endCall: String,
+    val mute: String, val unmute: String, val speaker: String, val earpiece: String, val audioRoute: String,
+    val endCall: String,
     val answerCall: String, val declineCall: String, val microphoneDenied: String,
 )
 
@@ -40,6 +42,7 @@ private val ArabicStrings = NqrbStrings(
     peopleTitle = "جهات الاتصال", peopleBody = "اسمح بالوصول الاختياري لعرض جهات اتصال جهازك محليًا.",
     profileTitle = "حسابك في نقرب", profileBody = "أنت مسجّل الدخول بجلسة منصة آمنة.", selected = "محدد",
     signInTitle = "خليك قريب.", signInBody = "سجّل دخولك وابدأ تجربتك على نقرب.",
+    restoringTitle = "جارٍ استعادة جلستك", restoringBody = "لحظات ونكمل من حيث توقفت بأمان.",
     continueWithGoogle = "المتابعة باستخدام Google",
     googleConfigurationMissing = "تسجيل الدخول عبر Google غير مهيأ في هذا الإصدار. لم يتم تسجيل دخولك.",
     googleUnavailable = "تعذّر فتح اختيار حساب Google على هذا الجهاز.",
@@ -60,7 +63,7 @@ private val ArabicStrings = NqrbStrings(
     continueCall = "متابعة المكالمة", cancel = "إلغاء", connecting = "جارٍ الاتصال", ringing = "في انتظار الرد",
     activeCall = "مكالمة جارية", reconnecting = "جارٍ استعادة الاتصال", endingCall = "جارٍ إنهاء المكالمة",
     callFailed = "تعذّر بدء المكالمة", mute = "كتم", unmute = "إلغاء الكتم", speaker = "مكبر الصوت",
-    earpiece = "سماعة الهاتف", endCall = "إنهاء المكالمة", answerCall = "رد", declineCall = "رفض",
+    earpiece = "سماعة الهاتف", audioRoute = "مسار الصوت", endCall = "إنهاء المكالمة", answerCall = "رد", declineCall = "رفض",
     microphoneDenied = "لم يبدأ الاتصال لأن إذن الميكروفون غير متاح. يمكنك المحاولة مجددًا بعد تمكينه.",
 )
 
@@ -76,7 +79,9 @@ private val EnglishStrings = NqrbStrings(
     historyTitle = "Call history", historyBody = "Your calls will appear here when the calling capability is ready.",
     peopleTitle = "Device contacts", peopleBody = "Allow optional access to view your device contacts locally.",
     profileTitle = "Your NQRB profile", profileBody = "You are signed in with a secure platform session.", selected = "Selected",
-    signInTitle = "Stay close.", signInBody = "Sign in and get started with NQRB.", continueWithGoogle = "Continue with Google",
+    signInTitle = "Stay close.", signInBody = "Sign in and get started with NQRB.",
+    restoringTitle = "Restoring your session", restoringBody = "One moment while NQRB securely picks up where you left off.",
+    continueWithGoogle = "Continue with Google",
     googleConfigurationMissing = "Google sign-in is not configured in this build. You have not been signed in.",
     googleUnavailable = "Google account selection is unavailable on this device.",
     googleSignInFailed = "Sign-in could not be completed. Please try again.",
@@ -96,6 +101,6 @@ private val EnglishStrings = NqrbStrings(
     continueCall = "Continue call", cancel = "Cancel", connecting = "Connecting", ringing = "Waiting for answer",
     activeCall = "Call in progress", reconnecting = "Reconnecting", endingCall = "Ending call",
     callFailed = "Call could not start", mute = "Mute", unmute = "Unmute", speaker = "Speaker",
-    earpiece = "Earpiece", endCall = "End call", answerCall = "Answer", declineCall = "Decline",
+    earpiece = "Earpiece", audioRoute = "Audio route", endCall = "End call", answerCall = "Answer", declineCall = "Decline",
     microphoneDenied = "The call did not start because microphone access is unavailable. You can retry after enabling it.",
 )

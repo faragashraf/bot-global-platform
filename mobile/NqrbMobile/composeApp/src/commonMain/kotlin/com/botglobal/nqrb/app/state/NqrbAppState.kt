@@ -31,8 +31,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class NqrbDestination {
     SignIn,
@@ -43,6 +46,8 @@ enum class NqrbDestination {
     Profile,
     Settings,
 }
+
+enum class NqrbStartupState { RestoringSession, Ready }
 
 class NqrbAppState(
     val identity: FederatedIdentityController = FederatedIdentityController(
@@ -63,21 +68,32 @@ class NqrbAppState(
     private val callTargetDisplayName: String = "",
     private val callActionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
+    private val startupMutex = Mutex()
+    private var startupCompleted = false
+    private val mutableStartupState = MutableStateFlow(NqrbStartupState.RestoringSession)
+    val startupState = mutableStartupState.asStateFlow()
     val microphoneExplanationVisible = MutableStateFlow(false)
     val microphonePermissionBlocked = MutableStateFlow(false)
     private var pendingMicrophoneAction = PendingMicrophoneAction.Outgoing
 
-    suspend fun startup() {
-        identity.restore()
-        navigation.reset(
-            if (identity.state.value is FederatedAuthenticationState.SignedIn) {
-                runCatching { push.activate() }
-                runCatching { calling.connectSignaling() }
-                NqrbDestination.Home
-            } else {
-                NqrbDestination.SignIn
-            },
-        )
+    suspend fun startup() = startupMutex.withLock {
+        if (startupCompleted) return@withLock
+        mutableStartupState.value = NqrbStartupState.RestoringSession
+        try {
+            identity.restore()
+            navigation.reset(
+                if (identity.state.value is FederatedAuthenticationState.SignedIn) {
+                    runCatching { push.activate() }
+                    runCatching { calling.connectSignaling() }
+                    NqrbDestination.Home
+                } else {
+                    NqrbDestination.SignIn
+                },
+            )
+        } finally {
+            startupCompleted = true
+            mutableStartupState.value = NqrbStartupState.Ready
+        }
     }
 
     suspend fun signInWithGoogle() {

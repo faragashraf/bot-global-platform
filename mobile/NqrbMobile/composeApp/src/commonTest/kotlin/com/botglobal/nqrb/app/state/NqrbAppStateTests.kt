@@ -41,11 +41,89 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NqrbAppStateTests {
+    @Test
+    fun startup_remains_restoring_until_authoritative_session_result_is_applied() = runTest {
+        val restored = CompletableDeferred<MobileSession?>()
+        val gateway = DeferredIdentityGateway(restored)
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, gateway),
+        )
+
+        backgroundScope.launch { state.startup() }
+        runCurrent()
+
+        assertEquals(NqrbStartupState.RestoringSession, state.startupState.value)
+        assertEquals(NqrbDestination.SignIn, state.navigation.current)
+
+        restored.complete(session())
+        runCurrent()
+
+        assertEquals(NqrbStartupState.Ready, state.startupState.value)
+        assertEquals(NqrbDestination.Home, state.navigation.current)
+    }
+
+    @Test
+    fun failed_restore_reveals_sign_in_only_after_bootstrap_finishes() = runTest {
+        val state = state(restored = null)
+
+        assertEquals(NqrbStartupState.RestoringSession, state.startupState.value)
+        state.startup()
+
+        assertEquals(NqrbStartupState.Ready, state.startupState.value)
+        assertEquals(NqrbDestination.SignIn, state.navigation.current)
+    }
+
+    @Test
+    fun repeated_ui_startup_does_not_repeat_session_restoration() = runTest {
+        val gateway = CountingIdentityGateway(session())
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, gateway),
+        )
+
+        state.startup()
+        state.startup()
+
+        assertEquals(1, gateway.restores)
+        assertEquals(NqrbDestination.Home, state.navigation.current)
+    }
+
+    @Test
+    fun incoming_call_bootstrap_remains_independent_of_compose_session_restoration() = runTest {
+        val restored = CompletableDeferred<MobileSession?>()
+        val signaling = RecordingCallSignaling()
+        val calling = CallSessionController(
+            backgroundScope,
+            signaling,
+            RecordingVoiceRoom(),
+            RecordingCallPlatform(),
+        )
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, DeferredIdentityGateway(restored)),
+            calling = calling,
+        )
+
+        backgroundScope.launch { state.startup() }
+        runCurrent()
+        signaling.emit(
+            CallSignalingEvent.IncomingOffered(
+                CallId("incoming-during-restore"),
+                "nqrb",
+                CallParticipant("caller", "Caller"),
+            ),
+        )
+        runCurrent()
+
+        assertEquals(NqrbStartupState.RestoringSession, state.startupState.value)
+        assertEquals(CallState.Ringing, calling.state.value.state)
+    }
+
     @Test
     fun startsSignedOutInArabicWithoutPhoneIdentityGate() = runTest {
         val state = state()
@@ -210,6 +288,26 @@ class NqrbAppStateTests {
     ) : FederatedIdentityGateway {
         override suspend fun restore() = restored
         override suspend fun authenticate(credential: FederatedCredential) = result
+        override suspend fun logout() = Unit
+    }
+
+    private class DeferredIdentityGateway(
+        private val restored: CompletableDeferred<MobileSession?>,
+    ) : FederatedIdentityGateway {
+        override suspend fun restore() = restored.await()
+        override suspend fun authenticate(credential: FederatedCredential) = FederatedSignInResult.Failed
+        override suspend fun logout() = Unit
+    }
+
+    private class CountingIdentityGateway(
+        private val restored: MobileSession?,
+    ) : FederatedIdentityGateway {
+        var restores = 0
+        override suspend fun restore(): MobileSession? {
+            restores++
+            return restored
+        }
+        override suspend fun authenticate(credential: FederatedCredential) = FederatedSignInResult.Failed
         override suspend fun logout() = Unit
     }
 

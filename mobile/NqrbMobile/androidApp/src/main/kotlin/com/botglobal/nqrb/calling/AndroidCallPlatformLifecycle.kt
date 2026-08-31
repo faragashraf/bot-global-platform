@@ -16,6 +16,7 @@ import android.telecom.DisconnectCause
 import androidx.annotation.RequiresApi
 import androidx.core.telecom.CallAttributesCompat
 import androidx.core.telecom.CallControlScope
+import androidx.core.telecom.CallControlResult
 import androidx.core.telecom.CallEndpointCompat
 import androidx.core.telecom.CallsManager
 import androidx.core.content.ContextCompat
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 class AndroidCallPlatformLifecycle(
     private val application: NqrbApplication,
@@ -49,6 +51,8 @@ class AndroidCallPlatformLifecycle(
     private val ended = AtomicBoolean(true)
     private var control: CallControlScope? = null
     private var callsManager: CallsManager? = null
+    private var endpointSnapshot: List<CallEndpointCompat> = emptyList()
+    private var currentRouteSnapshot = CallAudioRoute.System
 
     init {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -106,7 +110,18 @@ class AndroidCallPlatformLifecycle(
                     if (!ready.isCompleted) ready.complete(Unit)
                     launch {
                         currentCallEndpoint.collect { endpoint ->
-                            mutableActions.emit(CallPlatformAction.RouteChanged(endpoint.toDomainRoute()))
+                            currentRouteSnapshot = endpoint.toDomainRoute()
+                            mutableActions.emit(CallPlatformAction.RouteChanged(currentRouteSnapshot))
+                        }
+                    }
+                    launch {
+                        availableEndpoints.collect { endpoints ->
+                            endpointSnapshot = endpoints
+                            val routes = endpoints.mapTo(linkedSetOf()) { it.toDomainRoute() }
+                            Log.i(LogTag, "telecom routes available=${routes.joinToString { it.name.lowercase() }}")
+                            mutableActions.emit(
+                                CallPlatformAction.AvailableRoutesChanged(routes),
+                            )
                         }
                     }
                 }
@@ -126,10 +141,20 @@ class AndroidCallPlatformLifecycle(
     override suspend fun requestRoute(route: CallAudioRoute): CallAudioRoute {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return CallAudioRoute.System
         val callControl = control ?: return CallAudioRoute.System
-        val endpoint = callControl.availableEndpoints.first().firstOrNull { it.toDomainRoute() == route }
-            ?: return callControl.currentCallEndpoint.first().toDomainRoute()
-        callControl.requestEndpointChange(endpoint)
-        return endpoint.toDomainRoute()
+        val endpoint = endpointSnapshot.firstOrNull { it.toDomainRoute() == route } ?: run {
+            Log.i(LogTag, "telecom route unavailable requested=${route.name.lowercase()} current=${currentRouteSnapshot.name.lowercase()}")
+            return currentRouteSnapshot
+        }
+        val result = runCatching { callControl.requestEndpointChange(endpoint) }.getOrNull()
+        if (result !is CallControlResult.Success) {
+            Log.i(LogTag, "telecom route request rejected requested=${route.name.lowercase()}")
+            return currentRouteSnapshot
+        }
+        val applied = withTimeoutOrNull(1_500) {
+            callControl.currentCallEndpoint.first { it.toDomainRoute() == route }.toDomainRoute()
+        } ?: currentRouteSnapshot
+        Log.i(LogTag, "telecom route applied=${applied.name.lowercase()}")
+        return applied
     }
 
     override suspend fun end(reason: CallTerminationReason) {
@@ -147,6 +172,9 @@ class AndroidCallPlatformLifecycle(
             runCatching { control?.disconnect(DisconnectCause(cause)) }
         }
         control = null
+        endpointSnapshot = emptyList()
+        currentRouteSnapshot = CallAudioRoute.System
+        mutableActions.tryEmit(CallPlatformAction.AvailableRoutesChanged(emptySet()))
         NqrbOngoingCallService.stop(application)
     }
 

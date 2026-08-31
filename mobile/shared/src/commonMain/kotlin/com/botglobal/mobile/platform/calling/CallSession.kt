@@ -50,7 +50,19 @@ data class CallNetworkUsage(
 data class CallMediaState(
     val muted: Boolean = false,
     val route: CallAudioRoute = CallAudioRoute.System,
+    val availableRoutes: Set<CallAudioRoute> = emptySet(),
 )
+
+fun CallMediaState.speakerControlTarget(): CallAudioRoute? = when {
+    route != CallAudioRoute.Speaker && CallAudioRoute.Speaker in availableRoutes -> CallAudioRoute.Speaker
+    route == CallAudioRoute.Speaker -> listOf(
+        CallAudioRoute.Earpiece,
+        CallAudioRoute.WiredHeadset,
+        CallAudioRoute.Bluetooth,
+        CallAudioRoute.System,
+    ).firstOrNull(availableRoutes::contains)
+    else -> null
+}
 
 data class CallSessionSnapshot(
     val callId: CallId? = null,
@@ -109,6 +121,7 @@ sealed interface CallPlatformAction {
     data object Reject : CallPlatformAction
     data object End : CallPlatformAction
     data class RouteChanged(val route: CallAudioRoute) : CallPlatformAction
+    data class AvailableRoutesChanged(val routes: Set<CallAudioRoute>) : CallPlatformAction
 }
 
 interface CallPlatformLifecycle {
@@ -149,7 +162,12 @@ class CallSessionController(
                     CallPlatformAction.Answer -> acceptIncoming()
                     CallPlatformAction.Reject -> rejectIncoming()
                     CallPlatformAction.End -> end(CallTerminationReason.Local)
-                    is CallPlatformAction.RouteChanged -> updateMedia(route = action.route)
+                    is CallPlatformAction.RouteChanged -> if (mutableState.value.state in ActiveStates) {
+                        updateMedia(route = action.route)
+                    }
+                    is CallPlatformAction.AvailableRoutesChanged -> if (mutableState.value.state in ActiveStates) {
+                        updateMedia(availableRoutes = action.routes)
+                    }
                 }
             }
         }
@@ -216,6 +234,7 @@ class CallSessionController(
             mutableState.value = mutableState.value.copy(
                 state = CallState.Failed,
                 terminationReason = CallTerminationReason.Failed,
+                media = CallMediaState(),
                 networkUsage = usage.finish(nowEpochMillis()),
                 error = "call_start_failed",
             )
@@ -243,6 +262,7 @@ class CallSessionController(
             mutableState.value = current.copy(
                 state = CallState.Failed,
                 terminationReason = CallTerminationReason.Failed,
+                media = CallMediaState(),
                 networkUsage = usage.finish(nowEpochMillis()),
                 error = "call_accept_failed",
             )
@@ -259,6 +279,7 @@ class CallSessionController(
         mutableState.value = current.copy(
             state = CallState.Rejected,
             terminationReason = CallTerminationReason.Rejected,
+            media = CallMediaState(),
             networkUsage = usage.finish(nowEpochMillis()),
         )
     }
@@ -303,6 +324,7 @@ class CallSessionController(
         mutableState.value = current.copy(
             state = CallState.Ended,
             terminationReason = reason,
+            media = CallMediaState(),
             networkUsage = usage.finish(endedAtEpochMillis),
         )
         logger("call state=ended reason=${reason.name.lowercase()}")
@@ -366,7 +388,10 @@ class CallSessionController(
         runCatching { platform.end(CallTerminationReason.Failed) }
         durationJob?.cancel()
         durationJob = null
-        mutableState.value = failed.copy(networkUsage = usage.finish(nowEpochMillis()))
+        mutableState.value = failed.copy(
+            media = CallMediaState(),
+            networkUsage = usage.finish(nowEpochMillis()),
+        )
     }
 
     private fun onIncomingOffered(event: CallSignalingEvent.IncomingOffered) {
@@ -403,6 +428,7 @@ class CallSessionController(
         mutableState.value = current.copy(
             state = state,
             terminationReason = reason,
+            media = CallMediaState(),
             networkUsage = usage.finish(nowEpochMillis()),
         )
     }
@@ -410,8 +436,9 @@ class CallSessionController(
     private fun updateMedia(
         muted: Boolean = mutableState.value.media.muted,
         route: CallAudioRoute = mutableState.value.media.route,
+        availableRoutes: Set<CallAudioRoute> = mutableState.value.media.availableRoutes,
     ) {
-        mutableState.value = mutableState.value.copy(media = CallMediaState(muted, route))
+        mutableState.value = mutableState.value.copy(media = CallMediaState(muted, route, availableRoutes))
     }
 
     private companion object {

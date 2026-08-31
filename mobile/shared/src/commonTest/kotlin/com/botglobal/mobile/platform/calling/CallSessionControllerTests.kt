@@ -51,12 +51,75 @@ class CallSessionControllerTests {
         fixture.session.end()
 
         assertEquals(listOf(true), fixture.voice.mutes)
-        assertEquals(CallAudioRoute.Speaker, fixture.session.state.value.media.route)
+        assertEquals(CallAudioRoute.System, fixture.session.state.value.media.route)
+        assertTrue(fixture.session.state.value.media.availableRoutes.isEmpty())
         assertEquals(1, fixture.voice.interruptions)
         assertEquals(1, fixture.voice.recoveries)
         assertEquals(1, fixture.voice.leaves)
         assertEquals(1, fixture.platform.endCount)
         assertEquals(CallState.Ended, fixture.session.state.value.state)
+    }
+
+    @Test
+    fun phone_routes_expose_a_real_earpiece_speaker_toggle() = runTest {
+        val fixture = fixture(backgroundScope)
+        fixture.session.start(request())
+        runCurrent()
+        fixture.platform.events.emit(
+            CallPlatformAction.AvailableRoutesChanged(setOf(CallAudioRoute.Earpiece, CallAudioRoute.Speaker)),
+        )
+        fixture.platform.events.emit(CallPlatformAction.RouteChanged(CallAudioRoute.Earpiece))
+        runCurrent()
+
+        assertEquals(CallAudioRoute.Speaker, fixture.session.state.value.media.speakerControlTarget())
+        fixture.session.requestRoute(CallAudioRoute.Speaker)
+        assertEquals(CallAudioRoute.Speaker, fixture.session.state.value.media.route)
+        assertEquals(CallAudioRoute.Earpiece, fixture.session.state.value.media.speakerControlTarget())
+    }
+
+    @Test
+    fun speaker_only_tablet_does_not_expose_an_invalid_earpiece_transition() = runTest {
+        val fixture = fixture(backgroundScope)
+        fixture.session.start(request())
+        runCurrent()
+        fixture.platform.events.emit(CallPlatformAction.AvailableRoutesChanged(setOf(CallAudioRoute.Speaker)))
+        fixture.platform.events.emit(CallPlatformAction.RouteChanged(CallAudioRoute.Speaker))
+        runCurrent()
+
+        assertEquals(setOf(CallAudioRoute.Speaker), fixture.session.state.value.media.availableRoutes)
+        assertEquals(null, fixture.session.state.value.media.speakerControlTarget())
+    }
+
+    @Test
+    fun failed_route_request_preserves_the_actual_platform_route() = runTest {
+        val fixture = fixture(backgroundScope)
+        fixture.session.start(request())
+        runCurrent()
+        fixture.platform.events.emit(
+            CallPlatformAction.AvailableRoutesChanged(setOf(CallAudioRoute.Earpiece, CallAudioRoute.Speaker)),
+        )
+        fixture.platform.events.emit(CallPlatformAction.RouteChanged(CallAudioRoute.Earpiece))
+        fixture.platform.appliedRoute = CallAudioRoute.Earpiece
+        runCurrent()
+
+        fixture.session.requestRoute(CallAudioRoute.Speaker)
+
+        assertEquals(CallAudioRoute.Earpiece, fixture.session.state.value.media.route)
+    }
+
+    @Test
+    fun route_state_is_session_owned_and_survives_observer_recreation() = runTest {
+        val fixture = fixture(backgroundScope)
+        fixture.session.start(request())
+        runCurrent()
+        fixture.platform.events.emit(CallPlatformAction.AvailableRoutesChanged(setOf(CallAudioRoute.Speaker)))
+        fixture.platform.events.emit(CallPlatformAction.RouteChanged(CallAudioRoute.Speaker))
+        runCurrent()
+
+        val recreatedObserverSnapshot = fixture.session.state.value
+
+        assertEquals(CallAudioRoute.Speaker, recreatedObserverSnapshot.media.route)
+        assertEquals(setOf(CallAudioRoute.Speaker), recreatedObserverSnapshot.media.availableRoutes)
     }
 
     @Test
@@ -381,13 +444,14 @@ class CallSessionControllerTests {
         var endCount = 0
         var startCount = 0
         var failStart = false
+        var appliedRoute: CallAudioRoute? = null
         val endReasons = mutableListOf<CallTerminationReason>()
         override suspend fun start(callId: CallId, participant: CallParticipant, direction: CallDirection) {
             startCount++
             if (failStart) error("platform unavailable")
         }
         override suspend fun markActive() { activeCount++ }
-        override suspend fun requestRoute(route: CallAudioRoute) = route
+        override suspend fun requestRoute(route: CallAudioRoute) = appliedRoute ?: route
         override suspend fun end(reason: CallTerminationReason) {
             endCount++
             endReasons += reason

@@ -15,6 +15,8 @@ class NqrbStringsTests {
         assertEquals("NQRB", english.productName)
         listOf(arabic, english).forEach { strings ->
             assertTrue(strings.continueWithGoogle.isNotBlank())
+            assertTrue(strings.restoringTitle.isNotBlank())
+            assertTrue(strings.restoringBody.isNotBlank())
             assertTrue(strings.contactsOnboardingTitle.isNotBlank())
             assertTrue(strings.contactsStayLocal.isNotBlank())
             assertTrue(strings.allowContacts.isNotBlank())
@@ -23,6 +25,7 @@ class NqrbStringsTests {
             assertTrue(strings.microphoneTitle.isNotBlank())
             assertTrue(strings.startCall.isNotBlank())
             assertTrue(strings.endCall.isNotBlank())
+            assertTrue(strings.audioRoute.isNotBlank())
         }
     }
 }

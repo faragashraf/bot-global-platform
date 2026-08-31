@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -64,6 +65,7 @@ import com.botglobal.mobile.platform.calling.CallDirection
 import com.botglobal.mobile.platform.calling.CallSessionSnapshot
 import com.botglobal.mobile.platform.calling.CallState
 import com.botglobal.mobile.platform.calling.CallTerminationReason
+import com.botglobal.mobile.platform.calling.speakerControlTarget
 import com.botglobal.mobile.platform.contacts.ContactsSnapshot
 import com.botglobal.mobile.platform.contacts.ContactsStatus
 import com.botglobal.mobile.platform.contacts.DeviceContact
@@ -72,6 +74,7 @@ import com.botglobal.mobile.platform.identity.FederatedAuthenticationState
 import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.nqrb.app.state.NqrbAppState
 import com.botglobal.nqrb.app.state.NqrbDestination
+import com.botglobal.nqrb.app.state.NqrbStartupState
 import kotlinx.coroutines.launch
 
 @Composable
@@ -83,6 +86,7 @@ fun NqrbApp(
     val appearance by appState.appearance.state.collectAsState()
     val backStack by appState.navigation.backStack.collectAsState()
     val authentication by appState.identity.state.collectAsState()
+    val startupState by appState.startupState.collectAsState()
     val contacts by appState.contacts.state.collectAsState()
     val call by appState.calling.state.collectAsState()
     val microphoneExplanation by appState.microphoneExplanationVisible.collectAsState()
@@ -113,6 +117,7 @@ fun NqrbApp(
                 appState = appState,
                 layoutDirection = layoutDirection,
                 authentication = authentication,
+                startupState = startupState,
                 contacts = contacts,
                 call = call,
                 microphoneExplanation = microphoneExplanation,
@@ -129,6 +134,7 @@ private fun NqrbShell(
     appState: NqrbAppState,
     layoutDirection: LayoutDirection,
     authentication: FederatedAuthenticationState,
+    startupState: NqrbStartupState,
     contacts: ContactsSnapshot,
     call: CallSessionSnapshot,
     microphoneExplanation: Boolean,
@@ -156,8 +162,13 @@ private fun NqrbShell(
             when {
                 microphoneExplanation -> MicrophoneExplanationScreen(strings, appState)
                 call.state in VisibleCallStates -> InCallScreen(strings, call, appState)
+                showsRestoringSession(startupState, call.state) -> RestoringSessionScreen(strings, appState)
                 else -> AnimatedContent(destination) { current -> when (current) {
-                    NqrbDestination.SignIn -> SignInScreen(strings, authentication, appState)
+                    NqrbDestination.SignIn -> if (showsGoogleSignIn(startupState, current)) {
+                        SignInScreen(strings, authentication, appState)
+                    } else {
+                        RestoringSessionScreen(strings, appState)
+                    }
                     NqrbDestination.ContactsOnboarding -> ContactsOnboardingScreen(strings, appState)
                     NqrbDestination.Home -> HomeScreen(strings, appState, microphoneBlocked)
                     NqrbDestination.Settings -> SettingsScreen(
@@ -174,11 +185,28 @@ private fun NqrbShell(
     }
 }
 
+@Composable
+private fun RestoringSessionScreen(strings: NqrbStrings, appState: NqrbAppState) {
+    val colors = LocalNqrbColors.current
+    BrandedFlowFrame(strings, appState::openSettings) {
+        FlowHero(NqrbGlyph.Profile, strings.restoringTitle, strings.restoringBody)
+        Box(Modifier.fillMaxWidth().padding(NqrbSpacing.Lg), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = colors.accent)
+        }
+    }
+}
+
 private val NQRB_TOP_LEVEL_DESTINATIONS = NqrbAppState.TOP_LEVEL_DESTINATIONS
 private val VisibleCallStates = setOf(
     CallState.Preparing, CallState.Connecting, CallState.Ringing, CallState.Answering, CallState.Active,
     CallState.Reconnecting, CallState.Ending,
 )
+
+internal fun showsRestoringSession(startupState: NqrbStartupState, callState: CallState): Boolean =
+    startupState == NqrbStartupState.RestoringSession && callState !in VisibleCallStates
+
+internal fun showsGoogleSignIn(startupState: NqrbStartupState, destination: NqrbDestination): Boolean =
+    startupState == NqrbStartupState.Ready && destination == NqrbDestination.SignIn
 
 @Composable
 private fun SignInScreen(
@@ -470,14 +498,19 @@ private fun InCallScreen(strings: NqrbStrings, call: CallSessionSnapshot, appSta
                 label = if (call.media.muted) strings.unmute else strings.mute,
                 selected = call.media.muted,
             ) { appState.setCallMuted(!call.media.muted) }
+            val routeTarget = call.media.speakerControlTarget()
             CallControl(
                 glyph = NqrbGlyph.Speaker,
-                label = if (call.media.route == CallAudioRoute.Speaker) strings.earpiece else strings.speaker,
+                label = when (routeTarget) {
+                    CallAudioRoute.Speaker -> strings.speaker
+                    CallAudioRoute.Earpiece -> strings.earpiece
+                    null -> if (call.media.route == CallAudioRoute.Speaker) strings.speaker else strings.audioRoute
+                    else -> strings.audioRoute
+                },
                 selected = call.media.route == CallAudioRoute.Speaker,
+                enabled = routeTarget != null,
             ) {
-                appState.requestCallRoute(
-                    if (call.media.route == CallAudioRoute.Speaker) CallAudioRoute.Earpiece else CallAudioRoute.Speaker,
-                )
+                routeTarget?.let(appState::requestCallRoute)
             }
             CallControl(NqrbGlyph.Call, strings.endCall, selected = true, destructive = true) {
                 appState.endCall(CallTerminationReason.Local)
@@ -492,6 +525,7 @@ private fun CallControl(
     label: String,
     selected: Boolean,
     destructive: Boolean = false,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val colors = LocalNqrbColors.current
@@ -503,6 +537,7 @@ private fun CallControl(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         IconButton(
             modifier = Modifier.size(58.dp).clip(CircleShape).background(if (selected) colors.accentSoft else colors.surface),
+            enabled = enabled,
             onClick = onClick,
         ) { NqrbIcon(glyph, label, color, Modifier.size(28.dp)) }
         Text(label, style = MaterialTheme.typography.labelMedium, color = colors.textSecondary)
