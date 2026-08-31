@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    style="@style/Widget.SentriCam.Vision.SettingsNavigationRow"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="@dimen/vision_space_8"
+    android:clickable="true"
+    android:focusable="true">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="@dimen/vision_settings_navigation_row_min_height"
+        android:padding="@dimen/vision_space_12">
+
+        <ImageView
+            android:id="@+id/settings_navigation_icon"
+            android:layout_width="@dimen/vision_settings_navigation_icon_container_size"
+            android:layout_height="@dimen/vision_settings_navigation_icon_container_size"
+            android:background="@drawable/vision_background_settings_icon"
+            android:contentDescription="@null"
+            android:padding="@dimen/vision_space_8"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:tint="@color/vision_brand_primary"
+            tools:src="@drawable/ic_settings_24" />
+
+        <TextView
+            android:id="@+id/settings_navigation_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/vision_space_12"
+            android:textAppearance="@style/TextAppearance.SentriCam.Vision.SectionTitle"
+            android:textDirection="locale"
+            app:layout_constraintEnd_toStartOf="@id/settings_navigation_chevron"
+            app:layout_constraintStart_toEndOf="@id/settings_navigation_icon"
+            app:layout_constraintTop_toTopOf="parent"
+            tools:text="الكاميرا" />
+
+        <TextView
+            android:id="@+id/settings_navigation_summary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/vision_space_12"
+            android:layout_marginTop="@dimen/vision_space_4"
+            android:maxLines="2"
+            android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+            android:textDirection="locale"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/settings_navigation_chevron"
+            app:layout_constraintStart_toEndOf="@id/settings_navigation_icon"
+            app:layout_constraintTop_toBottomOf="@id/settings_navigation_title"
+            tools:text="العدسة والعناصر الظاهرة فوق الفيديو" />
+
+        <ImageView
+            android:id="@+id/settings_navigation_chevron"
+            android:layout_width="@dimen/vision_icon_size_medium"
+            android:layout_height="@dimen/vision_icon_size_medium"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_chevron_forward_24"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</com.google.android.material.card.MaterialCardView>

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/vision_background_primary">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/qr_preview"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:scaleType="fillCenter" />
+
+    <com.google.android.material.card.MaterialCardView
+        style="@style/Widget.SentriCam.Vision.Surface.Glass"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/vision_space_16"
+        android:layout_marginEnd="@dimen/vision_space_16"
+        android:layout_marginBottom="@dimen/vision_space_16"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintWidth_max="@dimen/vision_settings_action_max_width">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/vision_space_16">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/pairing_scan_title"
+                android:textAppearance="@style/TextAppearance.SentriCam.Vision.SectionTitle"
+                android:textDirection="locale" />
+
+            <TextView
+                android:id="@+id/qr_scan_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/vision_space_4"
+                android:accessibilityLiveRegion="polite"
+                android:text="@string/pairing_scan_instruction"
+                android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+                android:textDirection="locale" />
+
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/vision_space_12">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/qr_manual_setup"
+                    style="@style/Widget.SentriCam.Vision.PrimaryAction"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pairing_manual_setup"
+                    app:layout_constraintEnd_toStartOf="@id/qr_cancel"
+                    app:layout_constraintHorizontal_chainStyle="spread"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintWidth_percent="0.48" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/qr_cancel"
+                    style="@style/Widget.SentriCam.Vision.SecondaryAction"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/vision_space_8"
+                    android:text="@string/pairing_cancel"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toEndOf="@id/qr_manual_setup"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintWidth_percent="0.48" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+</androidx.constraintlayout.widget.ConstraintLayout>

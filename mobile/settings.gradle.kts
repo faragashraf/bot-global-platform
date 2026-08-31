@@ -35,3 +35,4 @@ plugins {
 include(":shared")
 include(":FamilyGamesMobile:composeApp")
 include(":FamilyGamesMobile:androidApp")
+include(":SentriCam:androidApp")

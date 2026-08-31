@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/vision_background_primary"
+    android:clipToPadding="false"
+    android:fillViewport="true"
+    android:scrollbars="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="@dimen/vision_space_8"
+        android:paddingTop="@dimen/vision_space_16"
+        android:paddingEnd="@dimen/vision_space_8"
+        android:paddingBottom="@dimen/vision_space_32">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/vision_space_8"
+            android:text="@string/settings_home_summary"
+            android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+            android:textDirection="locale" />
+
+        <LinearLayout
+            android:id="@+id/settings_home_navigation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

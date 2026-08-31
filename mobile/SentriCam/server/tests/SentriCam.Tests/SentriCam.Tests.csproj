@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="coverlet.collector">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SentriCam.Api\SentriCam.Api.csproj" />
+    <ProjectReference Include="..\..\src\SentriCam.Domain\SentriCam.Domain.csproj" />
+    <ProjectReference Include="..\..\src\SentriCam.Application\SentriCam.Application.csproj" />
+    <ProjectReference Include="..\..\src\SentriCam.Infrastructure\SentriCam.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\SentriCam.SignalR\SentriCam.SignalR.csproj" />
+    <ProjectReference Include="..\..\src\SentriCam.Contracts\SentriCam.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\SentriCam.Shared\SentriCam.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

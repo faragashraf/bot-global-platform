@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SentriCam.Application\SentriCam.Application.csproj" />
+    <ProjectReference Include="..\SentriCam.Contracts\SentriCam.Contracts.csproj" />
+    <ProjectReference Include="..\SentriCam.Shared\SentriCam.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

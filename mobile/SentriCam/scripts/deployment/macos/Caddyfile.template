@@ -1,0 +1,25 @@
+__SENTRICAM_SITE_ADDRESSES__ {
+	tls internal
+
+	handle /health {
+		reverse_proxy 127.0.0.1:5173
+	}
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:5173
+	}
+
+	handle /hubs/* {
+		reverse_proxy 127.0.0.1:5173
+	}
+
+	handle {
+		root * "__SENTRICAM_WEB_ROOT__"
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output file "__SENTRICAM_ACCESS_LOG__"
+	}
+}

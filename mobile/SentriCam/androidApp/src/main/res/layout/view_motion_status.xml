@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:gravity="center"
+    android:minHeight="@dimen/vision_compact_control_height"
+    android:orientation="vertical"
+    android:paddingStart="@dimen/vision_space_12"
+    android:paddingTop="@dimen/vision_space_8"
+    android:paddingEnd="@dimen/vision_space_12"
+    android:paddingBottom="@dimen/vision_space_8">
+
+    <TextView
+        android:id="@+id/motion_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:breakStrategy="simple"
+        android:drawablePadding="@dimen/vision_space_8"
+        android:gravity="center"
+        android:hyphenationFrequency="none"
+        android:maxLines="3"
+        android:text="@string/motion_status_off"
+        android:textAppearance="@style/TextAppearance.SentriCam.Vision.Status"
+        android:textColor="@color/vision_status_offline"
+        app:drawableStartCompat="@drawable/ic_motion_24" />
+
+    <TextView
+        android:id="@+id/motion_debug"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/vision_space_4"
+        android:breakStrategy="simple"
+        android:fontFamily="sans-serif-monospace"
+        android:maxLines="3"
+        android:textAppearance="@style/TextAppearance.SentriCam.Vision.Status"
+        android:textColor="@color/vision_text_secondary"
+        android:textDirection="ltr"
+        android:visibility="gone" />
+</LinearLayout>

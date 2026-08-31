@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <size
+        android:width="@dimen/vision_camera_shutter_inner_size"
+        android:height="@dimen/vision_camera_shutter_inner_size" />
+    <corners android:radius="@dimen/vision_camera_shutter_stop_radius" />
+    <solid android:color="@color/white" />
+</shape>

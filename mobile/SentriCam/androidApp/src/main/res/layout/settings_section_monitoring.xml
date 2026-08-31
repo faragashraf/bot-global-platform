@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/vision_background_primary"
+    android:clipToPadding="false"
+    android:fillViewport="true"
+    android:scrollbars="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="@dimen/vision_space_16"
+        android:paddingTop="@dimen/vision_space_16"
+        android:paddingEnd="@dimen/vision_space_16"
+        android:paddingBottom="@dimen/vision_space_32">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_monitoring_title"
+            android:textAppearance="@style/TextAppearance.SentriCam.Vision.ScreenTitle"
+            android:textDirection="locale" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/vision_space_4"
+            android:text="@string/monitoring_vision_summary"
+            android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+            android:textDirection="locale" />
+
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.SentriCam.Vision.SettingsSection.Healthy"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/vision_space_16">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/vision_space_16">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/monitoring_service_section_title"
+                    android:textAppearance="@style/TextAppearance.SentriCam.Vision.SectionTitle"
+                    android:textColor="@color/vision_status_healthy"
+                    android:textDirection="locale" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/vision_space_4"
+                    android:text="@string/monitoring_service_section_summary"
+                    android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+                    android:textDirection="locale" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/settings_monitoring_enabled"
+                    style="@style/Widget.SentriCam.Vision.SettingsSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/vision_space_8"
+                    android:text="@string/monitoring_enable" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/settings_monitoring_auto_start"
+                    style="@style/Widget.SentriCam.Vision.SettingsSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/monitoring_auto_start" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/vision_space_8"
+                    android:text="@string/monitoring_signalr_coming_soon"
+                    android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+                    android:textColor="@color/vision_status_healthy"
+                    android:textDirection="locale" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.SentriCam.Vision.SettingsSection"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/vision_space_12">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/vision_space_16">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/monitoring_notification_options"
+                    android:textAppearance="@style/TextAppearance.SentriCam.Vision.SectionTitle"
+                    android:textDirection="locale" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/vision_space_4"
+                    android:text="@string/monitoring_notification_summary"
+                    android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+                    android:textDirection="locale" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/settings_notification_motion"
+                    style="@style/Widget.SentriCam.Vision.SettingsSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/vision_space_8"
+                    android:text="@string/monitoring_notification_motion" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/settings_notification_recording"
+                    style="@style/Widget.SentriCam.Vision.SettingsSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/monitoring_notification_recording" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/settings_notification_battery"
+                    style="@style/Widget.SentriCam.Vision.SettingsSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/monitoring_notification_battery" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/settings_notification_storage"
+                    style="@style/Widget.SentriCam.Vision.SettingsSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/monitoring_notification_storage" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/settings_monitoring_debug_group"
+            style="@style/Widget.SentriCam.Vision.SettingsSection.Secondary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/vision_space_12"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/vision_space_16">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/monitoring_debug_options"
+                    android:textAppearance="@style/TextAppearance.SentriCam.Vision.SectionTitle"
+                    android:textColor="@color/vision_brand_secondary"
+                    android:textDirection="locale" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/settings_monitoring_restart_failure"
+                    style="@style/Widget.SentriCam.Vision.SettingsSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/vision_space_8"
+                    android:text="@string/monitoring_restart_failure" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/settings_monitoring_verbose"
+                    style="@style/Widget.SentriCam.Vision.SettingsSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/monitoring_verbose" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/vision_space_12"
+            android:text="@string/monitoring_service_available"
+            android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+            android:textColor="@color/vision_text_subtle"
+            android:textDirection="locale" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

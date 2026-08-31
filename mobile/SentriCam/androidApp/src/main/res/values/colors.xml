@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- SentriCam Vision: core surfaces -->
+    <color name="vision_background_primary">#070B14</color>
+    <color name="vision_background_secondary">#0B1220</color>
+    <color name="vision_surface">#101827</color>
+    <color name="vision_surface_elevated">#172136</color>
+    <color name="vision_surface_highest">#1E293B</color>
+    <color name="vision_surface_glass">#E6111A2B</color>
+    <color name="vision_overlay_scrim">#B3070B14</color>
+    <color name="vision_surface_disabled">#1A2435</color>
+
+    <!-- SentriCam Vision: brand roles -->
+    <color name="vision_brand_primary">#2563EB</color>
+    <color name="vision_brand_primary_container">#172554</color>
+    <color name="vision_brand_secondary">#7C3AED</color>
+    <color name="vision_brand_secondary_container">#2E1065</color>
+    <color name="vision_on_brand">#FFFFFFFF</color>
+
+    <!-- SentriCam Vision: operational status roles -->
+    <color name="vision_status_healthy">#10B981</color>
+    <color name="vision_status_healthy_container">#1A10B981</color>
+    <color name="vision_status_recording">#EF4444</color>
+    <color name="vision_status_recording_container">#1AEF4444</color>
+    <color name="vision_status_critical">@color/vision_status_recording</color>
+    <color name="vision_status_critical_container">@color/vision_status_recording_container</color>
+    <color name="vision_status_motion">#F59E0B</color>
+    <color name="vision_status_motion_container">#1AF59E0B</color>
+    <color name="vision_status_offline">#64748B</color>
+    <color name="vision_status_offline_container">#1A64748B</color>
+
+    <!-- SentriCam Vision: content and structure roles -->
+    <color name="vision_text_primary">#F8FAFC</color>
+    <color name="vision_text_secondary">#CBD5E1</color>
+    <color name="vision_text_subtle">#94A3B8</color>
+    <color name="vision_text_disabled">#64748B</color>
+    <color name="vision_border">#334155</color>
+    <color name="vision_border_glass">#66CBD5E1</color>
+    <color name="vision_divider">#1F2A3A</color>
+    <color name="vision_ripple_light">#33FFFFFF</color>
+
+    <!-- Stable public brand resources retained for launcher and existing consumers. -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="sentricam_primary">@color/vision_brand_primary</color>
+    <color name="sentricam_deep_navy">@color/vision_background_secondary</color>
+    <color name="sentricam_slate_gray">@color/vision_status_offline</color>
+    <color name="sentricam_light_gray">@color/vision_text_primary</color>
+    <color name="sentricam_success">@color/vision_status_healthy</color>
+    <color name="sentricam_alert">@color/vision_status_recording</color>
+    <color name="ic_launcher_background">@color/vision_background_secondary</color>
+    <color name="splash_background">@color/vision_background_secondary</color>
+
+    <!-- Legacy UI aliases now resolve through the shared Vision semantics. -->
+    <color name="camera_status_scrim">@color/vision_overlay_scrim</color>
+    <color name="recording_panel_scrim">@color/vision_surface_glass</color>
+    <color name="recording_ready">@color/vision_status_healthy</color>
+    <color name="recording_active">@color/vision_status_recording</color>
+    <color name="recording_stopping">@color/vision_status_motion</color>
+    <color name="recording_error">@color/vision_status_critical</color>
+    <color name="recording_button_ready">@color/vision_brand_primary</color>
+    <color name="recording_button_stop">@color/vision_status_recording</color>
+    <color name="camera_toolbar_stroke">@color/vision_border_glass</color>
+    <color name="camera_toolbar_ripple">@color/vision_ripple_light</color>
+    <color name="motion_off">@color/vision_status_offline</color>
+    <color name="motion_monitoring">@color/vision_brand_primary</color>
+    <color name="motion_detected">@color/vision_status_motion</color>
+    <color name="motion_recording">@color/vision_status_recording</color>
+    <color name="motion_holding">@color/vision_status_motion</color>
+    <color name="motion_cooldown">@color/vision_status_motion</color>
+    <color name="motion_error">@color/vision_status_critical</color>
+    <color name="player_controls_scrim">@color/vision_overlay_scrim</color>
+    <color name="player_control_background">@color/vision_brand_primary</color>
+</resources>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sentricam.caddy</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__SENTRICAM_CADDY_RUNNER__</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>__SENTRICAM_APP_ROOT__</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>__SENTRICAM_HOME__</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>__SENTRICAM_CADDY_STDOUT__</string>
+    <key>StandardErrorPath</key>
+    <string>__SENTRICAM_CADDY_STDERR__</string>
+</dict>
+</plist>
