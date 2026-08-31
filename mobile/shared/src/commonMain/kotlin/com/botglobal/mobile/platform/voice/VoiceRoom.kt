@@ -22,6 +22,7 @@ data class VoiceMediaStats(
     val path: VoiceMediaPath = VoiceMediaPath.Unknown,
     val localCandidateType: String? = null,
     val remoteCandidateType: String? = null,
+    val available: Boolean = false,
 )
 data class VoiceRoomSnapshot(
     val state: VoiceRoomState = VoiceRoomState.Idle,

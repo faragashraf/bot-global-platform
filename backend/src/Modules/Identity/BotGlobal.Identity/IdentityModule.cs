@@ -1,4 +1,5 @@
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Calling;
 using BotGlobal.Contracts.Notifications;
 using BotGlobal.Identity.Application;
 using BotGlobal.Identity.Domain;
@@ -74,6 +75,7 @@ public static class IdentityModule
         services.AddSingleton<IGoogleIdTokenVerifier, GoogleIdTokenVerifier>();
         services.AddScoped<IFederatedIdentityTokenValidator, GoogleFederatedIdentityTokenValidator>();
         services.AddScoped<IMobileFederatedIdentityService, MobileFederatedIdentityService>();
+        services.AddScoped<ICallingParticipantDirectory, CallingParticipantDirectory>();
 
         services.ConfigureApplicationCookie(
             options =>

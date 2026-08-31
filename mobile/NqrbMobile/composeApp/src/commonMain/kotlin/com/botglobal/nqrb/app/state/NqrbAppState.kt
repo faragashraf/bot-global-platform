@@ -181,7 +181,9 @@ class NqrbAppState(
         callActionScope.launch { calling.end(reason) }
     }
 
-    fun rejectIncomingCall() = endCall(CallTerminationReason.Rejected)
+    fun rejectIncomingCall() {
+        callActionScope.launch { calling.rejectIncoming() }
+    }
 
     fun cancelMicrophoneExplanation() {
         microphoneExplanationVisible.value = false

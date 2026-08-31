@@ -4,4 +4,9 @@
     <string name="ongoing_call_channel">Ongoing calls</string>
     <string name="ongoing_call_channel_description">Shows the active NQRB voice call</string>
     <string name="end_call">End call</string>
+    <string name="incoming_call_title">Incoming NQRB call</string>
+    <string name="incoming_call_channel">Incoming calls</string>
+    <string name="incoming_call_channel_description">Incoming NQRB voice calls</string>
+    <string name="answer_call">Answer</string>
+    <string name="reject_call">Reject</string>
 </resources>

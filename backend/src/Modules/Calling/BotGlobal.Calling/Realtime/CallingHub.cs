@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Calling;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,9 @@ namespace BotGlobal.Calling.Realtime;
 public sealed class CallingHub(
     CallSessionRegistry sessions,
     CallingIceConfigurationProvider ice,
+    ICallingParticipantDirectory participants,
+    IIncomingCallNotificationDispatcher notifications,
+    TimeProvider timeProvider,
     ILogger<CallingHub> logger) : Hub
 {
     public override Task OnConnectedAsync()
@@ -32,13 +36,55 @@ public sealed class CallingHub(
 
     public async Task<StartedCallResult> StartOutgoingCall(StartOutgoingCallRequest request)
     {
+        var identity = RequireIdentity();
+        var callee = await participants.FindAsync(identity.ApplicationKey, request.CalleeMembershipId, Context.ConnectionAborted);
+        if (callee is null || !callee.IsActive) throw new HubException("call_peer_unavailable");
         CallSessionRegistry.Started started;
-        try { started = sessions.Start(Context.ConnectionId, request.CalleeMembershipId); }
+        try { started = sessions.Start(Context.ConnectionId, callee, timeProvider.GetUtcNow(), TimeSpan.FromSeconds(45)); }
         catch (InvalidOperationException error) { throw new HubException(error.Message); }
-        await Clients.Client(started.Callee.ConnectionId).SendAsync("CallOffered",
+        foreach (var connection in started.CalleeConnections)
+            await Clients.Client(connection.ConnectionId).SendAsync("CallOffered",
             new CallOfferedEvent(started.Session.CallId, started.Session.ApplicationKey,
                 started.Caller.MembershipId, started.Caller.DisplayName));
-        return new StartedCallResult(started.Session.CallId, started.Callee.MembershipId, started.Callee.DisplayName);
+        await notifications.DispatchAsync(new IncomingCallNotification(
+            started.Session.ApplicationKey, started.Session.CalleeSubjectId, started.Session.CallId,
+            IncomingCallNotificationKind.Offered, started.Session.CallerDisplayName, started.Session.ExpiresAtUtc),
+            Context.ConnectionAborted);
+        return new StartedCallResult(started.Session.CallId, started.Session.CalleeMembershipId, started.Session.CalleeDisplayName);
+    }
+
+    public IncomingCallResult GetIncomingCall(IncomingCallLookupRequest request)
+    {
+        try
+        {
+            var incoming = sessions.RequireIncoming(Context.ConnectionId, request.CallId, timeProvider.GetUtcNow());
+            return new IncomingCallResult(incoming.Session.CallId, incoming.Session.ApplicationKey,
+                incoming.Session.CallerMembershipId, incoming.Session.CallerDisplayName, incoming.Session.ExpiresAtUtc);
+        }
+        catch (InvalidOperationException error) { throw new HubException(error.Message); }
+    }
+
+    public async Task AnswerIncomingCall(AnswerCallRequest request)
+    {
+        CallSessionRegistry.Transition transition;
+        try { transition = sessions.Answer(Context.ConnectionId, request.CallId, timeProvider.GetUtcNow()); }
+        catch (InvalidOperationException error) { throw new HubException(error.Message); }
+        if (!transition.Changed) return;
+        foreach (var connection in transition.PeerConnections)
+            await Clients.Client(connection.ConnectionId).SendAsync("CallAnswered", new CallStateEvent(request.CallId, "answered"));
+        foreach (var connection in sessions.ConnectedParticipants(transition.Session.CalleeMembershipId, transition.Session.ApplicationKey)
+                     .Where(connection => connection.ConnectionId != Context.ConnectionId))
+            await Clients.Client(connection.ConnectionId).SendAsync("CallEnded", new CallEndedEvent(request.CallId, "answered_elsewhere"));
+    }
+
+    public async Task RejectIncomingCall(RejectCallRequest request)
+    {
+        CallSessionRegistry.Transition transition;
+        try { transition = sessions.Reject(Context.ConnectionId, request.CallId, timeProvider.GetUtcNow()); }
+        catch (InvalidOperationException error) { throw new HubException(error.Message); }
+        if (!transition.Changed) return;
+        foreach (var connection in transition.PeerConnections)
+            await Clients.Client(connection.ConnectionId).SendAsync("CallRejected", new CallStateEvent(request.CallId, "rejected"));
     }
 
     public async Task<JoinCallResult> JoinCall(JoinCallRequest request)
@@ -88,11 +134,18 @@ public sealed class CallingHub(
 
     public async Task EndCall(EndCallRequest request)
     {
-        CallSessionRegistry.JoinedParticipant? peer;
-        try { (_, peer) = sessions.End(Context.ConnectionId, request.CallId); }
+        CallSessionRegistry.Transition transition;
+        try { transition = sessions.End(Context.ConnectionId, request.CallId); }
         catch (InvalidOperationException error) { throw new HubException(error.Message); }
-        if (peer is not null)
-            await Clients.Client(peer.ConnectionId).SendAsync("CallEnded", new CallEndedEvent(request.CallId, "remote"));
+        var endingIdentity = RequireIdentity();
+        logger.LogInformation("Call ended by authenticated participant. Role={Role}, Outcome={Outcome}",
+            endingIdentity.MembershipId == transition.Session.CallerMembershipId ? "caller" : "callee", transition.Session.Status);
+        foreach (var peer in transition.PeerConnections)
+            await Clients.Client(peer.ConnectionId).SendAsync("CallEnded", new CallEndedEvent(request.CallId, transition.Session.Status.ToString().ToLowerInvariant()));
+        if (transition.Changed && transition.Session.Status == CallSessionRegistry.CallStatus.Cancelled)
+            await notifications.DispatchAsync(new IncomingCallNotification(transition.Session.ApplicationKey,
+                transition.Session.CalleeSubjectId, request.CallId, IncomingCallNotificationKind.Cancelled,
+                transition.Session.CallerDisplayName, transition.Session.ExpiresAtUtc), Context.ConnectionAborted);
     }
 
     private async Task ForwardDescription(string eventName, CallDescriptionRequest request)

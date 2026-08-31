@@ -13,7 +13,8 @@ public sealed record SendMobileNotificationRequest(
     string BodyAr,
     string BodyEn,
     string Type,
-    MobileNotificationPriority Priority);
+    MobileNotificationPriority Priority,
+    IReadOnlyDictionary<string, string>? Data = null);
 
 public sealed record MobileNotificationEnvelope(
     string NotificationId,
@@ -24,7 +25,8 @@ public sealed record MobileNotificationEnvelope(
     string BodyEn,
     string Type,
     MobileNotificationPriority Priority,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    IReadOnlyDictionary<string, string>? Data = null);
 
 public sealed record SendMobileNotificationResponse(
     string NotificationId,

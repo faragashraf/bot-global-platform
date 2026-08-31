@@ -8,13 +8,17 @@ import com.botglobal.mobile.platform.notifications.firebase.AndroidPushDeviceIns
 import com.botglobal.mobile.platform.notifications.firebase.AndroidSecureMobileDeviceCredentialVault
 import com.botglobal.mobile.platform.notifications.firebase.FirebaseMessagingRuntimeOwner
 import com.botglobal.nqrb.app.data.NqrbPushRegistrationApi
+import com.botglobal.nqrb.app.data.NqrbIdentityApi
 import com.botglobal.nqrb.app.data.createNqrbHttpClient
 import com.botglobal.nqrb.calling.NqrbCallRuntime
+import com.botglobal.nqrb.calling.NqrbPushMessageHandler
 
 class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
     lateinit var callRuntime: NqrbCallRuntime
         private set
     lateinit var sessionVault: AndroidSecureSessionVault
+        private set
+    lateinit var identityApi: NqrbIdentityApi
         private set
     override lateinit var firebaseMessagingRuntime: AndroidFirebaseMessagingRuntime
         private set
@@ -22,6 +26,7 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
     override fun onCreate() {
         super.onCreate()
         sessionVault = AndroidSecureSessionVault(this, "nqrb")
+        identityApi = NqrbIdentityApi(createNqrbHttpClient(), BuildConfig.API_BASE_URL, sessionVault)
         val pushRegistration = NqrbPushRegistrationApi(
             platformClient = createNqrbHttpClient(),
             apiBaseUrl = BuildConfig.API_BASE_URL,
@@ -29,14 +34,16 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
             deviceCredentialVault = AndroidSecureMobileDeviceCredentialVault(this, "nqrb"),
             installation = AndroidPushDeviceInstallation(this, BuildConfig.VERSION_NAME).value,
         )
-        firebaseMessagingRuntime = AndroidFirebaseMessagingRuntime(
-            context = this,
-            registrationController = PushRegistrationController(pushRegistration),
-        )
         callRuntime = NqrbCallRuntime(
             application = this,
             apiBaseUrl = BuildConfig.API_BASE_URL,
             sessionVault = sessionVault,
+            restoreSession = { identityApi.restore() != null },
+        )
+        firebaseMessagingRuntime = AndroidFirebaseMessagingRuntime(
+            context = this,
+            registrationController = PushRegistrationController(pushRegistration),
+            messageHandler = NqrbPushMessageHandler(callRuntime),
         )
     }
 }

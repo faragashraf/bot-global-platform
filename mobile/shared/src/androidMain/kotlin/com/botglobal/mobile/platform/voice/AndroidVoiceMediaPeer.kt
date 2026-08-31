@@ -257,15 +257,18 @@ private fun org.webrtc.RTCStatsReport.toVoiceStats(generation: Long, logTag: Str
     var inboundPackets = 0L
     var inboundBytes = 0L
     var audioLevel: Double? = null
+    var available = false
     var selectedPair: org.webrtc.RTCStats? = null
     statsMap.values.forEach { stat ->
         val kind = stat.members["kind"] ?: stat.members["mediaType"]
         when {
             stat.type == "outbound-rtp" && kind == "audio" -> {
+                available = true
                 outboundPackets += stat.long("packetsSent")
                 outboundBytes += stat.long("bytesSent")
             }
             stat.type == "inbound-rtp" && kind == "audio" -> {
+                available = true
                 inboundPackets += stat.long("packetsReceived")
                 inboundBytes += stat.long("bytesReceived")
                 audioLevel = (stat.members["audioLevel"] as? Number)?.toDouble()
@@ -284,7 +287,7 @@ private fun org.webrtc.RTCStatsReport.toVoiceStats(generation: Long, logTag: Str
         else -> VoiceMediaPath.Unknown
     }
     Log.i("${logTag}Stats", "generation=$generation mediaPath=${path.name.lowercase()} local=$localType remote=$remoteType outPackets=$outboundPackets outBytes=$outboundBytes inPackets=$inboundPackets inBytes=$inboundBytes")
-    return VoiceMediaStats(outboundPackets, outboundBytes, inboundPackets, inboundBytes, audioLevel, path, localType, remoteType)
+    return VoiceMediaStats(outboundPackets, outboundBytes, inboundPackets, inboundBytes, audioLevel, path, localType, remoteType, available)
 }
 
 private fun org.webrtc.RTCStats.long(name: String): Long = (members[name] as? Number)?.toLong() ?: 0

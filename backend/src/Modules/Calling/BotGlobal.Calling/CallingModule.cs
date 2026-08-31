@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace BotGlobal.Calling;
 
@@ -14,6 +15,8 @@ public static class CallingModule
     {
         services.AddSignalR(options => options.EnableDetailedErrors = false);
         services.AddSingleton<CallSessionRegistry>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddHostedService<CallExpiryBackgroundService>();
         services.AddOptions<CallingIceOptions>()
             .Bind(configuration.GetSection(CallingIceOptions.SectionName))
             .Validate(

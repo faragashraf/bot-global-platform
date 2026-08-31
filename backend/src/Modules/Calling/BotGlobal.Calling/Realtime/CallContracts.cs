@@ -3,6 +3,11 @@ namespace BotGlobal.Calling.Realtime;
 public sealed record StartOutgoingCallRequest(Guid CalleeMembershipId);
 public sealed record StartedCallResult(Guid CallId, Guid CalleeMembershipId, string CalleeDisplayName);
 public sealed record CallOfferedEvent(Guid CallId, string ApplicationContext, Guid CallerMembershipId, string CallerDisplayName);
+public sealed record IncomingCallLookupRequest(Guid CallId);
+public sealed record IncomingCallResult(Guid CallId, string ApplicationContext, Guid CallerMembershipId, string CallerDisplayName, DateTimeOffset ExpiresAtUtc);
+public sealed record AnswerCallRequest(Guid CallId);
+public sealed record RejectCallRequest(Guid CallId);
+public sealed record CallStateEvent(Guid CallId, string State);
 public sealed record JoinCallRequest(Guid CallId, long Generation);
 public sealed record JoinCallResult(Guid CallId, long Generation, Guid ParticipantId, string ConnectionId,
     bool IsInitiator, bool PeerPresent, Guid? PeerParticipantId, string? PeerConnectionId);

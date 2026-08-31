@@ -4,4 +4,9 @@
     <string name="ongoing_call_channel">المكالمات الجارية</string>
     <string name="ongoing_call_channel_description">يعرض مكالمة نقرب الصوتية الجارية</string>
     <string name="end_call">إنهاء المكالمة</string>
+    <string name="incoming_call_title">مكالمة نقرب واردة</string>
+    <string name="incoming_call_channel">المكالمات الواردة</string>
+    <string name="incoming_call_channel_description">مكالمات نقرب الصوتية الواردة</string>
+    <string name="answer_call">رد</string>
+    <string name="reject_call">رفض</string>
 </resources>

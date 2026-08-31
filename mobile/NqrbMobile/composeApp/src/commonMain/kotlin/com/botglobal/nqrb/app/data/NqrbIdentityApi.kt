@@ -21,17 +21,20 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class NqrbIdentityApi(
     platformClient: HttpClient,
     private val apiBaseUrl: String,
     private val vault: SessionVault,
 ) : FederatedIdentityGateway {
+    private val restoreMutex = Mutex()
     private val client = platformClient.config {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
     }
 
-    override suspend fun restore(): MobileSession? {
+    override suspend fun restore(): MobileSession? = restoreMutex.withLock {
         val saved = vault.restore() ?: return null
         return try {
             val refreshed = client.post(endpoint("/api/mobile/nqrb/identity/refresh")) {

@@ -15,9 +15,10 @@ class NqrbCallRuntime(
     application: NqrbApplication,
     apiBaseUrl: String,
     sessionVault: SessionVault,
+    restoreSession: suspend () -> Boolean,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val signaling = AndroidCallingSignaling(apiBaseUrl, sessionVault)
+    private val signaling = AndroidCallingSignaling(apiBaseUrl, sessionVault, restoreSession)
     private val voice = ManagedVoiceRoomController(
         scope = scope,
         signaling = signaling,

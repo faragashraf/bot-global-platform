@@ -72,10 +72,11 @@ class AndroidCallPlatformLifecycle(
             throw UnsupportedOperationException("NQRB calls require Android 8.0 or newer.")
         }
         ended.set(false)
-        NqrbOngoingCallService.start(application, participant.displayName)
+        NqrbOngoingCallService.start(application, participant.displayName, direction)
         val ready = CompletableDeferred<Unit>()
         scope.launch {
             runCatching {
+                Log.i(LogTag, "telecom registration requested direction=${direction.name.lowercase()}")
                 requireNotNull(callsManager).addCall(
                     CallAttributesCompat(
                         displayName = participant.displayName,
@@ -86,17 +87,22 @@ class AndroidCallPlatformLifecycle(
                         callType = CallAttributesCompat.CALL_TYPE_AUDIO_CALL,
                         callCapabilities = 0,
                     ),
-                    onAnswer = { },
+                    onAnswer = {
+                        Log.i(LogTag, "telecom answer requested")
+                        mutableActions.emit(CallPlatformAction.Answer)
+                    },
                     onDisconnect = {
-                        mutableActions.emit(CallPlatformAction.End)
+                        Log.i(LogTag, "telecom disconnect code=${it.code}")
+                        mutableActions.emit(if (it.code == DisconnectCause.REJECTED) CallPlatformAction.Reject else CallPlatformAction.End)
                         if (!ready.isCompleted) ready.complete(Unit)
                     },
                     onSetActive = { },
-                    onSetInactive = {
-                        mutableActions.emit(CallPlatformAction.End)
-                    },
+                    // Telecom may report inactive while an incoming call is still ringing.
+                    // Termination is authoritative only through disconnect/reject.
+                    onSetInactive = { },
                 ) {
                     control = this
+                    Log.i(LogTag, "telecom call control acquired")
                     if (!ready.isCompleted) ready.complete(Unit)
                     launch {
                         currentCallEndpoint.collect { endpoint ->
@@ -105,6 +111,7 @@ class AndroidCallPlatformLifecycle(
                     }
                 }
             }.onFailure { error ->
+                Log.w(LogTag, "telecom call scope failed type=${error::class.simpleName}")
                 if (!ready.isCompleted) ready.completeExceptionally(error)
             }
         }
@@ -113,6 +120,7 @@ class AndroidCallPlatformLifecycle(
 
     override suspend fun markActive() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) control?.setActive()
+        NqrbOngoingCallService.markActive(application)
     }
 
     override suspend fun requestRoute(route: CallAudioRoute): CallAudioRoute {
@@ -126,6 +134,7 @@ class AndroidCallPlatformLifecycle(
 
     override suspend fun end(reason: CallTerminationReason) {
         if (!ended.compareAndSet(false, true)) return
+        Log.i(LogTag, "telecom disconnect requested reason=${reason.name.lowercase()}")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val cause = when (reason) {
                 CallTerminationReason.Rejected -> DisconnectCause.REJECTED
@@ -133,6 +142,7 @@ class AndroidCallPlatformLifecycle(
                 CallTerminationReason.Remote -> DisconnectCause.REMOTE
                 CallTerminationReason.Failed -> DisconnectCause.ERROR
                 CallTerminationReason.Local -> DisconnectCause.LOCAL
+                CallTerminationReason.Cancelled, CallTerminationReason.Missed, CallTerminationReason.Expired -> DisconnectCause.CANCELED
             }
             runCatching { control?.disconnect(DisconnectCause(cause)) }
         }
@@ -163,12 +173,17 @@ class NqrbOngoingCallService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action != ActionStart) {
+        val action = intent?.action
+        if (action !in setOf(ActionStart, ActionActive)) {
             stopSelf()
             return START_NOT_STICKY
         }
-        val displayName = intent.getStringExtra(ExtraDisplayName).orEmpty().ifBlank { getString(R.string.app_name) }
-        startForeground(NotificationId, ongoingNotification(displayName))
+        val displayName = intent?.getStringExtra(ExtraDisplayName).orEmpty().ifBlank {
+            getSharedPreferences(Preferences, MODE_PRIVATE).getString(ExtraDisplayName, null) ?: getString(R.string.app_name)
+        }
+        getSharedPreferences(Preferences, MODE_PRIVATE).edit().putString(ExtraDisplayName, displayName).apply()
+        val incoming = intent?.getBooleanExtra(ExtraIncoming, false) == true && action == ActionStart
+        startForeground(NotificationId, if (incoming) incomingNotification(displayName) else ongoingNotification(displayName))
         return START_NOT_STICKY
     }
 
@@ -222,6 +237,31 @@ class NqrbOngoingCallService : Service() {
         return builder.build()
     }
 
+    private fun incomingNotification(displayName: String): Notification {
+        val answer = callAction(ActionAnswerCall, 2)
+        val reject = callAction(ActionRejectCall, 3)
+        val builder = Notification.Builder(this, IncomingChannelId)
+            .setSmallIcon(R.drawable.ic_nqrb_launcher)
+            .setContentTitle(getString(R.string.incoming_call_title))
+            .setContentText(displayName)
+            .setCategory(Notification.CATEGORY_CALL)
+            .setOngoing(true)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setPriority(Notification.PRIORITY_MAX)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setStyle(Notification.CallStyle.forIncomingCall(
+                Person.Builder().setName(displayName).setImportant(true).build(), reject, answer))
+        } else {
+            builder.addAction(Notification.Action.Builder(null, getString(R.string.reject_call), reject).build())
+            builder.addAction(Notification.Action.Builder(null, getString(R.string.answer_call), answer).build())
+        }
+        return builder.build()
+    }
+
+    private fun callAction(action: String, requestCode: Int) = PendingIntent.getBroadcast(
+        this, requestCode, Intent(this, NqrbCallActionReceiver::class.java).setAction(action),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             notificationManager.createNotificationChannel(
@@ -235,6 +275,11 @@ class NqrbOngoingCallService : Service() {
                     enableVibration(false)
                 },
             )
+            notificationManager.createNotificationChannel(NotificationChannel(
+                IncomingChannelId, getString(R.string.incoming_call_channel), NotificationManager.IMPORTANCE_HIGH).apply {
+                description = getString(R.string.incoming_call_channel_description)
+                enableVibration(true)
+            })
         }
     }
 
@@ -242,16 +287,27 @@ class NqrbOngoingCallService : Service() {
         const val ChannelId = "nqrb_ongoing_calls"
         const val NotificationId = 2101
         const val ActionEndCall = "com.botglobal.nqrb.action.END_CALL"
+        const val ActionAnswerCall = "com.botglobal.nqrb.action.ANSWER_CALL"
+        const val ActionRejectCall = "com.botglobal.nqrb.action.REJECT_CALL"
+        const val IncomingChannelId = "nqrb_incoming_calls"
         private const val ActionStart = "com.botglobal.nqrb.action.START_ONGOING_CALL"
+        private const val ActionActive = "com.botglobal.nqrb.action.ACTIVE_CALL"
         private const val ExtraDisplayName = "display_name"
+        private const val ExtraIncoming = "incoming"
+        private const val Preferences = "nqrb_call_presentation"
 
-        fun start(context: Context, displayName: String) {
+        fun start(context: Context, displayName: String, direction: CallDirection) {
             ContextCompat.startForegroundService(
                 context,
                 Intent(context, NqrbOngoingCallService::class.java)
                     .setAction(ActionStart)
-                    .putExtra(ExtraDisplayName, displayName),
+                    .putExtra(ExtraDisplayName, displayName)
+                    .putExtra(ExtraIncoming, direction == CallDirection.Incoming),
             )
+        }
+
+        fun markActive(context: Context) {
+            ContextCompat.startForegroundService(context, Intent(context, NqrbOngoingCallService::class.java).setAction(ActionActive))
         }
 
         fun stop(context: Context) {
@@ -262,11 +318,17 @@ class NqrbOngoingCallService : Service() {
 
 class NqrbCallActionReceiver : android.content.BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != NqrbOngoingCallService.ActionEndCall) return
+        if (intent.action !in setOf(NqrbOngoingCallService.ActionEndCall, NqrbOngoingCallService.ActionAnswerCall, NqrbOngoingCallService.ActionRejectCall)) return
         val pending = goAsync()
         val application = context.applicationContext as NqrbApplication
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-            runCatching { application.callRuntime.session.end(CallTerminationReason.Local) }
+            runCatching {
+                when (intent.action) {
+                    NqrbOngoingCallService.ActionAnswerCall -> application.callRuntime.session.acceptIncoming()
+                    NqrbOngoingCallService.ActionRejectCall -> application.callRuntime.session.rejectIncoming()
+                    else -> application.callRuntime.session.end(CallTerminationReason.Local)
+                }
+            }
             pending.finish()
         }
     }

@@ -15,8 +15,6 @@ import com.botglobal.mobile.platform.device.AndroidRuntimePermissionController
 import com.botglobal.mobile.platform.device.PermissionKind
 import com.botglobal.mobile.platform.identity.AndroidGoogleCredentialProvider
 import com.botglobal.mobile.platform.identity.FederatedIdentityController
-import com.botglobal.nqrb.app.data.NqrbIdentityApi
-import com.botglobal.nqrb.app.data.createNqrbHttpClient
 import com.botglobal.nqrb.app.state.NqrbAppState
 import com.botglobal.nqrb.app.ui.NqrbApp
 
@@ -42,11 +40,7 @@ class MainActivity : ComponentActivity() {
         val appState = NqrbAppState(
             identity = FederatedIdentityController(
                 credentials = AndroidGoogleCredentialProvider(this, BuildConfig.GOOGLE_SERVER_CLIENT_ID),
-                gateway = NqrbIdentityApi(
-                    platformClient = createNqrbHttpClient(),
-                    apiBaseUrl = BuildConfig.API_BASE_URL,
-                    vault = sessionVault,
-                ),
+                gateway = nqrbApplication.identityApi,
             ),
             contacts = ContactsController(
                 permissions = permissionController,

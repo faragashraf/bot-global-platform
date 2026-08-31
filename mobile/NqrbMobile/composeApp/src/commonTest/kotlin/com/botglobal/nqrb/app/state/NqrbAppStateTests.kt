@@ -1,5 +1,18 @@
 package com.botglobal.nqrb.app.state
 
+import com.botglobal.mobile.platform.calling.CallAudioRoute
+import com.botglobal.mobile.platform.calling.CallDirection
+import com.botglobal.mobile.platform.calling.CallId
+import com.botglobal.mobile.platform.calling.CallParticipant
+import com.botglobal.mobile.platform.calling.CallPlatformAction
+import com.botglobal.mobile.platform.calling.CallPlatformLifecycle
+import com.botglobal.mobile.platform.calling.CallSessionController
+import com.botglobal.mobile.platform.calling.CallSignaling
+import com.botglobal.mobile.platform.calling.CallSignalingEvent
+import com.botglobal.mobile.platform.calling.CallState
+import com.botglobal.mobile.platform.calling.CallTerminationReason
+import com.botglobal.mobile.platform.calling.OutgoingCallRequest
+import com.botglobal.mobile.platform.calling.StartedCall
 import com.botglobal.mobile.platform.contacts.ContactsController
 import com.botglobal.mobile.platform.contacts.ContactsGateway
 import com.botglobal.mobile.platform.device.PermissionController
@@ -19,6 +32,8 @@ import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
+import com.botglobal.mobile.platform.voice.VoiceRoomController
+import com.botglobal.mobile.platform.voice.VoiceRoomSnapshot
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -26,6 +41,8 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NqrbAppStateTests {
@@ -134,6 +151,39 @@ class NqrbAppStateTests {
         assertEquals(com.botglobal.mobile.platform.calling.CallState.Idle, state.calling.state.value.state)
     }
 
+    @Test
+    fun foreground_compose_decline_uses_authoritative_reject_once_without_starting_media() = runTest {
+        val signaling = RecordingCallSignaling()
+        val voice = RecordingVoiceRoom()
+        val platform = RecordingCallPlatform()
+        val calling = CallSessionController(backgroundScope, signaling, voice, platform)
+        val state = NqrbAppState(calling = calling, callActionScope = backgroundScope)
+        val offer = CallSignalingEvent.IncomingOffered(
+            CallId("incoming"),
+            "nqrb",
+            CallParticipant("caller", "Caller"),
+        )
+
+        runCurrent()
+        signaling.emit(offer)
+        runCurrent()
+        signaling.emit(offer)
+        runCurrent()
+        state.rejectIncomingCall()
+        state.rejectIncomingCall()
+        runCurrent()
+
+        assertEquals(CallState.Rejected, calling.state.value.state)
+        assertEquals(CallTerminationReason.Rejected, calling.state.value.terminationReason)
+        assertTrue(calling.state.value.networkUsage.isFinal)
+        assertEquals(1, signaling.rejects)
+        assertEquals(0, signaling.ends)
+        assertEquals(0, signaling.answers)
+        assertEquals(0, voice.joins)
+        assertEquals(1, platform.starts)
+        assertEquals(listOf(CallTerminationReason.Rejected), platform.endReasons)
+    }
+
     private fun state(
         restored: MobileSession? = null,
         signIn: FederatedSignInResult = FederatedSignInResult.Rejected,
@@ -182,6 +232,63 @@ class NqrbAppStateTests {
     private object ThrowingPushLifecycle : PushRegistrationLifecycle {
         override suspend fun activate() = error("Synthetic push registration failure")
         override suspend fun deactivate() = error("Synthetic push invalidation failure")
+    }
+
+    private class RecordingCallSignaling : CallSignaling {
+        private val mutableEvents = MutableSharedFlow<CallSignalingEvent>(extraBufferCapacity = 4)
+        override val events = mutableEvents
+        var answers = 0
+        var rejects = 0
+        var ends = 0
+
+        override suspend fun startOutgoing(request: OutgoingCallRequest) =
+            StartedCall(CallId("outgoing"), request.callee)
+
+        override suspend fun answer(callId: CallId) {
+            answers++
+        }
+
+        override suspend fun reject(callId: CallId) {
+            rejects++
+        }
+
+        override suspend fun end(callId: CallId, reason: CallTerminationReason) {
+            ends++
+        }
+
+        suspend fun emit(event: CallSignalingEvent) {
+            mutableEvents.emit(event)
+        }
+    }
+
+    private class RecordingVoiceRoom : VoiceRoomController {
+        override val snapshot = MutableStateFlow(VoiceRoomSnapshot())
+        var joins = 0
+
+        override suspend fun join(roomId: String) {
+            joins++
+        }
+
+        override suspend fun leave() = Unit
+        override suspend fun setMuted(muted: Boolean) = Unit
+        override suspend fun signalingInterrupted() = Unit
+        override suspend fun signalingRecovered() = Unit
+    }
+
+    private class RecordingCallPlatform : CallPlatformLifecycle {
+        override val actions = MutableSharedFlow<CallPlatformAction>(extraBufferCapacity = 2)
+        var starts = 0
+        val endReasons = mutableListOf<CallTerminationReason>()
+
+        override suspend fun start(callId: CallId, participant: CallParticipant, direction: CallDirection) {
+            starts++
+        }
+
+        override suspend fun markActive() = Unit
+        override suspend fun requestRoute(route: CallAudioRoute) = route
+        override suspend fun end(reason: CallTerminationReason) {
+            endReasons += reason
+        }
     }
 
     private fun session() = MobileSession(

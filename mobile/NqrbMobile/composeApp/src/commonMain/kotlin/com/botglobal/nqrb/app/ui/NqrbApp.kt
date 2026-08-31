@@ -176,7 +176,7 @@ private fun NqrbShell(
 
 private val NQRB_TOP_LEVEL_DESTINATIONS = NqrbAppState.TOP_LEVEL_DESTINATIONS
 private val VisibleCallStates = setOf(
-    CallState.Preparing, CallState.Connecting, CallState.Ringing, CallState.Active,
+    CallState.Preparing, CallState.Connecting, CallState.Ringing, CallState.Answering, CallState.Active,
     CallState.Reconnecting, CallState.Ending,
 )
 
@@ -427,7 +427,7 @@ private fun MicrophoneExplanationScreen(strings: NqrbStrings, appState: NqrbAppS
 private fun InCallScreen(strings: NqrbStrings, call: CallSessionSnapshot, appState: NqrbAppState) {
     val colors = LocalNqrbColors.current
     val status = when (call.state) {
-        CallState.Preparing, CallState.Connecting -> strings.connecting
+        CallState.Preparing, CallState.Connecting, CallState.Answering -> strings.connecting
         CallState.Ringing -> strings.ringing
         CallState.Active -> strings.activeCall
         CallState.Reconnecting -> strings.reconnecting

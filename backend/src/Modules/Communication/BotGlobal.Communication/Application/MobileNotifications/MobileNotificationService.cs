@@ -48,7 +48,8 @@ internal sealed class MobileNotificationService(
                 request.BodyEn.Trim(),
                 request.Type.Trim(),
                 request.Priority,
-                timeProvider.GetUtcNow());
+                timeProvider.GetUtcNow(),
+                request.Data);
 
         var result =
             await delivery.DeliverAsync(

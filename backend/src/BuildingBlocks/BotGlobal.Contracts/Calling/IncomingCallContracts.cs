@@ -1,0 +1,37 @@
+namespace BotGlobal.Contracts.Calling;
+
+public sealed record CallingParticipantDescriptor(
+    Guid MembershipId,
+    string ApplicationKey,
+    string SubjectId,
+    string DisplayName,
+    bool IsActive);
+
+public interface ICallingParticipantDirectory
+{
+    Task<CallingParticipantDescriptor?> FindAsync(
+        string applicationKey,
+        Guid membershipId,
+        CancellationToken cancellationToken);
+}
+
+public enum IncomingCallNotificationKind
+{
+    Offered = 1,
+    Cancelled = 2,
+    AnsweredElsewhere = 3,
+    Expired = 4
+}
+
+public sealed record IncomingCallNotification(
+    string ApplicationKey,
+    string RecipientSubjectId,
+    Guid CallId,
+    IncomingCallNotificationKind Kind,
+    string CallerDisplayName,
+    DateTimeOffset ExpiresAtUtc);
+
+public interface IIncomingCallNotificationDispatcher
+{
+    Task DispatchAsync(IncomingCallNotification notification, CancellationToken cancellationToken);
+}

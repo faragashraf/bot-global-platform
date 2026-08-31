@@ -1,5 +1,6 @@
 using BotGlobal.Calling.Realtime;
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Calling;
 
 namespace BotGlobal.UnitTests.Calling;
 
@@ -120,4 +121,61 @@ public sealed class CallSessionRegistryTests
 
     private static ApplicationIdentityDescriptor Identity(string application, string name) =>
         new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid().ToString("N"), application, name, false);
+
+    [Fact]
+    public void Offline_callee_can_ring_and_answer_is_authoritative_and_idempotent()
+    {
+        var registry = new CallSessionRegistry();
+        var caller = Identity("nqrb", "Caller");
+        registry.Connected("caller", caller);
+        var callee = new CallingParticipantDescriptor(Guid.NewGuid(), "nqrb", "subject", "Callee", true);
+        var now = DateTimeOffset.UtcNow;
+        var started = registry.Start("caller", callee, now, TimeSpan.FromSeconds(45));
+        Assert.Empty(started.CalleeConnections);
+        registry.Connected("callee", new ApplicationIdentityDescriptor(callee.MembershipId, Guid.NewGuid(), callee.SubjectId, "nqrb", callee.DisplayName, false));
+        registry.RequireIncoming("callee", started.Session.CallId, now);
+        Assert.True(registry.Answer("callee", started.Session.CallId, now).Changed);
+        Assert.False(registry.Answer("callee", started.Session.CallId, now).Changed);
+    }
+
+    [Fact]
+    public void Reject_is_authoritative_idempotent_and_prevents_answer_or_join()
+    {
+        var registry = new CallSessionRegistry();
+        var caller = Identity("nqrb", "Caller");
+        var callee = Identity("nqrb", "Callee");
+        registry.Connected("caller", caller);
+        registry.Connected("callee", callee);
+        var now = DateTimeOffset.UtcNow;
+        var participant = new CallingParticipantDescriptor(
+            callee.MembershipId,
+            callee.ApplicationKey,
+            callee.SubjectId,
+            callee.DisplayName,
+            true);
+        var started = registry.Start("caller", participant, now, TimeSpan.FromSeconds(45));
+
+        Assert.True(registry.Reject("callee", started.Session.CallId, now).Changed);
+        Assert.False(registry.Reject("callee", started.Session.CallId, now).Changed);
+        Assert.Equal(CallSessionRegistry.CallStatus.Rejected, started.Session.Status);
+        Assert.Throws<InvalidOperationException>(() =>
+            registry.Answer("callee", started.Session.CallId, now));
+        Assert.Throws<InvalidOperationException>(() =>
+            registry.Join("callee", started.Session.CallId, 1));
+    }
+
+    [Fact]
+    public void Expired_offer_cannot_be_answered_or_resurrected()
+    {
+        var registry = new CallSessionRegistry();
+        var caller = Identity("nqrb", "Caller");
+        var calleeIdentity = Identity("nqrb", "Callee");
+        registry.Connected("caller", caller);
+        registry.Connected("callee", calleeIdentity);
+        var callee = new CallingParticipantDescriptor(calleeIdentity.MembershipId, "nqrb", calleeIdentity.SubjectId, "Callee", true);
+        var now = DateTimeOffset.UtcNow;
+        var started = registry.Start("caller", callee, now, TimeSpan.FromSeconds(1));
+        Assert.Single(registry.Expire(now.AddSeconds(2)));
+        Assert.Throws<InvalidOperationException>(() => registry.Answer("callee", started.Session.CallId, now.AddSeconds(2)));
+    }
 }

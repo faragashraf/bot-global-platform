@@ -68,23 +68,7 @@ internal sealed class CompositeMobileNotificationDelivery(
                         destination.RegistrationToken,
                         notification.TitleAr,
                         notification.BodyAr,
-                        new Dictionary<string, string>
-                        {
-                            ["notificationId"] =
-                                notification.NotificationId,
-                            ["type"] =
-                                notification.Type,
-                            ["titleAr"] =
-                                notification.TitleAr,
-                            ["titleEn"] =
-                                notification.TitleEn,
-                            ["bodyAr"] =
-                                notification.BodyAr,
-                            ["bodyEn"] =
-                                notification.BodyEn,
-                            ["priority"] =
-                                notification.Priority.ToString()
-                        },
+                        CreatePushData(notification),
                         TimeSpan.FromDays(
                             Math.Clamp(
                                 pushOptions.Value.DefaultTimeToLiveDays,
@@ -105,5 +89,20 @@ internal sealed class CompositeMobileNotificationDelivery(
             DeliveredDeviceCount: delivered,
             SignalRDeliveredDeviceCount: signalRDelivered,
             FcmDeliveredDeviceCount: fcmDelivered);
+    }
+
+    private static Dictionary<string, string> CreatePushData(MobileNotificationEnvelope notification)
+    {
+        var data = notification.Data is null
+            ? new Dictionary<string, string>()
+            : new Dictionary<string, string>(notification.Data, StringComparer.Ordinal);
+        data["notificationId"] = notification.NotificationId;
+        data["type"] = notification.Type;
+        data["titleAr"] = notification.TitleAr;
+        data["titleEn"] = notification.TitleEn;
+        data["bodyAr"] = notification.BodyAr;
+        data["bodyEn"] = notification.BodyEn;
+        data["priority"] = notification.Priority.ToString();
+        return data;
     }
 }

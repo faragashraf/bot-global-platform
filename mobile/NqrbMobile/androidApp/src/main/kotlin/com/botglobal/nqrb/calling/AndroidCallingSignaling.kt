@@ -35,6 +35,7 @@ import kotlinx.coroutines.withContext
 class AndroidCallingSignaling(
     apiBaseUrl: String,
     private val sessionVault: SessionVault,
+    private val restoreSession: suspend () -> Boolean = { sessionVault.restore() != null },
 ) : CallSignaling, VoiceSignalingTransport {
     private val connectionMutex = Mutex()
     private val mutableSignals = MutableSharedFlow<VoiceSignal>(extraBufferCapacity = 64)
@@ -78,6 +79,16 @@ class AndroidCallingSignaling(
                 .blockingGet()
         }.let { StartedCall(CallId(it.callId), CallParticipant(it.calleeMembershipId, it.calleeDisplayName)) }
     }
+
+    override suspend fun receiveIncoming(callId: CallId) {
+        ensureConnected()
+        val value = io { hub.invoke(IncomingCallDto::class.java, "GetIncomingCall", CallIdDto(callId.value)).timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingGet() }
+        mutableEvents.emit(CallSignalingEvent.IncomingOffered(CallId(value.callId), value.applicationContext,
+            CallParticipant(value.callerMembershipId, value.callerDisplayName)))
+    }
+
+    override suspend fun answer(callId: CallId) = invoke("AnswerIncomingCall", CallIdDto(callId.value))
+    override suspend fun reject(callId: CallId) = invoke("RejectIncomingCall", CallIdDto(callId.value))
 
     override suspend fun end(callId: CallId, reason: CallTerminationReason) {
         if (hub.connectionState == HubConnectionState.CONNECTED) invoke(
@@ -126,6 +137,7 @@ class AndroidCallingSignaling(
     private suspend fun ensureConnected() {
         connectionMutex.withLock {
             if (hub.connectionState == HubConnectionState.CONNECTED) return@withLock
+            if (!restoreSession()) throw IllegalStateException("Mobile session is unavailable.")
             io { hub.start().timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingAwait() }
             Log.i(LogTag, "calling realtime connected")
         }
@@ -153,8 +165,16 @@ class AndroidCallingSignaling(
         subscriptions += connection.on("CallIceCandidate", { value -> mutableSignals.tryEmit(value.toSignal()) }, IceCandidateEventDto::class.java)
         subscriptions += connection.on("CallMuteState", { value -> mutableSignals.tryEmit(value.toSignal()) }, MuteEventDto::class.java)
         subscriptions += connection.on("CallEnded", { value ->
-            mutableEvents.tryEmit(CallSignalingEvent.RemoteEnded(CallId(value.callId)))
+            Log.i(LogTag, "call ended by peer reason=${value.reason}")
+            val callId = CallId(value.callId)
+            mutableEvents.tryEmit(when (value.reason) {
+                "cancelled" -> CallSignalingEvent.Cancelled(callId)
+                "rejected" -> CallSignalingEvent.Rejected(callId)
+                "expired" -> CallSignalingEvent.Expired(callId)
+                else -> CallSignalingEvent.RemoteEnded(callId)
+            })
         }, CallEndedDto::class.java)
+        subscriptions += connection.on("CallRejected", { value -> mutableEvents.tryEmit(CallSignalingEvent.Rejected(CallId(value.callId))) }, CallStateDto::class.java)
         connection.onClosed { error ->
             Log.i(LogTag, "calling realtime closed error=${error?.javaClass?.simpleName ?: "none"}")
             if (!disconnectRequested) {
@@ -181,6 +201,12 @@ class AndroidCallingSignaling(
 }
 
 private data class StartCallDto(val calleeMembershipId: String)
+private data class CallIdDto(val callId: String)
+private data class IncomingCallDto(
+    val callId: String = "", val applicationContext: String = "", val callerMembershipId: String = "",
+    val callerDisplayName: String = "", val expiresAtUtc: String = "",
+)
+private data class CallStateDto(val callId: String = "", val state: String = "")
 private data class StartedCallDto(val callId: String = "", val calleeMembershipId: String = "", val calleeDisplayName: String = "")
 private data class CallOfferedDto(
     val callId: String = "", val applicationContext: String = "",

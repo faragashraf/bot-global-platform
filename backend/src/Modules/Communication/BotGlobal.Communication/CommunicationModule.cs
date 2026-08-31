@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using BotGlobal.Contracts.Notifications;
+using BotGlobal.Contracts.Calling;
 
 namespace BotGlobal.Communication;
 
@@ -113,6 +114,7 @@ public static class CommunicationModule
         services.AddScoped<
             IMobileNotificationService,
             MobileNotificationService>();
+        services.AddScoped<IIncomingCallNotificationDispatcher, IncomingCallNotificationDispatcher>();
 
         services.AddSingleton<
             IMobileNotificationConnectionRegistry,

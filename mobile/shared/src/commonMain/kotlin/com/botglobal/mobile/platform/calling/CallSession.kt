@@ -21,11 +21,31 @@ data class CallParticipant(val membershipId: String, val displayName: String)
 
 enum class CallDirection { Outgoing, Incoming }
 
-enum class CallState { Idle, Preparing, Connecting, Ringing, Active, Reconnecting, Ending, Ended, Failed }
+enum class CallState { Idle, Preparing, Connecting, Ringing, Answering, Active, Reconnecting, Ending, Rejected, Cancelled, Missed, Expired, Ended, Failed }
 
 enum class CallAudioRoute { System, Earpiece, Speaker, WiredHeadset, Bluetooth }
 
-enum class CallTerminationReason { Local, Remote, Rejected, Busy, Failed }
+enum class CallTerminationReason { Local, Remote, Rejected, Busy, Cancelled, Missed, Expired, Failed }
+
+data class CallNetworkUsage(
+    val bytesSent: Long = 0,
+    val bytesReceived: Long = 0,
+    val measurementAvailable: Boolean = false,
+    val isFinal: Boolean = false,
+    val connectedAtEpochMillis: Long? = null,
+    val endedAtEpochMillis: Long? = null,
+    val connectedDurationSeconds: Long? = null,
+) {
+    val totalBytes: Long get() = bytesSent + bytesReceived
+
+    /** Average WebRTC media bytes per connected minute; unavailable without measured media or duration. */
+    val bytesPerConnectedMinute: Double?
+        get() {
+            val durationSeconds = connectedDurationSeconds ?: return null
+            if (!measurementAvailable || durationSeconds <= 0) return null
+            return totalBytes.toDouble() * 60.0 / durationSeconds.toDouble()
+        }
+}
 
 data class CallMediaState(
     val muted: Boolean = false,
@@ -42,6 +62,7 @@ data class CallSessionSnapshot(
     val activeSinceEpochMillis: Long? = null,
     val elapsedSeconds: Long = 0,
     val terminationReason: CallTerminationReason? = null,
+    val networkUsage: CallNetworkUsage = CallNetworkUsage(),
     val error: String? = null,
 )
 
@@ -56,6 +77,9 @@ sealed interface CallSignalingEvent {
     data object Interrupted : CallSignalingEvent
     data object Recovered : CallSignalingEvent
     data class RemoteEnded(val callId: CallId) : CallSignalingEvent
+    data class Cancelled(val callId: CallId) : CallSignalingEvent
+    data class Rejected(val callId: CallId) : CallSignalingEvent
+    data class Expired(val callId: CallId) : CallSignalingEvent
     data class IncomingOffered(
         val callId: CallId,
         val applicationContext: String,
@@ -74,10 +98,15 @@ interface CallSignaling {
     suspend fun connect() = Unit
     suspend fun disconnect() = Unit
     suspend fun startOutgoing(request: OutgoingCallRequest): StartedCall
+    suspend fun receiveIncoming(callId: CallId) = Unit
+    suspend fun answer(callId: CallId) = Unit
+    suspend fun reject(callId: CallId) = Unit
     suspend fun end(callId: CallId, reason: CallTerminationReason)
 }
 
 sealed interface CallPlatformAction {
+    data object Answer : CallPlatformAction
+    data object Reject : CallPlatformAction
     data object End : CallPlatformAction
     data class RouteChanged(val route: CallAudioRoute) : CallPlatformAction
 }
@@ -108,13 +137,17 @@ class CallSessionController(
     private val operation = Mutex()
     private val mutableState = MutableStateFlow(CallSessionSnapshot())
     private var durationJob: Job? = null
+    private val usage = CallNetworkUsageAccumulator()
     val state: StateFlow<CallSessionSnapshot> = mutableState.asStateFlow()
 
     init {
         scope.launch { voice.snapshot.collect(::onVoiceChanged) }
         scope.launch {
             platform.actions.collect { action ->
+                logger("call platform action=${action::class.simpleName}")
                 when (action) {
+                    CallPlatformAction.Answer -> acceptIncoming()
+                    CallPlatformAction.Reject -> rejectIncoming()
                     CallPlatformAction.End -> end(CallTerminationReason.Local)
                     is CallPlatformAction.RouteChanged -> updateMedia(route = action.route)
                 }
@@ -128,6 +161,9 @@ class CallSessionController(
                     is CallSignalingEvent.RemoteEnded -> if (event.callId == state.value.callId) {
                         end(CallTerminationReason.Remote)
                     }
+                    is CallSignalingEvent.Cancelled -> terminalFromRemote(event.callId, CallState.Cancelled, CallTerminationReason.Cancelled)
+                    is CallSignalingEvent.Rejected -> terminalFromRemote(event.callId, CallState.Rejected, CallTerminationReason.Rejected)
+                    is CallSignalingEvent.Expired -> terminalFromRemote(event.callId, CallState.Expired, CallTerminationReason.Expired)
                     is CallSignalingEvent.IncomingOffered -> onIncomingOffered(event)
                 }
             }
@@ -135,6 +171,15 @@ class CallSessionController(
     }
 
     suspend fun connectSignaling() = signaling.connect()
+    suspend fun receiveIncoming(callId: CallId) = signaling.receiveIncoming(callId)
+    suspend fun dismissIncoming(callId: CallId, reason: CallTerminationReason) {
+        val terminal = when (reason) {
+            CallTerminationReason.Cancelled -> CallState.Cancelled
+            CallTerminationReason.Expired, CallTerminationReason.Missed -> CallState.Expired
+            else -> CallState.Ended
+        }
+        terminalFromRemote(callId, terminal, reason)
+    }
 
     suspend fun disconnectSignaling() {
         if (mutableState.value.state in ActiveStates) end(CallTerminationReason.Local)
@@ -144,6 +189,7 @@ class CallSessionController(
     suspend fun start(request: OutgoingCallRequest): StartCallResult = operation.withLock {
         if (mutableState.value.state in ActiveStates) return StartCallResult.ActiveCallExists
         var startedCallId: CallId? = null
+        usage.reset()
         mutableState.value = CallSessionSnapshot(
             applicationContext = request.applicationContext,
             participant = request.callee,
@@ -170,6 +216,7 @@ class CallSessionController(
             mutableState.value = mutableState.value.copy(
                 state = CallState.Failed,
                 terminationReason = CallTerminationReason.Failed,
+                networkUsage = usage.finish(nowEpochMillis()),
                 error = "call_start_failed",
             )
             logger("call state=failed phase=start type=${error::class.simpleName}")
@@ -184,8 +231,10 @@ class CallSessionController(
         if (current.direction != CallDirection.Incoming || current.state != CallState.Ringing ||
             callId == null || participant == null) return StartCallResult.Failed("call_offer_unavailable")
         return try {
-            mutableState.value = current.copy(state = CallState.Connecting)
-            platform.start(callId, participant, CallDirection.Incoming)
+            mutableState.value = current.copy(state = CallState.Answering)
+            logger("call state=answering")
+            signaling.answer(callId)
+            mutableState.value = mutableState.value.copy(state = CallState.Connecting)
             voice.join(callId.value)
             StartCallResult.Started(callId)
         } catch (error: Throwable) {
@@ -194,13 +243,25 @@ class CallSessionController(
             mutableState.value = current.copy(
                 state = CallState.Failed,
                 terminationReason = CallTerminationReason.Failed,
+                networkUsage = usage.finish(nowEpochMillis()),
                 error = "call_accept_failed",
             )
             StartCallResult.Failed("call_accept_failed")
         }
     }
 
-    suspend fun rejectIncoming() = end(CallTerminationReason.Rejected)
+    suspend fun rejectIncoming(): Unit = operation.withLock {
+        val current = mutableState.value
+        val callId = current.callId ?: return
+        if (current.direction != CallDirection.Incoming || current.state != CallState.Ringing) return
+        runCatching { signaling.reject(callId) }
+        runCatching { platform.end(CallTerminationReason.Rejected) }
+        mutableState.value = current.copy(
+            state = CallState.Rejected,
+            terminationReason = CallTerminationReason.Rejected,
+            networkUsage = usage.finish(nowEpochMillis()),
+        )
+    }
 
     suspend fun setMuted(muted: Boolean): Unit = operation.withLock {
         if (mutableState.value.state !in ActiveStates) return
@@ -230,6 +291,7 @@ class CallSessionController(
     suspend fun end(reason: CallTerminationReason = CallTerminationReason.Local): Unit = operation.withLock {
         val current = mutableState.value
         if (current.state !in ActiveStates) return
+        val endedAtEpochMillis = nowEpochMillis()
         mutableState.value = current.copy(state = CallState.Ending)
         runCatching { voice.leave() }
         if (reason != CallTerminationReason.Remote) {
@@ -238,7 +300,11 @@ class CallSessionController(
         runCatching { platform.end(reason) }
         durationJob?.cancel()
         durationJob = null
-        mutableState.value = current.copy(state = CallState.Ended, terminationReason = reason)
+        mutableState.value = current.copy(
+            state = CallState.Ended,
+            terminationReason = reason,
+            networkUsage = usage.finish(endedAtEpochMillis),
+        )
         logger("call state=ended reason=${reason.name.lowercase()}")
     }
 
@@ -254,12 +320,24 @@ class CallSessionController(
             VoiceRoomState.Failed, VoiceRoomState.Unavailable -> CallState.Failed
         }
         val becameActive = next == CallState.Active && current.state != CallState.Active
+        val activeTransitionAtEpochMillis = if (becameActive) nowEpochMillis() else null
+        val activeSinceEpochMillis = if (becameActive) {
+            current.activeSinceEpochMillis ?: activeTransitionAtEpochMillis
+        } else {
+            current.activeSinceEpochMillis
+        }
+        if (activeTransitionAtEpochMillis != null) {
+            usage.markConnected(activeTransitionAtEpochMillis)
+        } else if (current.state == CallState.Active && next != CallState.Active) {
+            usage.markMediaInactive(nowEpochMillis())
+        }
         mutableState.value = current.copy(
             state = next,
             media = current.media.copy(muted = voice.muted),
-            activeSinceEpochMillis = if (becameActive) nowEpochMillis() else current.activeSinceEpochMillis,
+            activeSinceEpochMillis = activeSinceEpochMillis,
             terminationReason = if (next == CallState.Failed) CallTerminationReason.Failed else current.terminationReason,
             error = if (next == CallState.Failed) voice.error ?: "call_media_failed" else current.error,
+            networkUsage = usage.update(voice),
         )
         if (becameActive) {
             logger("call state=active")
@@ -288,10 +366,16 @@ class CallSessionController(
         runCatching { platform.end(CallTerminationReason.Failed) }
         durationJob?.cancel()
         durationJob = null
+        mutableState.value = failed.copy(networkUsage = usage.finish(nowEpochMillis()))
     }
 
     private fun onIncomingOffered(event: CallSignalingEvent.IncomingOffered) {
-        if (mutableState.value.state in ActiveStates) {
+        val current = mutableState.value
+        if (current.callId == event.callId) {
+            logger("duplicate incoming call ignored")
+            return
+        }
+        if (current.state in ActiveStates) {
             scope.launch { runCatching { signaling.end(event.callId, CallTerminationReason.Busy) } }
             return
         }
@@ -301,6 +385,25 @@ class CallSessionController(
             participant = event.caller,
             direction = CallDirection.Incoming,
             state = CallState.Ringing,
+        )
+        usage.reset()
+        scope.launch {
+            runCatching { platform.start(event.callId, event.caller, CallDirection.Incoming) }
+                .onFailure { terminalFromRemote(event.callId, CallState.Failed, CallTerminationReason.Failed) }
+        }
+    }
+
+    private suspend fun terminalFromRemote(callId: CallId, state: CallState, reason: CallTerminationReason): Unit = operation.withLock {
+        val current = mutableState.value
+        if (current.callId != callId || current.state !in ActiveStates) return
+        runCatching { voice.leave() }
+        runCatching { platform.end(reason) }
+        durationJob?.cancel()
+        durationJob = null
+        mutableState.value = current.copy(
+            state = state,
+            terminationReason = reason,
+            networkUsage = usage.finish(nowEpochMillis()),
         )
     }
 
@@ -316,6 +419,7 @@ class CallSessionController(
             CallState.Preparing,
             CallState.Connecting,
             CallState.Ringing,
+            CallState.Answering,
             CallState.Active,
             CallState.Reconnecting,
             CallState.Ending,
