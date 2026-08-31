@@ -71,16 +71,21 @@ public static class CommunicationModule
                 .Get<ApplicationPushProviderOptions>()
             ?? new ApplicationPushProviderOptions();
 
-        if (fcmOptions.Enabled)
-        {
-            ValidateFcmRuntimeBinding(
-                fcmOptions,
-                pushProviderOptions);
+        var fcmProfiles =
+            FirebaseProfileConfiguration.Create(fcmOptions);
 
+        ValidateFcmRuntimeBindings(
+            fcmProfiles,
+            pushProviderOptions);
+
+        if (fcmProfiles.Any(profile => profile.Enabled))
+        {
             // Fail fast at startup when enabled but misconfigured.
-            services.AddSingleton(
-                FirebaseAdminFactory.CreateMessaging(
+            services.AddSingleton<IFirebaseMessagingResolver>(
+                _ => FirebaseAdminFactory.CreateRegistry(
                     fcmOptions));
+            services.AddHostedService<
+                FirebaseMessagingInitializationService>();
 
             services.AddSingleton<
                 IFcmPushSender,
@@ -193,31 +198,49 @@ public static class CommunicationModule
         return true;
     }
 
-    private static void ValidateFcmRuntimeBinding(
-        FcmOptions fcm,
+    private static void ValidateFcmRuntimeBindings(
+        IReadOnlyCollection<FirebaseProfileConfiguration> profiles,
         ApplicationPushProviderOptions providers)
     {
-        var match = providers.Providers.SingleOrDefault(provider =>
-            provider.ApplicationId == fcm.ApplicationId
-            && string.Equals(
+        var fcmProviders = providers.Providers
+            .Where(provider => string.Equals(
                 provider.Provider?.Trim(),
                 PushProviderNames.FirebaseCloudMessaging,
-                StringComparison.OrdinalIgnoreCase));
+                StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
-        if (match is null
-            || !match.Enabled
-            || !string.Equals(
-                match.ConfigurationReference?.Trim(),
-                fcm.ConfigurationReference?.Trim(),
-                StringComparison.Ordinal)
-            || !string.Equals(
-                match.FirebaseProjectId?.Trim(),
-                fcm.ProjectId?.Trim(),
-                StringComparison.Ordinal)
-            || string.IsNullOrWhiteSpace(match.AndroidPackageName))
+        foreach (var profile in profiles)
         {
-            throw new InvalidOperationException(
-                "Enabled Firebase runtime configuration must match one enabled application-scoped FCM provider entry.");
+            var match = fcmProviders.SingleOrDefault(provider =>
+                provider.ApplicationId == profile.ApplicationId);
+
+            if (match is null
+                || match.Enabled != profile.Enabled
+                || !string.Equals(
+                    match.ConfigurationReference?.Trim(),
+                    profile.ConfigurationReference,
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    match.FirebaseProjectId?.Trim(),
+                    profile.ProjectId,
+                    StringComparison.Ordinal)
+                || (profile.Enabled
+                    && string.IsNullOrWhiteSpace(match.AndroidPackageName)))
+            {
+                throw new InvalidOperationException(
+                    "Firebase runtime profiles must match their application-scoped FCM provider entries.");
+            }
+        }
+
+        foreach (var provider in fcmProviders.Where(provider => provider.Enabled))
+        {
+            if (!profiles.Any(profile =>
+                    profile.Enabled
+                    && profile.ApplicationId == provider.ApplicationId))
+            {
+                throw new InvalidOperationException(
+                    "Every enabled application-scoped FCM provider requires one enabled Firebase runtime profile.");
+            }
         }
     }
 

@@ -33,6 +33,25 @@ Sender device -> WebRTC DataChannel -> Recipient device
 
 SignalR is the control/signaling plane only.
 
+## Application-scoped push providers
+
+Firebase Cloud Messaging is resolved from an already-authorized application
+push-provider route. Each enabled `Firebase:Profiles` entry binds one platform
+application and configuration reference to a dedicated Firebase project and
+credential path. The runtime creates a deterministic named `FirebaseApp` for
+each profile; it does not use a global default Firebase application.
+
+The legacy singular `Firebase` settings remain supported as one internally
+mapped profile so existing deployments can migrate without an immediate
+configuration rewrite. When multiple Firebase projects are configured, both
+application IDs and configuration references must be unique and every enabled
+profile must exactly match one enabled application-scoped FCM provider entry.
+Missing, disabled, ambiguous, or cross-application profiles fail closed.
+
+Credential JSON files are server-only secrets. They must remain outside source
+control and outside public/static content, with `CredentialPath` supplied by the
+deployment environment. Credential values and paths must not be logged.
+
 ## Calls
 
 SignalR transports call state and WebRTC signaling only.
@@ -51,7 +70,6 @@ Voice and video receive permissions are independent.
 - P2P media-transfer signaling;
 - WebRTC client implementation;
 - STUN/TURN;
-- FCM;
 - mobile code.
 
 ## Foundation identity and presence decision

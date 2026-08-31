@@ -1,6 +1,7 @@
 package com.botglobal.mobile.platform.notifications.firebase
 
 import android.content.Context
+import android.util.Log
 import com.botglobal.mobile.platform.notifications.IgnorePushMessages
 import com.botglobal.mobile.platform.notifications.PushMessage
 import com.botglobal.mobile.platform.notifications.PushMessageHandler
@@ -56,7 +57,12 @@ class AndroidFirebaseMessagingRuntime(
             sentAtEpochMilliseconds = message.sentTime,
             timeToLiveSeconds = message.ttl,
         )
+        Log.i(LOG_TAG, "FCM message handed off to the shared push handler.")
         scope.launch { messageHandler.onMessage(safeMessage) }
+    }
+
+    private companion object {
+        const val LOG_TAG = "BotGlobalPush"
     }
 }
 

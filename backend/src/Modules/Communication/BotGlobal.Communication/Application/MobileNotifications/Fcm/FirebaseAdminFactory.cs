@@ -1,84 +1,105 @@
 using FirebaseAdmin;
 using FirebaseAdmin.Messaging;
 using Google.Apis.Auth.OAuth2;
-using Microsoft.Extensions.Options;
 
 namespace BotGlobal.Communication.Application.MobileNotifications.Fcm;
 
 internal static class FirebaseAdminFactory
 {
-    public static FirebaseMessaging CreateMessaging(
+    public static FirebaseMessagingProfileRegistry CreateRegistry(
         FcmOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        if (!options.Enabled)
+        var configurations =
+            FirebaseProfileConfiguration.Create(options);
+        var profiles =
+            new List<FirebaseMessagingProfile>();
+
+        try
+        {
+            foreach (var configuration in configurations)
+            {
+                profiles.Add(
+                    configuration.Enabled
+                        ? CreateEnabledProfile(configuration)
+                        : new FirebaseMessagingProfile(
+                            configuration,
+                            null,
+                            null));
+            }
+
+            return new FirebaseMessagingProfileRegistry(profiles);
+        }
+        catch
+        {
+            foreach (var profile in profiles)
+            {
+                profile.Application?.Delete();
+            }
+
+            throw;
+        }
+    }
+
+    private static FirebaseMessagingProfile CreateEnabledProfile(
+        FirebaseProfileConfiguration configuration)
+    {
+        if (!File.Exists(configuration.CredentialPath))
         {
             throw new InvalidOperationException(
-                "Firebase messaging is disabled.");
+                "A configured Firebase credential file does not exist.");
         }
 
-        if (options.ApplicationId == Guid.Empty)
+        ServiceAccountCredential serviceAccountCredential;
+
+        try
+        {
+            serviceAccountCredential =
+                CredentialFactory
+                    .FromFile<ServiceAccountCredential>(
+                        configuration.CredentialPath);
+        }
+        catch (Exception exception)
+            when (exception is not OutOfMemoryException)
         {
             throw new InvalidOperationException(
-                "Firebase ApplicationId is required.");
+                "A configured Firebase credential could not be loaded.");
         }
 
-        if (string.IsNullOrWhiteSpace(
-                options.ConfigurationReference))
+        if (!string.Equals(
+                serviceAccountCredential.ProjectId,
+                configuration.ProjectId,
+                StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
-                "Firebase ConfigurationReference is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(
-                options.ProjectId))
-        {
-            throw new InvalidOperationException(
-                "Firebase ProjectId is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(
-                options.CredentialPath))
-        {
-            throw new InvalidOperationException(
-                "Firebase CredentialPath is required.");
-        }
-
-        if (!File.Exists(
-                options.CredentialPath))
-        {
-            throw new InvalidOperationException(
-                "Firebase credential file does not exist.");
+                "A configured Firebase credential does not match its project.");
         }
 
         var credential =
-            CredentialFactory
-                .FromFile<ServiceAccountCredential>(
-                    options.CredentialPath)
-                .ToGoogleCredential();
+            serviceAccountCredential.ToGoogleCredential();
 
         var appName =
-            $"botglobal-{options.ApplicationId:N}-{options.ProjectId}";
+            $"botglobal-{configuration.ApplicationId:N}-{configuration.ProjectId}";
 
-        var app =
-            FirebaseApp.GetInstance(
-                appName);
-
-        if (app is null)
+        if (FirebaseApp.GetInstance(appName) is not null)
         {
-            app =
-                FirebaseApp.Create(
-                    new AppOptions
-                    {
-                        Credential = credential,
-                        ProjectId =
-                            options.ProjectId
-                    },
-                    appName);
+            throw new InvalidOperationException(
+                "A configured Firebase application name is already in use.");
         }
 
-        return FirebaseMessaging.GetMessaging(
+        var app = FirebaseApp.Create(
+            new AppOptions
+            {
+                Credential = credential,
+                ProjectId = configuration.ProjectId
+            },
+            appName);
+
+        return new FirebaseMessagingProfile(
+            configuration,
+            new FirebaseAdminMessagingClient(
+                FirebaseMessaging.GetMessaging(app)),
             app);
     }
 }

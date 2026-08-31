@@ -5,8 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace BotGlobal.Communication.Application.MobileNotifications.Fcm;
 
 internal sealed class FirebaseAdminFcmPushSender(
-    FirebaseMessaging messaging,
-    Microsoft.Extensions.Options.IOptions<FcmOptions> options,
+    IFirebaseMessagingResolver messagingResolver,
     ILogger<FirebaseAdminFcmPushSender> logger)
     : IFcmPushSender
 {
@@ -18,27 +17,26 @@ internal sealed class FirebaseAdminFcmPushSender(
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(message);
 
-        if (configuration.Application.ApplicationId
-                != options.Value.ApplicationId
-            || !string.Equals(
-                configuration.ConfigurationReference,
-                options.Value.ConfigurationReference,
-                StringComparison.Ordinal)
-            || !string.Equals(
-                configuration.FirebaseProjectId,
-                options.Value.ProjectId,
-                StringComparison.Ordinal)
-            || string.IsNullOrWhiteSpace(
-                configuration.AndroidPackageName))
+        var resolution = messagingResolver.Resolve(configuration);
+
+        if (resolution.Kind != FirebaseMessagingResolutionKind.Ready)
         {
             logger.LogError(
-                "FCM runtime configuration does not match the requested application/provider scope. ApplicationId={ApplicationId}",
-                configuration.Application.ApplicationId);
+                "FCM runtime profile could not be resolved for the requested application/provider scope. ApplicationId={ApplicationId}, Resolution={Resolution}",
+                configuration.Application.ApplicationId,
+                resolution.Kind);
 
             return new FcmPushSendResult(
                 Accepted: false,
                 MessageId: null,
-                SafeErrorCode: "fcm-runtime-scope-mismatch",
+                SafeErrorCode: resolution.Kind switch
+                {
+                    FirebaseMessagingResolutionKind.Disabled =>
+                        "fcm-runtime-disabled",
+                    FirebaseMessagingResolutionKind.Missing =>
+                        "fcm-runtime-missing",
+                    _ => "fcm-runtime-scope-mismatch"
+                },
                 IsPermanentFailure: true);
         }
 
@@ -102,13 +100,12 @@ internal sealed class FirebaseAdminFcmPushSender(
         try
         {
             var messageId =
-                await messaging.SendAsync(
+                await resolution.Messaging!.SendAsync(
                     firebaseMessage,
                     cancellationToken);
 
             logger.LogInformation(
-                "FCM accepted message. MessageId={MessageId}",
-                messageId);
+                "FCM accepted message.");
 
             return new FcmPushSendResult(
                 Accepted: true,
