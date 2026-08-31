@@ -28,6 +28,7 @@ kotlin {
             implementation(libs.androidx.credentials)
             implementation(libs.androidx.credentials.playServicesAuth)
             implementation(libs.google.identity.googleId)
+            implementation(libs.webrtc.android)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

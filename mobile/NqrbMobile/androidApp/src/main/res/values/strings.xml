@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">NQRB</string>
+    <string name="ongoing_call_title">NQRB call</string>
+    <string name="ongoing_call_channel">Ongoing calls</string>
+    <string name="ongoing_call_channel_description">Shows the active NQRB voice call</string>
+    <string name="end_call">End call</string>
 </resources>

@@ -20,6 +20,9 @@ class NqrbStringsTests {
             assertTrue(strings.allowContacts.isNotBlank())
             assertTrue(strings.notNow.isNotBlank())
             assertTrue(strings.logout.isNotBlank())
+            assertTrue(strings.microphoneTitle.isNotBlank())
+            assertTrue(strings.startCall.isNotBlank())
+            assertTrue(strings.endCall.isNotBlank())
         }
     }
 }

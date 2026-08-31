@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\BuildingBlocks\BotGlobal.Contracts\BotGlobal.Contracts.csproj" />
     <ProjectReference Include="..\Modules\Catalog\BotGlobal.Catalog\BotGlobal.Catalog.csproj" />
+    <ProjectReference Include="..\Modules\Calling\BotGlobal.Calling\BotGlobal.Calling.csproj" />
     <ProjectReference Include="..\Modules\Identity\BotGlobal.Identity\BotGlobal.Identity.csproj" />
     <ProjectReference Include="..\Modules\Notifications\BotGlobal.Notifications\BotGlobal.Notifications.csproj" />
     <ProjectReference Include="..\Modules\Realtime\BotGlobal.Realtime\BotGlobal.Realtime.csproj" />

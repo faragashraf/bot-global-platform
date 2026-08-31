@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\src\BuildingBlocks\BotGlobal.SharedKernel\BotGlobal.SharedKernel.csproj" />
     <ProjectReference Include="..\..\src\BuildingBlocks\BotGlobal.Contracts\BotGlobal.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Modules\Catalog\BotGlobal.Catalog\BotGlobal.Catalog.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Calling\BotGlobal.Calling\BotGlobal.Calling.csproj" />
     <ProjectReference Include="..\..\src\Modules\Identity\BotGlobal.Identity\BotGlobal.Identity.csproj" />
     <ProjectReference Include="..\..\src\Modules\Communication\BotGlobal.Communication\BotGlobal.Communication.csproj" />
     <ProjectReference Include="..\..\src\Modules\PlatformClients\BotGlobal.PlatformClients\BotGlobal.PlatformClients.csproj" />

@@ -18,6 +18,11 @@ data class NqrbStrings(
     val contactsOnboardingTitle: String, val contactsOnboardingBody: String, val contactsStayLocal: String,
     val allowContacts: String, val notNow: String, val contactsEmpty: String, val contactsDenied: String,
     val contactsPermanentlyDenied: String, val refreshContacts: String, val logout: String,
+    val startCall: String, val microphoneTitle: String, val microphoneBody: String,
+    val continueCall: String, val cancel: String, val connecting: String, val ringing: String,
+    val activeCall: String, val reconnecting: String, val endingCall: String, val callFailed: String,
+    val mute: String, val unmute: String, val speaker: String, val earpiece: String, val endCall: String,
+    val answerCall: String, val declineCall: String, val microphoneDenied: String,
 )
 
 fun nqrbStrings(languageTag: String): NqrbStrings = if (languageTag.startsWith("ar")) ArabicStrings else EnglishStrings
@@ -50,6 +55,13 @@ private val ArabicStrings = NqrbStrings(
     contactsDenied = "لم يتم السماح بالوصول. يمكنك المتابعة واختيار السماح لاحقًا.",
     contactsPermanentlyDenied = "الوصول متوقف. يمكنك تمكينه من إعدادات Android.",
     refreshContacts = "تحديث جهات الاتصال", logout = "تسجيل الخروج",
+    startCall = "بدء مكالمة نقرب", microphoneTitle = "استخدام الميكروفون أثناء المكالمة",
+    microphoneBody = "يحتاج نقرب إلى الميكروفون لإرسال صوتك، وإلى إظهار حالة المكالمة الجارية على نظام Android.",
+    continueCall = "متابعة المكالمة", cancel = "إلغاء", connecting = "جارٍ الاتصال", ringing = "في انتظار الرد",
+    activeCall = "مكالمة جارية", reconnecting = "جارٍ استعادة الاتصال", endingCall = "جارٍ إنهاء المكالمة",
+    callFailed = "تعذّر بدء المكالمة", mute = "كتم", unmute = "إلغاء الكتم", speaker = "مكبر الصوت",
+    earpiece = "سماعة الهاتف", endCall = "إنهاء المكالمة", answerCall = "رد", declineCall = "رفض",
+    microphoneDenied = "لم يبدأ الاتصال لأن إذن الميكروفون غير متاح. يمكنك المحاولة مجددًا بعد تمكينه.",
 )
 
 private val EnglishStrings = NqrbStrings(
@@ -79,4 +91,11 @@ private val EnglishStrings = NqrbStrings(
     contactsDenied = "Access was not allowed. You can continue and choose to allow it later.",
     contactsPermanentlyDenied = "Access is disabled. You can enable it from Android settings.",
     refreshContacts = "Refresh contacts", logout = "Sign out",
+    startCall = "Start NQRB call", microphoneTitle = "Use your microphone for this call",
+    microphoneBody = "NQRB needs microphone access to send your voice and to show the ongoing call on Android.",
+    continueCall = "Continue call", cancel = "Cancel", connecting = "Connecting", ringing = "Waiting for answer",
+    activeCall = "Call in progress", reconnecting = "Reconnecting", endingCall = "Ending call",
+    callFailed = "Call could not start", mute = "Mute", unmute = "Unmute", speaker = "Speaker",
+    earpiece = "Earpiece", endCall = "End call", answerCall = "Answer", declineCall = "Decline",
+    microphoneDenied = "The call did not start because microphone access is unavailable. You can retry after enabling it.",
 )

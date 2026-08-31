@@ -14,7 +14,7 @@ import com.botglobal.lamma.app.platform.AndroidApplicationLanguagePreferences
 import com.botglobal.lamma.app.platform.AndroidSecureSessionVault
 import com.botglobal.lamma.app.platform.AndroidSemanticHaptics
 import com.botglobal.lamma.app.ui.FamilyGamesApp
-import com.botglobal.lamma.app.voice.AndroidVoiceMediaPeerFactory
+import com.botglobal.mobile.platform.voice.AndroidVoiceMediaPeerFactory
 import com.botglobal.mobile.platform.device.PermissionController
 import com.botglobal.mobile.platform.device.PermissionKind
 import com.botglobal.mobile.platform.device.PermissionState
@@ -152,6 +152,8 @@ class MainActivity : FragmentActivity() {
         val voiceMedia = AndroidVoiceMediaPeerFactory(
             applicationContext,
             if (BuildConfig.VOICE_ICE_POLICY == "relay") VoiceIcePolicy.Relay else VoiceIcePolicy.All,
+            mediaIdPrefix = "lamma",
+            logTag = "LammaVoice",
         )
         setContent {
             FamilyGamesApp(

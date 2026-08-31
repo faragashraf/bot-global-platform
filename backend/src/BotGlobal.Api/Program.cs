@@ -1,5 +1,6 @@
 using BotGlobal.Catalog;
 using BotGlobal.Catalog.Endpoints;
+using BotGlobal.Calling;
 using BotGlobal.Communication;
 using BotGlobal.Communication.Endpoints;
 using BotGlobal.Contracts.Mobile;
@@ -36,6 +37,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddCatalogModule(builder.Configuration);
 builder.Services.AddIdentityModule(builder.Configuration);
+builder.Services.AddCallingModule(builder.Configuration);
 
 builder.Services.AddCommunicationModule(builder.Configuration);
 builder.Services.AddPlatformClientsModule(builder.Configuration);
@@ -94,6 +96,8 @@ app.MapAdminCatalogEndpoints();
 app.MapIdentityModuleEndpoints();
 
 await app.InitializeIdentityAsync();
+
+app.MapCallingModule();
 
 app.MapCommunicationModule(
     new MobileNotificationMachineAuthorizationOptions(

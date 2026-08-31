@@ -23,7 +23,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class NqrbAppStateTests {
     @Test
     fun startsSignedOutInArabicWithoutPhoneIdentityGate() = runTest {
@@ -93,6 +96,24 @@ class NqrbAppStateTests {
         state.logout()
         assertEquals(NqrbDestination.SignIn, state.navigation.current)
         assertFalse(state.navigation.navigateBack())
+    }
+
+    @Test
+    fun microphone_is_explained_just_in_time_before_android_permission() = runTest {
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, FixedIdentityGateway(session(), FederatedSignInResult.Rejected)),
+            contacts = ContactsController(FixedPermission(PermissionState.Denied), EmptyContacts),
+            permissions = FixedPermission(PermissionState.Denied),
+            callTargetMembershipId = "known-nqrb-member",
+            callTargetDisplayName = "Known NQRB user",
+            callActionScope = backgroundScope,
+        )
+
+        state.requestOutgoingCall()
+        runCurrent()
+
+        assertTrue(state.microphoneExplanationVisible.value)
+        assertEquals(com.botglobal.mobile.platform.calling.CallState.Idle, state.calling.state.value.state)
     }
 
     private fun state(

@@ -99,6 +99,7 @@ class ManagedVoiceRoomController(
     private val signaling: VoiceSignalingTransport,
     private val mediaFactory: VoiceMediaPeerFactory,
     private val logger: (String) -> Unit = {},
+    private val logTopologyIdentifiers: Boolean = true,
 ) : VoiceRoomController {
     private val mutableSnapshot = MutableStateFlow(VoiceRoomSnapshot())
     override val snapshot: StateFlow<VoiceRoomSnapshot> = mutableSnapshot.asStateFlow()
@@ -132,7 +133,9 @@ class ManagedVoiceRoomController(
             peerParticipantId = joined.peerParticipantId
             peerConnectionId = joined.peerConnectionId
             isInitiator = joined.isInitiator
-            logger("voice topology localMembership=${joined.participantId} localConnection=${joined.connectionId} -> remoteMembership=${joined.peerParticipantId ?: "pending"} remoteConnection=${joined.peerConnectionId ?: "pending"} initiator=${joined.isInitiator}")
+            logger(if (logTopologyIdentifiers) {
+                "voice topology localMembership=${joined.participantId} localConnection=${joined.connectionId} -> remoteMembership=${joined.peerParticipantId ?: "pending"} remoteConnection=${joined.peerConnectionId ?: "pending"} initiator=${joined.isInitiator}"
+            } else "voice topology established peerPresent=${joined.peerPresent} initiator=${joined.isInitiator}")
             update(state = if (joined.peerPresent) VoiceRoomState.Negotiating else VoiceRoomState.WaitingForPeer)
             if (joined.peerPresent) createOfferIfInitiator(roomId, expected)
         } catch (error: Throwable) {
@@ -182,10 +185,14 @@ class ManagedVoiceRoomController(
             signal.participantConnectionId.isNotBlank() && signal.participantConnectionId == localConnectionId ||
             signal.receiverConnectionId.isNotBlank() && signal.receiverConnectionId != localConnectionId ||
             peerParticipantId != null && signal.participantId != peerParticipantId) {
-            logger("voice identity violation ignored localMembership=$localParticipantId localConnection=$localConnectionId senderMembership=${signal.participantId} senderConnection=${signal.participantConnectionId} intendedReceiver=${signal.receiverConnectionId} type=${signal::class.simpleName}")
+            logger(if (logTopologyIdentifiers) {
+                "voice identity violation ignored localMembership=$localParticipantId localConnection=$localConnectionId senderMembership=${signal.participantId} senderConnection=${signal.participantConnectionId} intendedReceiver=${signal.receiverConnectionId} type=${signal::class.simpleName}"
+            } else "voice identity violation ignored type=${signal::class.simpleName}")
             return
         }
-        logger("voice signal received senderMembership=${signal.participantId} senderConnection=${signal.participantConnectionId} -> localMembership=$localParticipantId localConnection=$localConnectionId type=${signal::class.simpleName}")
+        logger(if (logTopologyIdentifiers) {
+            "voice signal received senderMembership=${signal.participantId} senderConnection=${signal.participantConnectionId} -> localMembership=$localParticipantId localConnection=$localConnectionId type=${signal::class.simpleName}"
+        } else "voice signal received type=${signal::class.simpleName}")
         when (signal) {
             is VoiceSignal.PeerJoined -> {
                 peerParticipantId = signal.participantId

@@ -25,6 +25,8 @@ enum class NqrbGlyph {
     Back,
     Language,
     Appearance,
+    Microphone,
+    Speaker,
 }
 
 @Composable
@@ -121,6 +123,30 @@ fun NqrbIcon(
             NqrbGlyph.Appearance -> {
                 drawCircle(tint, size.minDimension * .32f, center, style = stroke)
                 drawArc(tint, 90f, 180f, true, Offset(size.width * .18f, size.height * .18f), Size(size.width * .64f, size.height * .64f))
+            }
+            NqrbGlyph.Microphone -> {
+                drawRoundRect(
+                    tint,
+                    topLeft = Offset(size.width * .38f, size.height * .16f),
+                    size = Size(size.width * .24f, size.height * .45f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * .12f),
+                    style = stroke,
+                )
+                drawArc(tint, 0f, 180f, false, Offset(size.width * .25f, size.height * .37f), Size(size.width * .5f, size.height * .38f), style = stroke)
+                drawLine(tint, Offset(center.x, size.height * .74f), Offset(center.x, size.height * .86f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
+            NqrbGlyph.Speaker -> {
+                val path = Path().apply {
+                    moveTo(size.width * .18f, size.height * .42f)
+                    lineTo(size.width * .36f, size.height * .42f)
+                    lineTo(size.width * .56f, size.height * .24f)
+                    lineTo(size.width * .56f, size.height * .76f)
+                    lineTo(size.width * .36f, size.height * .58f)
+                    lineTo(size.width * .18f, size.height * .58f)
+                    close()
+                }
+                drawPath(path, tint, style = stroke)
+                drawArc(tint, -48f, 96f, false, Offset(size.width * .5f, size.height * .3f), Size(size.width * .3f, size.height * .4f), style = stroke)
             }
         }
     }

@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">نقرب</string>
+    <string name="ongoing_call_title">مكالمة نقرب</string>
+    <string name="ongoing_call_channel">المكالمات الجارية</string>
+    <string name="ongoing_call_channel_description">يعرض مكالمة نقرب الصوتية الجارية</string>
+    <string name="end_call">إنهاء المكالمة</string>
 </resources>

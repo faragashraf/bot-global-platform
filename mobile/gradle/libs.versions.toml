@@ -8,6 +8,7 @@ lamma-versionName = "0.1.0"
 androidx-activity = "1.13.0"
 androidx-biometric = "1.1.0"
 androidx-lifecycle = "2.11.0-beta01"
+androidx-core-telecom = "1.0.0"
 androidx-fragment = "1.8.9"
 compose-multiplatform = "1.11.1"
 compose-material3 = "1.11.0-alpha07"
@@ -26,6 +27,7 @@ webrtc = "144.7559.14"
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "androidx-biometric" }
 androidx-lifecycle-runtimeCompose = { group = "org.jetbrains.androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
+androidx-core-telecom = { module = "androidx.core:core-telecom", version.ref = "androidx-core-telecom" }
 androidx-credentials = { module = "androidx.credentials:credentials", version.ref = "credentials" }
 androidx-credentials-playServicesAuth = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "credentials" }
 androidx-fragment = { module = "androidx.fragment:fragment-ktx", version.ref = "androidx-fragment" }
