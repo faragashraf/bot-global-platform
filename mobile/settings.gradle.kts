@@ -33,6 +33,7 @@ plugins {
 }
 
 include(":shared")
+include(":firebaseMessaging")
 include(":FamilyGamesMobile:composeApp")
 include(":FamilyGamesMobile:androidApp")
 include(":NqrbMobile:composeApp")

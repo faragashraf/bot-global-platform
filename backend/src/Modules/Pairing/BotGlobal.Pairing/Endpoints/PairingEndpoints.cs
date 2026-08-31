@@ -1,4 +1,5 @@
 using BotGlobal.Pairing.Application.PushRegistrations;
+using BotGlobal.Pairing.Application.MobileDevices;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Notifications;
 using System.Security.Claims;
@@ -56,6 +57,64 @@ public static class PairingEndpoints
             .WithName("ClaimPairingChallenge")
             .WithSummary("Complete a pairing challenge from a scanned QR token.");
 
+
+        endpoints.MapPut(
+                "/api/mobile/devices/enrollment",
+                async (
+                    EnrollMobileDeviceRequest request,
+                    ClaimsPrincipal principal,
+                    IMobileDeviceEnrollmentService service,
+                    CancellationToken cancellationToken) =>
+                {
+                    var applicationKey = principal.FindFirstValue(
+                        ApplicationIdentityDefaults.ApplicationKeyClaim);
+                    var subject = principal.FindFirstValue(
+                        ClaimTypes.NameIdentifier);
+
+                    if (string.IsNullOrWhiteSpace(applicationKey)
+                        || string.IsNullOrWhiteSpace(subject))
+                    {
+                        return Results.Unauthorized();
+                    }
+
+                    try
+                    {
+                        return Results.Ok(
+                            await service.EnrollAsync(
+                                applicationKey,
+                                subject,
+                                request,
+                                cancellationToken));
+                    }
+                    catch (ArgumentException exception)
+                    {
+                        return Results.ValidationProblem(
+                            new Dictionary<string, string[]>
+                            {
+                                ["request"] = [exception.Message]
+                            });
+                    }
+                    catch (MobileDeviceEnrollmentApplicationException)
+                    {
+                        return Results.Forbid();
+                    }
+                    catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+                    {
+                        return Results.Conflict(
+                            new { code = "mobile_device_enrollment_conflict" });
+                    }
+                })
+            .RequireAuthorization(
+                policy =>
+                    policy
+                        .AddAuthenticationSchemes(
+                            ApplicationIdentityDefaults.Scheme)
+                        .RequireAuthenticatedUser())
+            .RequireRateLimiting(PairingModule.MobileEnrollmentRateLimitPolicy)
+            .WithName("EnrollMobileDevice")
+            .WithTags("Mobile Pairing")
+            .WithSummary(
+                "Enroll an application-scoped mobile device from an authenticated central application session.");
 
         endpoints.MapPut(
                 "/api/mobile/devices/push-registration",

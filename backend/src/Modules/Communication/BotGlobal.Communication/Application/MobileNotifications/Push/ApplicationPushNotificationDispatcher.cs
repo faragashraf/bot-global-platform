@@ -27,7 +27,8 @@ internal sealed record ApplicationPushMessage(
 internal sealed record ApplicationPushDispatchResult(
     ApplicationPushDispatchKind Kind,
     string? SafeErrorCode = null,
-    string? ProviderMessageId = null);
+    string? ProviderMessageId = null,
+    bool InvalidatesDestination = false);
 
 internal interface IApplicationPushNotificationDispatcher
 {
@@ -118,7 +119,9 @@ internal sealed class ApplicationPushNotificationDispatcher(
                     : exception.HttpResponse is not null
                         ? ApplicationPushDispatchKind.TransientFailure
                         : ApplicationPushDispatchKind.Ambiguous,
-                code);
+                code,
+                InvalidatesDestination:
+                    exception.MessagingErrorCode?.ToString() == "Unregistered");
         }
         catch (ArgumentException)
         {

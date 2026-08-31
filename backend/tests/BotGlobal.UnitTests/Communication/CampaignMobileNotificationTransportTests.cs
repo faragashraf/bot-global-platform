@@ -78,6 +78,32 @@ public sealed class CampaignMobileNotificationTransportTests
     }
 
     [Fact]
+    public async Task Unregistered_fid_is_invalidated_with_application_scope()
+    {
+        var deviceId = Guid.NewGuid();
+        var invalidator = new RecordingPushInvalidator();
+        var transport = CreateTransport(
+            new MobileNotificationConnectionRegistry(),
+            new RecordingClientProxy(),
+            new PushResolver(new MobilePushDestination(deviceId, "fcm", "expired-fid")),
+            new DeviceStateReader(true, false),
+            new RecordingPushDispatcher(
+                new ApplicationPushDispatchResult(
+                    ApplicationPushDispatchKind.PermanentFailure,
+                    "fcm-unregistered",
+                    InvalidatesDestination: true)),
+            invalidator);
+        var request = Request(deviceId);
+
+        var outcome = await transport.DispatchAsync(request, CancellationToken.None);
+
+        Assert.Equal(MobileNotificationTransportOutcomeKind.PermanentFailure, outcome.Kind);
+        Assert.Equal(request.Application.ApplicationId, invalidator.ApplicationId);
+        Assert.Equal(deviceId, invalidator.DeviceId);
+        Assert.Equal("fcm", invalidator.Provider);
+    }
+
+    [Fact]
     public async Task Connected_delivery_exception_is_ambiguous_after_side_effect_starts()
     {
         var deviceId = Guid.NewGuid();
@@ -129,13 +155,15 @@ public sealed class CampaignMobileNotificationTransportTests
         RecordingClientProxy proxy,
         IMobilePushDestinationResolver resolver,
         IMobileBroadcastAudienceReader audience,
-        IApplicationPushNotificationDispatcher push)
+        IApplicationPushNotificationDispatcher push,
+        IMobilePushDestinationInvalidator? invalidator = null)
     {
         var hubContext = new TestHubContext(proxy);
         return new CampaignMobileNotificationTransport(
             new SignalRMobileNotificationDelivery(hubContext, connections),
             connections,
             resolver,
+            invalidator ?? new RecordingPushInvalidator(),
             audience,
             push);
     }
@@ -170,7 +198,8 @@ public sealed class CampaignMobileNotificationTransportTests
         public Task<MobilePushDestination?> ResolveActiveAsync(NotificationApplicationContext application, Guid deviceId, string provider, CancellationToken cancellationToken) => Task.FromResult(destination);
     }
 
-    private sealed class RecordingPushDispatcher
+    private sealed class RecordingPushDispatcher(
+        ApplicationPushDispatchResult? result = null)
         : IApplicationPushNotificationDispatcher
     {
         public int Calls { get; private set; }
@@ -182,9 +211,30 @@ public sealed class CampaignMobileNotificationTransportTests
             Calls++;
             LastMessage = message;
             return Task.FromResult(
-                new ApplicationPushDispatchResult(
+                result ?? new ApplicationPushDispatchResult(
                     ApplicationPushDispatchKind.Accepted,
                     ProviderMessageId: "provider-message-id"));
+        }
+    }
+
+    private sealed class RecordingPushInvalidator
+        : IMobilePushDestinationInvalidator
+    {
+        public Guid? ApplicationId { get; private set; }
+        public Guid? DeviceId { get; private set; }
+        public string? Provider { get; private set; }
+
+        public Task InvalidateAsync(
+            NotificationApplicationContext application,
+            Guid deviceId,
+            string provider,
+            string safeReason,
+            CancellationToken cancellationToken)
+        {
+            ApplicationId = application.ApplicationId;
+            DeviceId = deviceId;
+            Provider = provider;
+            return Task.CompletedTask;
         }
     }
 

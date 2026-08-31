@@ -4,6 +4,8 @@ public static class MobileDeviceAuditKinds
 {
     public const string Paired = "paired";
     public const string RePaired = "re-paired";
+    public const string EnrolledByApplicationIdentity = "application-identity-enrolled";
+    public const string ReEnrolledByApplicationIdentity = "application-identity-re-enrolled";
     public const string PushRegistered = "push-registered";
     public const string PushRefreshed = "push-refreshed";
     public const string PushInvalidated = "push-invalidated";

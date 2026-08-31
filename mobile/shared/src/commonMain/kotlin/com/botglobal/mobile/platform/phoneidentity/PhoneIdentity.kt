@@ -39,11 +39,30 @@ enum class PhoneIdentitySource {
     RestoredServerIdentity,
 }
 
+enum class PhoneIdentityTrust {
+    SelfDeclared,
+    DeviceDetected,
+    SimAssociated,
+    Verified,
+}
+
+private fun PhoneIdentitySource.defaultTrust(): PhoneIdentityTrust = when (this) {
+    PhoneIdentitySource.Sim,
+    PhoneIdentitySource.Esim,
+    -> PhoneIdentityTrust.SimAssociated
+    PhoneIdentitySource.SystemPhoneNumberApi,
+    PhoneIdentitySource.PhoneNumberHint,
+    -> PhoneIdentityTrust.DeviceDetected
+    PhoneIdentitySource.ManualEntry -> PhoneIdentityTrust.SelfDeclared
+    PhoneIdentitySource.RestoredServerIdentity -> PhoneIdentityTrust.Verified
+}
+
 data class PhoneIdentityCandidate(
     val number: E164PhoneNumber,
     val source: PhoneIdentitySource,
     val lineLabel: String? = null,
     val carrierLabel: String? = null,
+    val trust: PhoneIdentityTrust = source.defaultTrust(),
 )
 
 enum class PhoneIdentityDiscoveryUnavailableReason {
@@ -77,6 +96,7 @@ enum class PhoneIdentityStatus {
     DiscoveryAvailable,
     CandidateFound,
     MultipleCandidates,
+    Selected,
     ManualEntryRequired,
     VerificationRequired,
     VerificationPending,
@@ -184,7 +204,7 @@ class PhoneIdentityController(
     fun selectCandidate(number: E164PhoneNumber): Boolean {
         val candidate = mutableState.value.candidates.firstOrNull { it.number == number } ?: return false
         mutableState.value = PhoneIdentityState(
-            status = PhoneIdentityStatus.VerificationRequired,
+            status = PhoneIdentityStatus.Selected,
             candidates = mutableState.value.candidates,
             selected = candidate,
         )
@@ -205,7 +225,7 @@ class PhoneIdentityController(
             return false
         }
         mutableState.value = PhoneIdentityState(
-            status = PhoneIdentityStatus.VerificationRequired,
+            status = PhoneIdentityStatus.Selected,
             selected = PhoneIdentityCandidate(number, PhoneIdentitySource.ManualEntry),
         )
         return true
@@ -236,7 +256,11 @@ class PhoneIdentityController(
         mutableState.value = when (result) {
             is PhoneIdentityVerificationResult.Verified -> PhoneIdentityState(
                 status = PhoneIdentityStatus.Verified,
-                selected = PhoneIdentityCandidate(result.number, PhoneIdentitySource.RestoredServerIdentity),
+                selected = PhoneIdentityCandidate(
+                    result.number,
+                    PhoneIdentitySource.RestoredServerIdentity,
+                    trust = PhoneIdentityTrust.Verified,
+                ),
             )
             is PhoneIdentityVerificationResult.Pending -> PhoneIdentityState(
                 status = PhoneIdentityStatus.VerificationPending,

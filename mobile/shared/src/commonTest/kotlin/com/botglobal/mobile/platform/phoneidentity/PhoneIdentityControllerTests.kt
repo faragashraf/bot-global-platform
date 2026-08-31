@@ -45,16 +45,18 @@ class PhoneIdentityControllerTests {
     }
 
     @Test
-    fun discoveredAndManualNumbersRequireAuthoritativeVerification() {
+    fun discoveredAndManualNumbersRemainClassifiedBelowVerifiedTrust() {
         val controller = PhoneIdentityController()
         val discovered = candidate("+201012345678")
         controller.applyDiscovery(PhoneIdentityDiscoveryResult.Candidates(listOf(discovered)))
         assertTrue(controller.selectCandidate(discovered.number))
-        assertEquals(PhoneIdentityStatus.VerificationRequired, controller.state.value.status)
+        assertEquals(PhoneIdentityStatus.Selected, controller.state.value.status)
+        assertEquals(PhoneIdentityTrust.SimAssociated, controller.state.value.selected?.trust)
 
         controller.requireManualEntry()
         assertTrue(controller.submitManualNumber("+44 7700 900123"))
-        assertEquals(PhoneIdentityStatus.VerificationRequired, controller.state.value.status)
+        assertEquals(PhoneIdentityStatus.Selected, controller.state.value.status)
+        assertEquals(PhoneIdentityTrust.SelfDeclared, controller.state.value.selected?.trust)
         assertNotEquals(PhoneIdentityStatus.Verified, controller.state.value.status)
     }
 

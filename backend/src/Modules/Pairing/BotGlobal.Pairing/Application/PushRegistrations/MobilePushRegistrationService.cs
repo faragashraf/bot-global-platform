@@ -32,7 +32,8 @@ internal sealed class MobilePushRegistrationService(
     PairingDbContext dbContext,
     MobileDeviceAuditRecorder auditRecorder,
     TimeProvider timeProvider)
-    : IMobilePushRegistrationService
+    : IMobilePushRegistrationService,
+      IMobilePushDestinationInvalidator
 {
     public async Task<MobilePushRegistrationResult> RegisterAsync(
         NotificationApplicationContext application,
@@ -192,6 +193,67 @@ internal sealed class MobilePushRegistrationService(
 
         await dbContext.SaveChangesAsync(
             cancellationToken);
+    }
+
+    public async Task InvalidateAsync(
+        NotificationApplicationContext application,
+        Guid deviceId,
+        string provider,
+        string safeReason,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(application);
+        var normalizedProvider = provider?.Trim().ToLowerInvariant();
+        if (deviceId == Guid.Empty || normalizedProvider != "fcm")
+        {
+            return;
+        }
+
+        var registration = await (
+                from pushRegistration in dbContext.PushRegistrations
+                join device in dbContext.Devices
+                    on pushRegistration.MobileDeviceId equals device.Id
+                where device.Id == deviceId
+                      && device.PlatformClientId == application.ApplicationId
+                      && pushRegistration.Provider == normalizedProvider
+                      && pushRegistration.InvalidatedAtUtc == null
+                select pushRegistration)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (registration is null)
+        {
+            return;
+        }
+
+        var now = timeProvider.GetUtcNow();
+        registration.Invalidate(now);
+        auditRecorder.Record(
+            deviceId,
+            application.ApplicationId,
+            MobileDeviceAuditKinds.PushInvalidated,
+            MobileDeviceAuditActorTypes.System,
+            null,
+            $"provider={normalizedProvider}; reason={NormalizeSafeReason(safeReason)}",
+            now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string NormalizeSafeReason(string safeReason)
+    {
+        var value = safeReason?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(value))
+        {
+            return "provider-rejected";
+        }
+
+        var normalized = new string(value
+            .Where(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_')
+            .Take(80)
+            .ToArray());
+
+        return string.IsNullOrEmpty(normalized)
+            ? "provider-rejected"
+            : normalized;
     }
 
     private async Task<Guid> ResolvePlatformClientIdAsync(

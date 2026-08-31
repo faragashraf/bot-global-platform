@@ -40,6 +40,7 @@ mobile/.gradle/
 mobile/.kotlin/
 mobile/**/build/
 mobile/local.properties
+mobile/NqrbMobile/androidApp/google-services.json
 *.apk
 *.aab
 *.jks

@@ -9,6 +9,7 @@ internal sealed class CampaignMobileNotificationTransport(
     SignalRMobileNotificationDelivery signalR,
     IMobileNotificationConnectionRegistry connections,
     IMobilePushDestinationResolver pushDestinations,
+    IMobilePushDestinationInvalidator pushInvalidator,
     IMobileBroadcastAudienceReader audienceReader,
     IApplicationPushNotificationDispatcher push)
     : IMobileNotificationTransport
@@ -114,6 +115,16 @@ internal sealed class CampaignMobileNotificationTransport(
                     pushData,
                     request.TimeToLive),
                 cancellationToken);
+
+            if (pushResult.InvalidatesDestination)
+            {
+                await pushInvalidator.InvalidateAsync(
+                    request.Application,
+                    request.MobileDeviceId,
+                    destination.Provider,
+                    pushResult.SafeErrorCode ?? "provider-rejected",
+                    cancellationToken);
+            }
 
             return pushResult.Kind switch
             {

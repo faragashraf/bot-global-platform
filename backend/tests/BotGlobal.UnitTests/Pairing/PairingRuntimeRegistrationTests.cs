@@ -2,6 +2,8 @@ using BotGlobal.Pairing;
 using BotGlobal.Pairing.Application;
 using BotGlobal.Pairing.Infrastructure.Persistence;
 using BotGlobal.Pairing.Security;
+using BotGlobal.Pairing.Application.MobileDevices;
+using BotGlobal.Contracts.Notifications;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +32,9 @@ public sealed class PairingRuntimeRegistrationTests
     {
         var services = new ServiceCollection();
 
+        services.AddSingleton<IPlatformClientApplicationResolver>(
+            new EmptyApplicationResolver());
+
         services.AddPairingModule(BuildConfiguration());
 
         using var provider = services.BuildServiceProvider();
@@ -41,6 +46,8 @@ public sealed class PairingRuntimeRegistrationTests
             scope.ServiceProvider.GetRequiredService<IPairingTokenService>());
         Assert.NotNull(
             scope.ServiceProvider.GetRequiredService<IPairingChallengeService>());
+        Assert.NotNull(
+            scope.ServiceProvider.GetRequiredService<IMobileDeviceEnrollmentService>());
 
         var connectionString =
             scope.ServiceProvider
@@ -77,5 +84,14 @@ public sealed class PairingRuntimeRegistrationTests
                         + "TrustServerCertificate=True"
                 })
             .Build();
+    }
+
+    private sealed class EmptyApplicationResolver
+        : IPlatformClientApplicationResolver
+    {
+        public Task<PlatformClientDescriptor?> FindByClientKeyAsync(
+            string clientKey,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<PlatformClientDescriptor?>(null);
     }
 }

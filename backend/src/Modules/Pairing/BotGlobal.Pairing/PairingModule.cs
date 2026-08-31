@@ -1,4 +1,5 @@
 using BotGlobal.Pairing.Application.PushRegistrations;
+using BotGlobal.Pairing.Application.MobileDevices;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Pairing.Application.Notifications;
 using System.Threading.RateLimiting;
@@ -26,6 +27,7 @@ public static class PairingModule
     public const string MachineCreateRateLimitPolicy = "pairing-machine-create";
     public const string MachineStatusRateLimitPolicy = "pairing-machine-status";
     public const string MobileClaimRateLimitPolicy = "pairing-mobile-claim";
+    public const string MobileEnrollmentRateLimitPolicy = "pairing-mobile-enrollment";
 
     public static IServiceCollection AddPairingModule(
         this IServiceCollection services,
@@ -63,6 +65,7 @@ public static class PairingModule
             PairingMobileBroadcastAudienceReader>();
 
         services.AddScoped<IMobileDeviceLifecycleService, MobileDeviceLifecycleService>();
+        services.AddScoped<IMobileDeviceEnrollmentService, MobileDeviceEnrollmentService>();
         services.AddSingleton<IMobileDeviceCredentialService, MobileDeviceCredentialService>();
         services.AddScoped<
             IMobileDeviceAuthenticator,
@@ -74,9 +77,11 @@ public static class PairingModule
             Application.AdminDevicePairings.IAdminDevicePairingService,
             Application.AdminDevicePairings.AdminDevicePairingService>();
 
-        services.AddScoped<
-            IMobilePushRegistrationService,
-            MobilePushRegistrationService>();
+        services.AddScoped<MobilePushRegistrationService>();
+        services.AddScoped<IMobilePushRegistrationService>(provider =>
+            provider.GetRequiredService<MobilePushRegistrationService>());
+        services.AddScoped<IMobilePushDestinationInvalidator>(provider =>
+            provider.GetRequiredService<MobilePushRegistrationService>());
 
         services.AddScoped<
             IMobilePushDestinationResolver,
@@ -121,6 +126,18 @@ public static class PairingModule
                             QueueLimit = 0,
                             Window = TimeSpan.FromMinutes(1)
                         }));
+
+                options.AddPolicy(
+                    MobileEnrollmentRateLimitPolicy,
+                    context => RateLimitPartition.GetFixedWindowLimiter(
+                        GetApplicationIdentityPartitionKey(context),
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            AutoReplenishment = true,
+                            PermitLimit = 12,
+                            QueueLimit = 0,
+                            Window = TimeSpan.FromMinutes(1)
+                        }));
             });
 
         return services;
@@ -143,4 +160,18 @@ public static class PairingModule
         => $"{purpose}:"
            + (context.Connection.RemoteIpAddress?.ToString()
               ?? "unknown");
+
+    private static string GetApplicationIdentityPartitionKey(
+        Microsoft.AspNetCore.Http.HttpContext context)
+    {
+        var application = context.User.FindFirst(
+            BotGlobal.Contracts.Mobile.ApplicationIdentityDefaults.ApplicationKeyClaim)?.Value;
+        var subject = context.User.FindFirst(
+            System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        return !string.IsNullOrWhiteSpace(application)
+               && !string.IsNullOrWhiteSpace(subject)
+            ? $"mobile-enrollment:{application}:{subject}"
+            : GetRemotePartitionKey(context, "mobile-enrollment");
+    }
 }

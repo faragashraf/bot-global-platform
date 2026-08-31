@@ -15,10 +15,12 @@ val callTargetDisplayName = providers.gradleProperty("nqrbCallTargetDisplayName"
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.googleServices)
 }
 
 dependencies {
     implementation(projects.nqrbMobile.composeApp)
+    implementation(projects.firebaseMessaging)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.telecom)
     implementation(libs.compose.uiToolingPreview)

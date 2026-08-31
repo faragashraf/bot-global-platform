@@ -117,6 +117,42 @@ public sealed class PushRegistrationApplicationIsolationTests
     }
 
     [Fact]
+    public async Task Permanent_provider_rejection_invalidates_only_the_scoped_destination()
+    {
+        var appA = Guid.NewGuid();
+        var appB = Guid.NewGuid();
+        await using var db = CreateContext();
+        var deviceA = Device(appA, "installation-a");
+        var deviceB = Device(appB, "installation-b");
+        db.Devices.AddRange(deviceA, deviceB);
+        db.PushRegistrations.AddRange(
+            new MobilePushRegistration(deviceA.Id, "fcm", "fid-a", DateTimeOffset.UtcNow),
+            new MobilePushRegistration(deviceB.Id, "fcm", "fid-b", DateTimeOffset.UtcNow));
+        await db.SaveChangesAsync();
+        var service = new MobilePushRegistrationService(
+            db,
+            new MobileDeviceAuditRecorder(db),
+            TimeProvider.System);
+
+        await service.InvalidateAsync(
+            new NotificationApplicationContext(appA),
+            deviceA.Id,
+            "fcm",
+            "fcm-unregistered",
+            CancellationToken.None);
+        await service.InvalidateAsync(
+            new NotificationApplicationContext(appB),
+            deviceA.Id,
+            "fcm",
+            "cross-application-attempt",
+            CancellationToken.None);
+
+        var registrations = await db.PushRegistrations.OrderBy(item => item.RegistrationToken).ToArrayAsync();
+        Assert.NotNull(registrations[0].InvalidatedAtUtc);
+        Assert.Null(registrations[1].InvalidatedAtUtc);
+    }
+
+    [Fact]
     public async Task App_scoped_admin_query_excludes_other_apps_while_platform_global_scope_is_explicit()
     {
         var appA = Guid.NewGuid();

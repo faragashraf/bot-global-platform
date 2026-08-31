@@ -18,6 +18,7 @@ import com.botglobal.mobile.platform.identity.FederatedSignInResult
 import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.localization.ContentDirection
+import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -66,7 +67,22 @@ class NqrbAppStateTests {
 
     @Test
     fun restoredCentralSessionBypassesSignInAndPhoneIdentityIsNotRequired() = runTest {
-        val state = state(restored = session())
+        val push = RecordingPushLifecycle()
+        val state = state(restored = session(), push = push)
+        state.startup()
+
+        assertEquals(NqrbDestination.Home, state.navigation.current)
+        assertTrue(state.canUseHome())
+        assertEquals(1, push.activations)
+    }
+
+    @Test
+    fun pushRegistrationFailureNeverBlocksRestoredIdentityOrHome() = runTest {
+        val state = state(
+            restored = session(),
+            push = ThrowingPushLifecycle,
+        )
+
         state.startup()
 
         assertEquals(NqrbDestination.Home, state.navigation.current)
@@ -86,7 +102,8 @@ class NqrbAppStateTests {
 
     @Test
     fun settingsBackAndLogoutRemainCoherent() = runTest {
-        val state = state(restored = session())
+        val push = RecordingPushLifecycle()
+        val state = state(restored = session(), push = push)
         state.startup()
         assertTrue(state.selectTopLevel(NqrbDestination.People))
         state.openSettings()
@@ -96,6 +113,7 @@ class NqrbAppStateTests {
         state.logout()
         assertEquals(NqrbDestination.SignIn, state.navigation.current)
         assertFalse(state.navigation.navigateBack())
+        assertEquals(1, push.deactivations)
     }
 
     @Test
@@ -120,12 +138,14 @@ class NqrbAppStateTests {
         restored: MobileSession? = null,
         signIn: FederatedSignInResult = FederatedSignInResult.Rejected,
         permission: PermissionState = PermissionState.Unknown,
+        push: PushRegistrationLifecycle = RecordingPushLifecycle(),
     ) = NqrbAppState(
         identity = FederatedIdentityController(
             credentials = FixedCredentials,
             gateway = FixedIdentityGateway(restored, signIn),
         ),
         contacts = ContactsController(FixedPermission(permission), EmptyContacts),
+        push = push,
     )
 
     private object FixedCredentials : FederatedCredentialProvider {
@@ -150,6 +170,18 @@ class NqrbAppStateTests {
 
     private object EmptyContacts : ContactsGateway {
         override suspend fun readLocalContacts() = emptyList<com.botglobal.mobile.platform.contacts.DeviceContact>()
+    }
+
+    private class RecordingPushLifecycle : PushRegistrationLifecycle {
+        var activations = 0
+        var deactivations = 0
+        override suspend fun activate() { activations++ }
+        override suspend fun deactivate() { deactivations++ }
+    }
+
+    private object ThrowingPushLifecycle : PushRegistrationLifecycle {
+        override suspend fun activate() = error("Synthetic push registration failure")
+        override suspend fun deactivate() = error("Synthetic push invalidation failure")
     }
 
     private fun session() = MobileSession(

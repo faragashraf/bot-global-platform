@@ -13,6 +13,13 @@ public interface IPlatformClientDescriptorReader
         CancellationToken cancellationToken);
 }
 
+public interface IPlatformClientApplicationResolver
+{
+    Task<PlatformClientDescriptor?> FindByClientKeyAsync(
+        string clientKey,
+        CancellationToken cancellationToken);
+}
+
 public sealed record AdministratorDescriptor(
     Guid UserId,
     string DisplayName,
@@ -102,5 +109,15 @@ public interface IMobileNotificationTransport
 {
     Task<MobileNotificationTransportOutcome> DispatchAsync(
         MobileNotificationTransportRequest request,
+        CancellationToken cancellationToken);
+}
+
+public interface IMobilePushDestinationInvalidator
+{
+    Task InvalidateAsync(
+        NotificationApplicationContext application,
+        Guid deviceId,
+        string provider,
+        string safeReason,
         CancellationToken cancellationToken);
 }

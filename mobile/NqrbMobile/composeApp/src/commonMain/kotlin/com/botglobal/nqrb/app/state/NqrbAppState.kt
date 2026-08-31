@@ -20,6 +20,8 @@ import com.botglobal.mobile.platform.identity.UnavailableFederatedCredentialProv
 import com.botglobal.mobile.platform.identity.UnavailableFederatedIdentityGateway
 import com.botglobal.mobile.platform.localization.LocaleController
 import com.botglobal.mobile.platform.navigation.BackStackNavigator
+import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
+import com.botglobal.mobile.platform.notifications.UnavailablePushRegistrationLifecycle
 import com.botglobal.mobile.platform.voice.ManagedVoiceRoomController
 import com.botglobal.mobile.platform.voice.VoiceIceConfiguration
 import com.botglobal.mobile.platform.voice.VoiceJoinResult
@@ -55,6 +57,7 @@ class NqrbAppState(
     val appearance: AppearanceController = AppearanceController(),
     val navigation: BackStackNavigator<NqrbDestination> = BackStackNavigator(NqrbDestination.SignIn),
     val calling: CallSessionController = unavailableCalling(),
+    private val push: PushRegistrationLifecycle = UnavailablePushRegistrationLifecycle,
     private val permissions: PermissionController = UnavailablePermissionController,
     private val callTargetMembershipId: String = "",
     private val callTargetDisplayName: String = "",
@@ -68,6 +71,7 @@ class NqrbAppState(
         identity.restore()
         navigation.reset(
             if (identity.state.value is FederatedAuthenticationState.SignedIn) {
+                runCatching { push.activate() }
                 runCatching { calling.connectSignaling() }
                 NqrbDestination.Home
             } else {
@@ -79,6 +83,7 @@ class NqrbAppState(
     suspend fun signInWithGoogle() {
         identity.signIn(FederatedIdentityProvider.Google)
         if (identity.state.value is FederatedAuthenticationState.SignedIn) {
+            runCatching { push.activate() }
             runCatching { calling.connectSignaling() }
             navigation.reset(NqrbDestination.ContactsOnboarding)
         }
@@ -103,6 +108,7 @@ class NqrbAppState(
 
     suspend fun logout() {
         runCatching { calling.disconnectSignaling() }
+        runCatching { push.deactivate() }
         identity.logout()
         navigation.reset(NqrbDestination.SignIn)
     }

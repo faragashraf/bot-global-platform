@@ -8,7 +8,9 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using BotGlobal.Pairing.Application.PushRegistrations;
+using BotGlobal.Pairing.Application.MobileDevices;
 using BotGlobal.Contracts.Notifications;
+using BotGlobal.Contracts.Mobile;
 
 namespace BotGlobal.UnitTests.Pairing;
 
@@ -71,6 +73,21 @@ public sealed class PairingEndpointContractTests
     }
 
     [Fact]
+    public void Mobile_enrollment_requires_central_application_identity_and_rate_limit()
+    {
+        using var app = BuildApp();
+        var endpoint = FindEndpoint(app, "/api/mobile/devices/enrollment");
+
+        var policy = Assert.Single(endpoint.Metadata.OfType<AuthorizationPolicy>());
+        Assert.Contains(ApplicationIdentityDefaults.Scheme, policy.AuthenticationSchemes);
+        Assert.True(policy.Requirements.Count > 0);
+
+        var rateLimit = Assert.Single(
+            endpoint.Metadata.OfType<EnableRateLimitingAttribute>());
+        Assert.Equal(PairingModule.MobileEnrollmentRateLimitPolicy, rateLimit.PolicyName);
+    }
+
+    [Fact]
     public void Machine_authenticated_create_request_accepts_external_subject_identity()
     {
         var properties =
@@ -126,6 +143,7 @@ public sealed class PairingEndpointContractTests
     {
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddScoped<IPairingChallengeService, FakePairingChallengeService>();
+        builder.Services.AddScoped<IMobileDeviceEnrollmentService, FakeMobileDeviceEnrollmentService>();
         builder.Services.AddScoped<
             IMobilePushRegistrationService,
             FakeMobilePushRegistrationService>();
@@ -198,6 +216,20 @@ public sealed class PairingEndpointContractTests
             Guid deviceId,
             CancellationToken cancellationToken)
             => Task.CompletedTask;
+    }
+
+    private sealed class FakeMobileDeviceEnrollmentService
+        : IMobileDeviceEnrollmentService
+    {
+        public Task<EnrolledMobileDeviceResponse> EnrollAsync(
+            string applicationKey,
+            string externalSubjectId,
+            EnrollMobileDeviceRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(
+                new EnrolledMobileDeviceResponse(
+                    Guid.NewGuid(),
+                    "test-device-credential"));
     }
 
     private sealed class FakeAdminDevicePairingService

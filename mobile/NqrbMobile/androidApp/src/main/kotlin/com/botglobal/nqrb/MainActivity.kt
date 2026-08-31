@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
                 gateway = AndroidContactsGateway(applicationContext),
             ),
             calling = nqrbApplication.callRuntime.session,
+            push = nqrbApplication.firebaseMessagingRuntime,
             permissions = permissionController,
             callTargetMembershipId = BuildConfig.CALL_TARGET_MEMBERSHIP_ID,
             callTargetDisplayName = BuildConfig.CALL_TARGET_DISPLAY_NAME,

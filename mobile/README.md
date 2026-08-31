@@ -45,7 +45,7 @@ Invitation links default to the development-safe `familygames://invite` scheme. 
 - Biometrics: shared contract and Android biometric/device-credential gate. It unlocks an existing session only; enablement preferences are a later slice.
 - Permissions/location: centralized least-privilege contracts; Family Games does not request location.
 - Invitations: shared locale-invariant link/message contracts, server-issued opaque tokens, Android QR scanning/rendering, incoming deep links, and the native system share sheet are implemented. Camera permission is requested only after the player selects scanning and confirms the explanation.
-- Notifications: semantic inbox/push/foreground contracts are present. FCM/APNs product registration is intentionally not configured without production projects/credentials.
+- Notifications: semantic inbox/push/foreground contracts are shared. NQRB Android uses its dedicated Firebase project configuration injected locally at `NqrbMobile/androidApp/google-services.json`; that environment-specific file is ignored and must not be committed. Firebase Admin credentials remain server-only and must never be placed in the mobile tree. Other products remain unconfigured until they receive distinct approved app registrations.
 - Updates: shared decision engine plus server-owned Android/iOS version policy and required/optional UI.
 - Entitlements/billing: semantic entitlement engine and provider boundaries; free classic XO is not blocked by billing.
 - Voice: WebRTC/ICE/signaling contracts exist. Audio transport, native WebRTC adapters, and production TURN configuration are not implemented.

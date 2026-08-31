@@ -94,6 +94,10 @@ public static class PlatformClientsModule
             IPlatformClientDescriptorReader,
             PlatformClientDescriptorReader>();
 
+        services.AddScoped<
+            IPlatformClientApplicationResolver,
+            PlatformClientDescriptorReader>();
+
 
         services.AddScoped<
             IPlatformClientCredentialLifecycleService,
