@@ -39,6 +39,7 @@ TestResults/
 mobile/.gradle/
 mobile/.kotlin/
 mobile/**/build/
+mobile/**/google-services.json
 mobile/local.properties
 *.apk
 *.aab
