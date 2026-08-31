@@ -214,7 +214,7 @@ class NqrbOngoingCallService : Service() {
             Intent(this, NqrbCallActionReceiver::class.java).setAction(ActionEndCall),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val builder = Notification.Builder(this, ChannelId)
+        val builder = notificationBuilder(ChannelId)
             .setSmallIcon(R.drawable.ic_nqrb_launcher)
             .setContentTitle(getString(R.string.ongoing_call_title))
             .setContentText(displayName)
@@ -240,7 +240,7 @@ class NqrbOngoingCallService : Service() {
     private fun incomingNotification(displayName: String): Notification {
         val answer = callAction(ActionAnswerCall, 2)
         val reject = callAction(ActionRejectCall, 3)
-        val builder = Notification.Builder(this, IncomingChannelId)
+        val builder = notificationBuilder(IncomingChannelId)
             .setSmallIcon(R.drawable.ic_nqrb_launcher)
             .setContentTitle(getString(R.string.incoming_call_title))
             .setContentText(displayName)
@@ -261,6 +261,14 @@ class NqrbOngoingCallService : Service() {
     private fun callAction(action: String, requestCode: Int) = PendingIntent.getBroadcast(
         this, requestCode, Intent(this, NqrbCallActionReceiver::class.java).setAction(action),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+    @Suppress("DEPRECATION")
+    private fun notificationBuilder(channelId: String): Notification.Builder =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, channelId)
+        } else {
+            Notification.Builder(this)
+        }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.Nqrb" parent="Theme.Nqrb.Base">
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
