@@ -4,6 +4,10 @@ import com.botglobal.mobile.platform.calling.CallAudioRoute
 import com.botglobal.mobile.platform.calling.CallDirection
 import com.botglobal.mobile.platform.calling.CallId
 import com.botglobal.mobile.platform.calling.CallParticipant
+import com.botglobal.mobile.platform.calling.CallableParticipant
+import com.botglobal.mobile.platform.calling.CallingDirectory
+import com.botglobal.mobile.platform.calling.CallingDirectoryController
+import com.botglobal.mobile.platform.calling.CallingDirectoryStatus
 import com.botglobal.mobile.platform.calling.CallPlatformAction
 import com.botglobal.mobile.platform.calling.CallPlatformLifecycle
 import com.botglobal.mobile.platform.calling.CallSessionController
@@ -217,16 +221,155 @@ class NqrbAppStateTests {
             identity = FederatedIdentityController(FixedCredentials, FixedIdentityGateway(session(), FederatedSignInResult.Rejected)),
             contacts = ContactsController(FixedPermission(PermissionState.Denied), EmptyContacts),
             permissions = FixedPermission(PermissionState.Denied),
-            callTargetMembershipId = "known-nqrb-member",
-            callTargetDisplayName = "Known NQRB user",
             callActionScope = backgroundScope,
         )
+        state.startup()
 
-        state.requestOutgoingCall()
+        state.requestOutgoingCall(
+            CallableParticipant("known-nqrb-member", "Known NQRB user"),
+        )
         runCurrent()
 
         assertTrue(state.microphoneExplanationVisible.value)
         assertEquals(com.botglobal.mobile.platform.calling.CallState.Idle, state.calling.state.value.state)
+    }
+
+    @Test
+    fun directory_waits_for_authoritative_session_then_loads_for_authenticated_member() = runTest {
+        val restored = CompletableDeferred<MobileSession?>()
+        val directory = RecordingDirectory(
+            listOf(CallableParticipant("remote", "Remote user")),
+        )
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(
+                FixedCredentials,
+                DeferredIdentityGateway(restored),
+            ),
+            callingDirectory = CallingDirectoryController(directory),
+            callActionScope = backgroundScope,
+        )
+
+        backgroundScope.launch { state.startup() }
+        runCurrent()
+
+        assertEquals(0, directory.loads)
+        restored.complete(session())
+        runCurrent()
+
+        assertEquals(1, directory.loads)
+        assertEquals(CallingDirectoryStatus.Ready, state.callingDirectory.state.value.status)
+    }
+
+    @Test
+    fun directory_error_has_no_call_fallback_and_explicit_retry_recovers() = runTest {
+        val signaling = RecordingCallSignaling()
+        val calling = CallSessionController(
+            backgroundScope,
+            signaling,
+            RecordingVoiceRoom(),
+            RecordingCallPlatform(),
+        )
+        val directory = RetryDirectory()
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(
+                FixedCredentials,
+                FixedIdentityGateway(session(), FederatedSignInResult.Rejected),
+            ),
+            calling = calling,
+            callingDirectory = CallingDirectoryController(directory),
+            permissions = FixedPermission(PermissionState.Granted),
+            callActionScope = backgroundScope,
+        )
+
+        state.startup()
+        runCurrent()
+
+        assertEquals(CallingDirectoryStatus.Error, state.callingDirectory.state.value.status)
+        assertEquals(0, signaling.startedRequests.size)
+
+        state.refreshCallingDirectory()
+        runCurrent()
+
+        assertEquals(CallingDirectoryStatus.Ready, state.callingDirectory.state.value.status)
+        assertEquals(0, signaling.startedRequests.size)
+    }
+
+    @Test
+    fun returning_to_home_refreshes_the_authenticated_directory_without_polling() = runTest {
+        val directory = RecordingDirectory(emptyList())
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(
+                FixedCredentials,
+                FixedIdentityGateway(session(), FederatedSignInResult.Rejected),
+            ),
+            callingDirectory = CallingDirectoryController(directory),
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+        runCurrent()
+        assertEquals(1, directory.loads)
+
+        assertTrue(state.selectTopLevel(NqrbDestination.People))
+        runCurrent()
+        assertEquals(1, directory.loads)
+
+        assertTrue(state.selectTopLevel(NqrbDestination.Home))
+        runCurrent()
+        assertEquals(2, directory.loads)
+    }
+
+    @Test
+    fun call_action_preserves_selected_participant_id_and_display_as_one_object() = runTest {
+        val signaling = RecordingCallSignaling()
+        val calling = CallSessionController(
+            backgroundScope,
+            signaling,
+            RecordingVoiceRoom(),
+            RecordingCallPlatform(),
+        )
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(
+                FixedCredentials,
+                FixedIdentityGateway(session(), FederatedSignInResult.Rejected),
+            ),
+            calling = calling,
+            permissions = FixedPermission(PermissionState.Granted),
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+        val selected = CallableParticipant("remote-membership", "Remote display")
+
+        state.requestOutgoingCall(selected)
+        runCurrent()
+
+        val request = signaling.startedRequests.single()
+        assertEquals(selected.membershipId, request.callee.membershipId)
+        assertEquals(selected.displayName, request.callee.displayName)
+    }
+
+    @Test
+    fun client_defense_ignores_an_accidental_self_participant() = runTest {
+        val signaling = RecordingCallSignaling()
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(
+                FixedCredentials,
+                FixedIdentityGateway(session(), FederatedSignInResult.Rejected),
+            ),
+            calling = CallSessionController(
+                backgroundScope,
+                signaling,
+                RecordingVoiceRoom(),
+                RecordingCallPlatform(),
+            ),
+            permissions = FixedPermission(PermissionState.Granted),
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+
+        state.requestOutgoingCall(CallableParticipant("membership", "Current user"))
+        runCurrent()
+
+        assertEquals(0, signaling.startedRequests.size)
     }
 
     @Test
@@ -332,15 +475,39 @@ class NqrbAppStateTests {
         override suspend fun deactivate() = error("Synthetic push invalidation failure")
     }
 
+    private class RecordingDirectory(
+        private val participants: List<CallableParticipant>,
+    ) : CallingDirectory {
+        var loads = 0
+
+        override suspend fun loadCallableParticipants(): List<CallableParticipant> {
+            loads++
+            return participants
+        }
+    }
+
+    private class RetryDirectory : CallingDirectory {
+        private var loads = 0
+
+        override suspend fun loadCallableParticipants(): List<CallableParticipant> {
+            loads++
+            if (loads == 1) error("Synthetic directory failure")
+            return listOf(CallableParticipant("remote", "Remote user"))
+        }
+    }
+
     private class RecordingCallSignaling : CallSignaling {
         private val mutableEvents = MutableSharedFlow<CallSignalingEvent>(extraBufferCapacity = 4)
         override val events = mutableEvents
         var answers = 0
         var rejects = 0
         var ends = 0
+        val startedRequests = mutableListOf<OutgoingCallRequest>()
 
-        override suspend fun startOutgoing(request: OutgoingCallRequest) =
-            StartedCall(CallId("outgoing"), request.callee)
+        override suspend fun startOutgoing(request: OutgoingCallRequest): StartedCall {
+            startedRequests += request
+            return StartedCall(CallId("outgoing"), request.callee)
+        }
 
         override suspend fun answer(callId: CallId) {
             answers++

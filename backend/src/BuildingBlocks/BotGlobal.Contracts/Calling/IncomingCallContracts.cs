@@ -9,6 +9,11 @@ public sealed record CallingParticipantDescriptor(
 
 public interface ICallingParticipantDirectory
 {
+    Task<IReadOnlyList<CallingParticipantDescriptor>> ListCallableAsync(
+        string applicationKey,
+        Guid currentMembershipId,
+        CancellationToken cancellationToken);
+
     Task<CallingParticipantDescriptor?> FindAsync(
         string applicationKey,
         Guid membershipId,

@@ -24,6 +24,12 @@ class NqrbStringsTests {
             assertTrue(strings.logout.isNotBlank())
             assertTrue(strings.microphoneTitle.isNotBlank())
             assertTrue(strings.startCall.isNotBlank())
+            assertTrue(strings.callablePeopleTitle.isNotBlank())
+            assertTrue(strings.callingDirectoryLoading.isNotBlank())
+            assertTrue(strings.callingDirectoryEmpty.isNotBlank())
+            assertTrue(strings.callingDirectoryError.isNotBlank())
+            assertTrue(strings.refreshCallingDirectory.isNotBlank())
+            assertTrue(strings.retry.isNotBlank())
             assertTrue(strings.endCall.isNotBlank())
             assertTrue(strings.audioRoute.isNotBlank())
         }

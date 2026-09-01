@@ -5,12 +5,6 @@ fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\
 val googleServerClientId = providers.gradleProperty("nqrbGoogleServerClientId")
     .orElse(providers.environmentVariable("NQRB_GOOGLE_SERVER_CLIENT_ID"))
     .getOrElse("")
-val callTargetMembershipId = providers.gradleProperty("nqrbCallTargetMembershipId")
-    .orElse(providers.environmentVariable("NQRB_CALL_TARGET_MEMBERSHIP_ID"))
-    .getOrElse("")
-val callTargetDisplayName = providers.gradleProperty("nqrbCallTargetDisplayName")
-    .orElse(providers.environmentVariable("NQRB_CALL_TARGET_DISPLAY_NAME"))
-    .getOrElse("")
 
 plugins {
     alias(libs.plugins.androidApplication)
@@ -39,8 +33,6 @@ android {
         versionName = "0.1.0"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", googleServerClientId.asBuildConfigString())
-        buildConfigField("String", "CALL_TARGET_MEMBERSHIP_ID", callTargetMembershipId.asBuildConfigString())
-        buildConfigField("String", "CALL_TARGET_DISPLAY_NAME", callTargetDisplayName.asBuildConfigString())
     }
 
     buildTypes {

@@ -9,6 +9,7 @@ import com.botglobal.mobile.platform.notifications.firebase.AndroidSecureMobileD
 import com.botglobal.mobile.platform.notifications.firebase.FirebaseMessagingRuntimeOwner
 import com.botglobal.nqrb.app.data.NqrbPushRegistrationApi
 import com.botglobal.nqrb.app.data.NqrbIdentityApi
+import com.botglobal.nqrb.app.data.NqrbCallingDirectoryApi
 import com.botglobal.nqrb.app.data.createNqrbHttpClient
 import com.botglobal.nqrb.calling.NqrbCallRuntime
 import com.botglobal.nqrb.calling.NqrbPushMessageHandler
@@ -20,6 +21,8 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
         private set
     lateinit var identityApi: NqrbIdentityApi
         private set
+    lateinit var callingDirectoryApi: NqrbCallingDirectoryApi
+        private set
     override lateinit var firebaseMessagingRuntime: AndroidFirebaseMessagingRuntime
         private set
 
@@ -27,6 +30,11 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
         super.onCreate()
         sessionVault = AndroidSecureSessionVault(this, "nqrb")
         identityApi = NqrbIdentityApi(createNqrbHttpClient(), BuildConfig.API_BASE_URL, sessionVault)
+        callingDirectoryApi = NqrbCallingDirectoryApi(
+            createNqrbHttpClient(),
+            BuildConfig.API_BASE_URL,
+            sessionVault,
+        )
         val pushRegistration = NqrbPushRegistrationApi(
             platformClient = createNqrbHttpClient(),
             apiBaseUrl = BuildConfig.API_BASE_URL,

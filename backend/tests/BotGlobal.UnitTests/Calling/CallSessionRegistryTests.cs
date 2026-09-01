@@ -7,6 +7,19 @@ namespace BotGlobal.UnitTests.Calling;
 public sealed class CallSessionRegistryTests
 {
     [Fact]
+    public void Self_call_remains_rejected_by_the_authoritative_registry()
+    {
+        var registry = new CallSessionRegistry();
+        var caller = Identity("nqrb", "Caller");
+        registry.Connected("caller", caller);
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            registry.Start("caller", caller.MembershipId));
+
+        Assert.Equal("call_self_not_allowed", error.Message);
+    }
+
+    [Fact]
     public void One_active_call_and_application_isolation_are_server_authoritative()
     {
         var registry = new CallSessionRegistry();

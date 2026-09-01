@@ -2,6 +2,7 @@ namespace BotGlobal.Calling.Realtime;
 
 public sealed record StartOutgoingCallRequest(Guid CalleeMembershipId);
 public sealed record StartedCallResult(Guid CallId, Guid CalleeMembershipId, string CalleeDisplayName);
+public sealed record CallableParticipantResult(Guid MembershipId, string DisplayName);
 public sealed record CallOfferedEvent(Guid CallId, string ApplicationContext, Guid CallerMembershipId, string CallerDisplayName);
 public sealed record IncomingCallLookupRequest(Guid CallId);
 public sealed record IncomingCallResult(Guid CallId, string ApplicationContext, Guid CallerMembershipId, string CallerDisplayName, DateTimeOffset ExpiresAtUtc);

@@ -61,7 +61,10 @@ import androidx.compose.ui.unit.dp
 import com.botglobal.mobile.platform.appearance.AppearancePreference
 import com.botglobal.mobile.platform.appearance.ResolvedAppearance
 import com.botglobal.mobile.platform.calling.CallAudioRoute
+import com.botglobal.mobile.platform.calling.CallableParticipant
 import com.botglobal.mobile.platform.calling.CallDirection
+import com.botglobal.mobile.platform.calling.CallingDirectorySnapshot
+import com.botglobal.mobile.platform.calling.CallingDirectoryStatus
 import com.botglobal.mobile.platform.calling.CallSessionSnapshot
 import com.botglobal.mobile.platform.calling.CallState
 import com.botglobal.mobile.platform.calling.CallTerminationReason
@@ -89,6 +92,7 @@ fun NqrbApp(
     val startupState by appState.startupState.collectAsState()
     val contacts by appState.contacts.state.collectAsState()
     val call by appState.calling.state.collectAsState()
+    val callingDirectory by appState.callingDirectory.state.collectAsState()
     val microphoneExplanation by appState.microphoneExplanationVisible.collectAsState()
     val microphoneBlocked by appState.microphonePermissionBlocked.collectAsState()
     val systemIsDark = isSystemInDarkTheme()
@@ -120,6 +124,7 @@ fun NqrbApp(
                 startupState = startupState,
                 contacts = contacts,
                 call = call,
+                callingDirectory = callingDirectory,
                 microphoneExplanation = microphoneExplanation,
                 microphoneBlocked = microphoneBlocked,
             )
@@ -137,6 +142,7 @@ private fun NqrbShell(
     startupState: NqrbStartupState,
     contacts: ContactsSnapshot,
     call: CallSessionSnapshot,
+    callingDirectory: CallingDirectorySnapshot,
     microphoneExplanation: Boolean,
     microphoneBlocked: Boolean,
 ) {
@@ -170,7 +176,12 @@ private fun NqrbShell(
                         RestoringSessionScreen(strings, appState)
                     }
                     NqrbDestination.ContactsOnboarding -> ContactsOnboardingScreen(strings, appState)
-                    NqrbDestination.Home -> HomeScreen(strings, appState, microphoneBlocked)
+                    NqrbDestination.Home -> HomeScreen(
+                        strings,
+                        appState,
+                        callingDirectory,
+                        microphoneBlocked,
+                    )
                     NqrbDestination.Settings -> SettingsScreen(
                         strings = strings,
                         appState = appState,
@@ -399,7 +410,12 @@ private fun ProfileScreen(strings: NqrbStrings, appState: NqrbAppState) {
 }
 
 @Composable
-private fun HomeScreen(strings: NqrbStrings, appState: NqrbAppState, microphoneBlocked: Boolean) {
+private fun HomeScreen(
+    strings: NqrbStrings,
+    appState: NqrbAppState,
+    directory: CallingDirectorySnapshot,
+    microphoneBlocked: Boolean,
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -416,16 +432,7 @@ private fun HomeScreen(strings: NqrbStrings, appState: NqrbAppState, microphoneB
             body = strings.primaryCallBody,
             iconDescription = strings.call,
         )
-        if (appState.hasConfiguredCallTarget()) {
-            Button(
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                onClick = appState::requestOutgoingCall,
-            ) {
-                NqrbIcon(NqrbGlyph.Call, strings.startCall, Color.White, Modifier.size(22.dp))
-                Spacer(Modifier.width(NqrbSpacing.Sm))
-                Text(strings.startCall)
-            }
-        }
+        CallingDirectorySection(strings, directory, appState)
         if (microphoneBlocked) InfoNote(strings.microphoneDenied)
         ConceptCard(
             glyph = NqrbGlyph.Link,
@@ -434,6 +441,99 @@ private fun HomeScreen(strings: NqrbStrings, appState: NqrbAppState, microphoneB
             iconDescription = strings.createCallLinkTitle,
         )
         Spacer(Modifier.height(NqrbSpacing.Sm))
+    }
+}
+
+@Composable
+private fun CallingDirectorySection(
+    strings: NqrbStrings,
+    directory: CallingDirectorySnapshot,
+    appState: NqrbAppState,
+) {
+    val colors = LocalNqrbColors.current
+    Text(
+        strings.callablePeopleTitle,
+        style = MaterialTheme.typography.titleLarge,
+        color = colors.textPrimary,
+    )
+    when (directory.status) {
+        CallingDirectoryStatus.Idle,
+        CallingDirectoryStatus.Loading,
+        -> InfoNote(strings.callingDirectoryLoading)
+
+        CallingDirectoryStatus.Empty -> {
+            InfoNote(strings.callingDirectoryEmpty)
+            DirectoryRefreshAction(strings.retry, appState::refreshCallingDirectory)
+        }
+
+        CallingDirectoryStatus.Error -> {
+            InfoNote(strings.callingDirectoryError)
+            DirectoryRefreshAction(strings.retry, appState::refreshCallingDirectory)
+        }
+
+        CallingDirectoryStatus.Ready -> {
+            directory.participants.forEach { participant ->
+                CallableParticipantCard(
+                    participant = participant,
+                    callLabel = strings.call,
+                    onCall = { appState.requestOutgoingCall(participant) },
+                )
+            }
+            DirectoryRefreshAction(strings.refreshCallingDirectory, appState::refreshCallingDirectory)
+        }
+    }
+}
+
+@Composable
+private fun DirectoryRefreshAction(label: String, onClick: () -> Unit) {
+    TextButton(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+    ) {
+        Text(label)
+    }
+}
+
+@Composable
+private fun CallableParticipantCard(
+    participant: CallableParticipant,
+    callLabel: String,
+    onCall: () -> Unit,
+) {
+    val colors = LocalNqrbColors.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.surface,
+        shape = RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
+    ) {
+        Row(
+            modifier = Modifier.padding(NqrbSpacing.Md),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
+        ) {
+            Box(
+                Modifier.size(46.dp).clip(CircleShape).background(colors.accentSoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    participant.displayName.trim().take(1).uppercase(),
+                    color = colors.accent,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Text(
+                participant.displayName,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.textPrimary,
+            )
+            Button(onClick = onCall) {
+                NqrbIcon(NqrbGlyph.Call, callLabel, Color.White, Modifier.size(20.dp))
+                Spacer(Modifier.width(NqrbSpacing.Xs))
+                Text(callLabel)
+            }
+        }
     }
 }
 

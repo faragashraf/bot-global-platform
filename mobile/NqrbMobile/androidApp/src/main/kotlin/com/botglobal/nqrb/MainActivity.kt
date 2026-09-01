@@ -11,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import com.botglobal.mobile.platform.appearance.ResolvedAppearance
 import com.botglobal.mobile.platform.contacts.AndroidContactsGateway
 import com.botglobal.mobile.platform.contacts.ContactsController
+import com.botglobal.mobile.platform.calling.CallingDirectoryController
 import com.botglobal.mobile.platform.device.AndroidRuntimePermissionController
 import com.botglobal.mobile.platform.device.PermissionKind
 import com.botglobal.mobile.platform.identity.AndroidGoogleCredentialProvider
@@ -47,10 +48,9 @@ class MainActivity : ComponentActivity() {
                 gateway = AndroidContactsGateway(applicationContext),
             ),
             calling = nqrbApplication.callRuntime.session,
+            callingDirectory = CallingDirectoryController(nqrbApplication.callingDirectoryApi),
             push = nqrbApplication.firebaseMessagingRuntime,
             permissions = permissionController,
-            callTargetMembershipId = BuildConfig.CALL_TARGET_MEMBERSHIP_ID,
-            callTargetDisplayName = BuildConfig.CALL_TARGET_DISPLAY_NAME,
         )
         setContent {
             NqrbApp(

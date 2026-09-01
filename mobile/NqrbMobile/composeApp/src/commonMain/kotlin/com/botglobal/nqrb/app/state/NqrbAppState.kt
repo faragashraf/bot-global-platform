@@ -3,10 +3,13 @@ package com.botglobal.nqrb.app.state
 import com.botglobal.mobile.platform.appearance.AppearanceController
 import com.botglobal.mobile.platform.calling.CallParticipant
 import com.botglobal.mobile.platform.calling.CallAudioRoute
+import com.botglobal.mobile.platform.calling.CallableParticipant
+import com.botglobal.mobile.platform.calling.CallingDirectoryController
 import com.botglobal.mobile.platform.calling.CallSessionController
 import com.botglobal.mobile.platform.calling.CallTerminationReason
 import com.botglobal.mobile.platform.calling.OutgoingCallRequest
 import com.botglobal.mobile.platform.calling.UnavailableCallPlatformLifecycle
+import com.botglobal.mobile.platform.calling.UnavailableCallingDirectory
 import com.botglobal.mobile.platform.contacts.ContactsController
 import com.botglobal.mobile.platform.contacts.UnavailableContactsGateway
 import com.botglobal.mobile.platform.device.UnavailablePermissionController
@@ -62,10 +65,11 @@ class NqrbAppState(
     val appearance: AppearanceController = AppearanceController(),
     val navigation: BackStackNavigator<NqrbDestination> = BackStackNavigator(NqrbDestination.SignIn),
     val calling: CallSessionController = unavailableCalling(),
+    val callingDirectory: CallingDirectoryController = CallingDirectoryController(
+        UnavailableCallingDirectory,
+    ),
     private val push: PushRegistrationLifecycle = UnavailablePushRegistrationLifecycle,
     private val permissions: PermissionController = UnavailablePermissionController,
-    private val callTargetMembershipId: String = "",
-    private val callTargetDisplayName: String = "",
     private val callActionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     private val startupMutex = Mutex()
@@ -75,6 +79,7 @@ class NqrbAppState(
     val microphoneExplanationVisible = MutableStateFlow(false)
     val microphonePermissionBlocked = MutableStateFlow(false)
     private var pendingMicrophoneAction = PendingMicrophoneAction.Outgoing
+    private var pendingOutgoingParticipant: CallableParticipant? = null
 
     suspend fun startup() = startupMutex.withLock {
         if (startupCompleted) return@withLock
@@ -85,6 +90,7 @@ class NqrbAppState(
                 if (identity.state.value is FederatedAuthenticationState.SignedIn) {
                     runCatching { push.activate() }
                     runCatching { calling.connectSignaling() }
+                    refreshCallingDirectory()
                     NqrbDestination.Home
                 } else {
                     NqrbDestination.SignIn
@@ -101,6 +107,7 @@ class NqrbAppState(
         if (identity.state.value is FederatedAuthenticationState.SignedIn) {
             runCatching { push.activate() }
             runCatching { calling.connectSignaling() }
+            refreshCallingDirectory()
             navigation.reset(NqrbDestination.ContactsOnboarding)
         }
     }
@@ -126,6 +133,7 @@ class NqrbAppState(
         runCatching { calling.disconnectSignaling() }
         runCatching { push.deactivate() }
         identity.logout()
+        callingDirectory.clear()
         navigation.reset(NqrbDestination.SignIn)
     }
 
@@ -135,23 +143,33 @@ class NqrbAppState(
         require(destination in TOP_LEVEL_DESTINATIONS) { "Destination is not a top-level NQRB destination." }
         if (identity.state.value !is FederatedAuthenticationState.SignedIn) return false
         navigation.selectTopLevel(destination)
+        if (destination == NqrbDestination.Home) refreshCallingDirectory()
         return true
     }
 
     fun canUseHome(): Boolean = identity.state.value is FederatedAuthenticationState.SignedIn
 
-    fun hasConfiguredCallTarget(): Boolean = callTargetMembershipId.isNotBlank()
-
-    fun requestOutgoingCall() {
-        callActionScope.launch { requestOutgoingCallInternal() }
+    fun refreshCallingDirectory() {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        callActionScope.launch {
+            callingDirectory.refresh(signedIn.session.identity.membershipId)
+        }
     }
 
-    private suspend fun requestOutgoingCallInternal() {
-        if (!hasConfiguredCallTarget()) return
+    fun requestOutgoingCall(participant: CallableParticipant) {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        if (participant.membershipId == signedIn.session.identity.membershipId) return
+        pendingOutgoingParticipant = participant
+        callActionScope.launch { requestOutgoingCallInternal(participant) }
+    }
+
+    private suspend fun requestOutgoingCallInternal(participant: CallableParticipant) {
         pendingMicrophoneAction = PendingMicrophoneAction.Outgoing
         microphonePermissionBlocked.value = false
         when (permissions.state(PermissionKind.Microphone)) {
-            PermissionState.Granted -> startConfiguredCall()
+            PermissionState.Granted -> startSelectedCall(participant)
             PermissionState.Unknown, PermissionState.Denied -> microphoneExplanationVisible.value = true
             PermissionState.PermanentlyDenied, PermissionState.Unavailable -> microphonePermissionBlocked.value = true
         }
@@ -163,6 +181,7 @@ class NqrbAppState(
 
     private suspend fun requestAcceptIncomingCallInternal() {
         pendingMicrophoneAction = PendingMicrophoneAction.Incoming
+        pendingOutgoingParticipant = null
         microphonePermissionBlocked.value = false
         when (permissions.state(PermissionKind.Microphone)) {
             PermissionState.Granted -> calling.acceptIncoming()
@@ -176,7 +195,9 @@ class NqrbAppState(
             microphoneExplanationVisible.value = false
             if (permissions.requestAfterExplanation(PermissionKind.Microphone) == PermissionState.Granted) {
                 when (pendingMicrophoneAction) {
-                    PendingMicrophoneAction.Outgoing -> startConfiguredCall()
+                    PendingMicrophoneAction.Outgoing -> pendingOutgoingParticipant?.let {
+                        startSelectedCall(it)
+                    }
                     PendingMicrophoneAction.Incoming -> calling.acceptIncoming()
                 }
             } else {
@@ -203,15 +224,17 @@ class NqrbAppState(
 
     fun cancelMicrophoneExplanation() {
         microphoneExplanationVisible.value = false
+        pendingOutgoingParticipant = null
     }
 
-    private suspend fun startConfiguredCall() {
+    private suspend fun startSelectedCall(participant: CallableParticipant) {
+        pendingOutgoingParticipant = null
         calling.start(
             OutgoingCallRequest(
                 applicationContext = "nqrb",
                 callee = CallParticipant(
-                    callTargetMembershipId,
-                    callTargetDisplayName.ifBlank { "NQRB" },
+                    participant.membershipId,
+                    participant.displayName,
                 ),
             ),
         )
