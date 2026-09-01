@@ -13,6 +13,9 @@ import com.botglobal.nqrb.app.data.NqrbCallingDirectoryApi
 import com.botglobal.nqrb.app.data.createNqrbHttpClient
 import com.botglobal.nqrb.calling.NqrbCallRuntime
 import com.botglobal.nqrb.calling.NqrbPushMessageHandler
+import com.botglobal.nqrb.calling.AndroidPendingCallUsageStore
+import com.botglobal.nqrb.app.data.NqrbCallActivityApi
+import com.botglobal.mobile.platform.calling.CallActivityController
 
 class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
     lateinit var callRuntime: NqrbCallRuntime
@@ -22,6 +25,8 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
     lateinit var identityApi: NqrbIdentityApi
         private set
     lateinit var callingDirectoryApi: NqrbCallingDirectoryApi
+        private set
+    lateinit var callActivity: CallActivityController
         private set
     override lateinit var firebaseMessagingRuntime: AndroidFirebaseMessagingRuntime
         private set
@@ -34,6 +39,10 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
             createNqrbHttpClient(),
             BuildConfig.API_BASE_URL,
             sessionVault,
+        )
+        callActivity = CallActivityController(
+            NqrbCallActivityApi(createNqrbHttpClient(), BuildConfig.API_BASE_URL, sessionVault),
+            AndroidPendingCallUsageStore(this),
         )
         val pushRegistration = NqrbPushRegistrationApi(
             platformClient = createNqrbHttpClient(),

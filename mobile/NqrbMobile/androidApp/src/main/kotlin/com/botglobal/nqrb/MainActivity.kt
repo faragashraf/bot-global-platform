@@ -49,6 +49,7 @@ class MainActivity : ComponentActivity() {
             ),
             calling = nqrbApplication.callRuntime.session,
             callingDirectory = CallingDirectoryController(nqrbApplication.callingDirectoryApi),
+            callActivity = nqrbApplication.callActivity,
             push = nqrbApplication.firebaseMessagingRuntime,
             permissions = permissionController,
         )

@@ -2,6 +2,7 @@ package com.botglobal.nqrb.app.data
 
 import com.botglobal.mobile.platform.calling.CallableParticipant
 import com.botglobal.mobile.platform.calling.CallingDirectory
+import com.botglobal.mobile.platform.calling.CallingParticipantAvailability
 import com.botglobal.mobile.platform.identity.SessionVault
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -38,6 +39,9 @@ class NqrbCallingDirectoryApi(
                 CallableParticipant(
                     membershipId = participant.membershipId,
                     displayName = participant.displayName,
+                    availability = runCatching {
+                        CallingParticipantAvailability.valueOf(participant.availability)
+                    }.getOrDefault(CallingParticipantAvailability.Offline),
                 )
             }
     }
@@ -53,4 +57,5 @@ class NqrbCallingDirectoryRequestException(val statusCode: Int) : Exception()
 private data class CallableParticipantDto(
     val membershipId: String,
     val displayName: String,
+    val availability: String = "Offline",
 )

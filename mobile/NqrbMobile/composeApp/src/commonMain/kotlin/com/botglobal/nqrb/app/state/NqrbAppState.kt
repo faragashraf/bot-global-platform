@@ -7,6 +7,9 @@ import com.botglobal.mobile.platform.calling.CallableParticipant
 import com.botglobal.mobile.platform.calling.CallingDirectoryController
 import com.botglobal.mobile.platform.calling.CallSessionController
 import com.botglobal.mobile.platform.calling.CallTerminationReason
+import com.botglobal.mobile.platform.calling.CallActivityController
+import com.botglobal.mobile.platform.calling.FinalCallUsage
+import com.botglobal.mobile.platform.calling.UnavailableCallActivityGateway
 import com.botglobal.mobile.platform.calling.OutgoingCallRequest
 import com.botglobal.mobile.platform.calling.UnavailableCallPlatformLifecycle
 import com.botglobal.mobile.platform.calling.UnavailableCallingDirectory
@@ -68,6 +71,7 @@ class NqrbAppState(
     val callingDirectory: CallingDirectoryController = CallingDirectoryController(
         UnavailableCallingDirectory,
     ),
+    val callActivity: CallActivityController = CallActivityController(UnavailableCallActivityGateway),
     private val push: PushRegistrationLifecycle = UnavailablePushRegistrationLifecycle,
     private val permissions: PermissionController = UnavailablePermissionController,
     private val callActionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
@@ -80,17 +84,36 @@ class NqrbAppState(
     val microphonePermissionBlocked = MutableStateFlow(false)
     private var pendingMicrophoneAction = PendingMicrophoneAction.Outgoing
     private var pendingOutgoingParticipant: CallableParticipant? = null
+    private val submittedUsageCalls = mutableSetOf<String>()
+
+    init {
+        callActionScope.launch {
+            calling.state.collect { snapshot ->
+                val callId = snapshot.callId?.value ?: return@collect
+                val usage = snapshot.networkUsage
+                if (usage.isFinal && usage.measurementAvailable) {
+                    val membershipId = (identity.state.value as? FederatedAuthenticationState.SignedIn)
+                        ?.session?.identity?.membershipId ?: return@collect
+                    if (!submittedUsageCalls.add(callId)) return@collect
+                    callActivity.submit(FinalCallUsage(callId, usage.bytesSent, usage.bytesReceived,
+                        usage.connectedDurationSeconds ?: 0), membershipId)
+                }
+            }
+        }
+    }
 
     suspend fun startup() = startupMutex.withLock {
         if (startupCompleted) return@withLock
         mutableStartupState.value = NqrbStartupState.RestoringSession
         try {
             identity.restore()
+            val authenticated = identity.state.value as? FederatedAuthenticationState.SignedIn
             navigation.reset(
-                if (identity.state.value is FederatedAuthenticationState.SignedIn) {
+                if (authenticated != null) {
                     runCatching { push.activate() }
                     runCatching { calling.connectSignaling() }
                     refreshCallingDirectory()
+                    callActivity.flushPending(authenticated.session.identity.membershipId)
                     NqrbDestination.Home
                 } else {
                     NqrbDestination.SignIn
@@ -104,10 +127,12 @@ class NqrbAppState(
 
     suspend fun signInWithGoogle() {
         identity.signIn(FederatedIdentityProvider.Google)
-        if (identity.state.value is FederatedAuthenticationState.SignedIn) {
+        val authenticated = identity.state.value as? FederatedAuthenticationState.SignedIn
+        if (authenticated != null) {
             runCatching { push.activate() }
             runCatching { calling.connectSignaling() }
             refreshCallingDirectory()
+            callActivity.flushPending(authenticated.session.identity.membershipId)
             navigation.reset(NqrbDestination.ContactsOnboarding)
         }
     }
@@ -137,13 +162,17 @@ class NqrbAppState(
         navigation.reset(NqrbDestination.SignIn)
     }
 
-    fun openSettings() = navigation.push(NqrbDestination.Settings)
+    fun openSettings() {
+        navigation.push(NqrbDestination.Settings)
+        callActionScope.launch { callActivity.loadUsage() }
+    }
 
     fun selectTopLevel(destination: NqrbDestination): Boolean {
         require(destination in TOP_LEVEL_DESTINATIONS) { "Destination is not a top-level NQRB destination." }
         if (identity.state.value !is FederatedAuthenticationState.SignedIn) return false
         navigation.selectTopLevel(destination)
         if (destination == NqrbDestination.Home) refreshCallingDirectory()
+        if (destination == NqrbDestination.History) callActionScope.launch { callActivity.loadHistory() }
         return true
     }
 
@@ -156,6 +185,12 @@ class NqrbAppState(
             callingDirectory.refresh(signedIn.session.identity.membershipId)
         }
     }
+
+    fun refreshCallHistory() { callActionScope.launch { callActivity.loadHistory() } }
+    fun loadMoreCallHistory() { callActionScope.launch { callActivity.loadNextHistoryPage() } }
+    fun openCallDetail(callId: String) { callActionScope.launch { callActivity.loadDetail(callId) } }
+    fun closeCallDetail() = callActivity.clearDetail()
+    fun resetUsage() { callActionScope.launch { callActivity.resetUsage() } }
 
     fun requestOutgoingCall(participant: CallableParticipant) {
         val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn

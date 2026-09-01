@@ -15,6 +15,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using BotGlobal.Contracts.Notifications;
+using BotGlobal.Contracts.Calling;
+using BotGlobal.Pairing.Application.Calling;
 
 namespace BotGlobal.Pairing;
 
@@ -86,6 +88,7 @@ public static class PairingModule
         services.AddScoped<
             IMobilePushDestinationResolver,
             MobilePushDestinationResolver>();
+        services.AddScoped<ICallingReachabilityResolver, PairingCallingReachabilityResolver>();
 
 
         services.AddRateLimiter(

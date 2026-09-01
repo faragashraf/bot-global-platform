@@ -10,7 +10,10 @@ import kotlinx.coroutines.sync.withLock
 data class CallableParticipant(
     val membershipId: String,
     val displayName: String,
+    val availability: CallingParticipantAvailability = CallingParticipantAvailability.Offline,
 )
+
+enum class CallingParticipantAvailability { Online, Reachable, Offline }
 
 interface CallingDirectory {
     suspend fun loadCallableParticipants(): List<CallableParticipant>

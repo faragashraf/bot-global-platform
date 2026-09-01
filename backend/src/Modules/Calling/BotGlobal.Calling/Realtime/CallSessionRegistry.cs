@@ -73,6 +73,7 @@ public sealed class CallSessionRegistry
             if (session.Status == target) return new Transition(session, false, ConnectionsFor(session.CallerMembershipId, session.ApplicationKey));
             if (session.Status != CallStatus.Ringing) throw Error(staleError);
             session.Status = target;
+            session.TerminationReason = target.ToString().ToLowerInvariant();
             return new Transition(session, true, ConnectionsFor(session.CallerMembershipId, session.ApplicationKey));
         }
     }
@@ -96,7 +97,7 @@ public sealed class CallSessionRegistry
     public JoinedParticipant RequireCurrent(string connectionId, Guid callId, long generation) { lock (gate) return RequireSession(callId).RequireCurrent(connectionId, generation); }
     public JoinedParticipant? PeerOf(JoinedParticipant participant) { lock (gate) return sessions.TryGetValue(participant.CallId, out var s) && s.IsLive ? s.PeerOf(participant.MembershipId) : null; }
 
-    public Transition End(string connectionId, Guid callId)
+    public Transition End(string connectionId, Guid callId, string? reason = null)
     {
         lock (gate)
         {
@@ -104,7 +105,11 @@ public sealed class CallSessionRegistry
             var session = RequireSession(callId);
             session.RequireParticipant(connection.MembershipId, connection.ApplicationKey);
             var changed = session.IsLive;
-            if (changed) session.Status = connection.MembershipId == session.CallerMembershipId && session.Status == CallStatus.Ringing ? CallStatus.Cancelled : CallStatus.Ended;
+            if (changed)
+            {
+                session.Status = connection.MembershipId == session.CallerMembershipId && session.Status == CallStatus.Ringing ? CallStatus.Cancelled : CallStatus.Ended;
+                session.TerminationReason = NormalizeReason(reason, session.Status);
+            }
             var peer = connection.MembershipId == session.CallerMembershipId ? session.CalleeMembershipId : session.CallerMembershipId;
             var peerConnections = ConnectionsFor(peer, session.ApplicationKey);
             if (changed) session.ClearParticipants();
@@ -115,10 +120,20 @@ public sealed class CallSessionRegistry
     public IReadOnlyList<Session> Expire(DateTimeOffset now) { lock (gate) return ExpireLocked(now); }
     public IReadOnlyList<ConnectedParticipant> ConnectedParticipants(Guid membershipId, string applicationKey)
     { lock (gate) return ConnectionsFor(membershipId, applicationKey); }
+    public bool IsOnline(Guid membershipId, string applicationKey)
+    {
+        lock (gate) return connections.Values.Any(x =>
+            x.MembershipId == membershipId &&
+            string.Equals(x.ApplicationKey, applicationKey, StringComparison.Ordinal));
+    }
     private IReadOnlyList<Session> ExpireLocked(DateTimeOffset now)
     {
         var result = sessions.Values.Where(x => x.Status == CallStatus.Ringing && x.ExpiresAtUtc <= now).ToArray();
-        foreach (var session in result) session.Status = CallStatus.Expired;
+        foreach (var session in result)
+        {
+            session.Status = CallStatus.Expired;
+            session.TerminationReason = "expired";
+        }
         return result;
     }
 
@@ -135,6 +150,13 @@ public sealed class CallSessionRegistry
     private Session RequireSession(Guid id) => sessions.TryGetValue(id, out var s) ? s : throw Error("call_session_unavailable");
     private ConnectedParticipant[] ConnectionsFor(Guid id, string app) => connections.Values.Where(x => x.MembershipId == id && x.ApplicationKey == app).OrderBy(x => x.ConnectionId, StringComparer.Ordinal).ToArray();
     private static InvalidOperationException Error(string code) => new(code);
+    private static string NormalizeReason(string? reason, CallStatus status)
+    {
+        var normalized = reason?.Trim().ToLowerInvariant();
+        return normalized is "local" or "remote" or "rejected" or "busy" or "cancelled" or "missed" or "expired" or "failed"
+            ? normalized
+            : status.ToString().ToLowerInvariant();
+    }
 
     public enum CallStatus { Ringing, Answered, Rejected, Cancelled, Expired, Ended }
     public sealed record ConnectedParticipant(string ConnectionId, Guid MembershipId, string ApplicationKey, string SubjectId, string DisplayName);
@@ -163,6 +185,7 @@ public sealed class CallSessionRegistry
         public DateTimeOffset CreatedAtUtc { get; } = createdAtUtc;
         public DateTimeOffset ExpiresAtUtc { get; } = expiresAtUtc;
         public CallStatus Status { get; set; } = CallStatus.Ringing;
+        public string? TerminationReason { get; internal set; }
         public bool IsLive => Status is CallStatus.Ringing or CallStatus.Answered;
         public bool HasParticipant(Guid id) => id == CallerMembershipId || id == CalleeMembershipId;
         public void RequireParticipant(Guid id, string app) { if (!HasParticipant(id) || ApplicationKey != app) throw Error("call_participant_unauthorized"); }

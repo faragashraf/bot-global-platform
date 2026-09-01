@@ -1,8 +1,13 @@
+using BotGlobal.Contracts.Calling;
+
 namespace BotGlobal.Calling.Realtime;
 
 public sealed record StartOutgoingCallRequest(Guid CalleeMembershipId);
 public sealed record StartedCallResult(Guid CallId, Guid CalleeMembershipId, string CalleeDisplayName);
-public sealed record CallableParticipantResult(Guid MembershipId, string DisplayName);
+public sealed record CallableParticipantResult(
+    Guid MembershipId,
+    string DisplayName,
+    string Availability);
 public sealed record CallOfferedEvent(Guid CallId, string ApplicationContext, Guid CallerMembershipId, string CallerDisplayName);
 public sealed record IncomingCallLookupRequest(Guid CallId);
 public sealed record IncomingCallResult(Guid CallId, string ApplicationContext, Guid CallerMembershipId, string CallerDisplayName, DateTimeOffset ExpiresAtUtc);
@@ -26,5 +31,7 @@ public sealed record CallIceCandidateEvent(Guid CallId, long ReceiverGeneration,
 public sealed record CallMuteEvent(Guid CallId, long ReceiverGeneration, Guid ParticipantId,
     string ParticipantConnectionId, string ReceiverConnectionId, long ParticipantGeneration, bool Muted);
 public sealed record CallEndedEvent(Guid CallId, string Reason);
+public sealed record FinalizeCallUsageRequest(long BytesSent, long BytesReceived, long ConnectedDurationSeconds);
+public sealed record ScheduleUsageResetRequest(DateTime LocalDateTime, string TimeZoneId);
 public sealed record CallingIceServer(IReadOnlyList<string> Urls, string? Username, string? Credential);
 public sealed record CallingIceConfiguration(IReadOnlyList<CallingIceServer> Servers, DateTimeOffset ExpiresAtUtc);

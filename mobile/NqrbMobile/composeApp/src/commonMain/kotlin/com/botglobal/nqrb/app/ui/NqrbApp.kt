@@ -37,8 +37,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,6 +70,10 @@ import com.botglobal.mobile.platform.calling.CallingDirectoryStatus
 import com.botglobal.mobile.platform.calling.CallSessionSnapshot
 import com.botglobal.mobile.platform.calling.CallState
 import com.botglobal.mobile.platform.calling.CallTerminationReason
+import com.botglobal.mobile.platform.calling.CallingParticipantAvailability
+import com.botglobal.mobile.platform.calling.CallActivitySnapshot
+import com.botglobal.mobile.platform.calling.CallActivityLoadState
+import com.botglobal.mobile.platform.calling.CallHistoryDetail
 import com.botglobal.mobile.platform.calling.speakerControlTarget
 import com.botglobal.mobile.platform.contacts.ContactsSnapshot
 import com.botglobal.mobile.platform.contacts.ContactsStatus
@@ -93,6 +99,7 @@ fun NqrbApp(
     val contacts by appState.contacts.state.collectAsState()
     val call by appState.calling.state.collectAsState()
     val callingDirectory by appState.callingDirectory.state.collectAsState()
+    val callActivity by appState.callActivity.state.collectAsState()
     val microphoneExplanation by appState.microphoneExplanationVisible.collectAsState()
     val microphoneBlocked by appState.microphonePermissionBlocked.collectAsState()
     val systemIsDark = isSystemInDarkTheme()
@@ -125,6 +132,7 @@ fun NqrbApp(
                 contacts = contacts,
                 call = call,
                 callingDirectory = callingDirectory,
+                callActivity = callActivity,
                 microphoneExplanation = microphoneExplanation,
                 microphoneBlocked = microphoneBlocked,
             )
@@ -143,6 +151,7 @@ private fun NqrbShell(
     contacts: ContactsSnapshot,
     call: CallSessionSnapshot,
     callingDirectory: CallingDirectorySnapshot,
+    callActivity: CallActivitySnapshot,
     microphoneExplanation: Boolean,
     microphoneBlocked: Boolean,
 ) {
@@ -186,8 +195,9 @@ private fun NqrbShell(
                         strings = strings,
                         appState = appState,
                         layoutDirection = layoutDirection,
+                        activity = callActivity,
                     )
-                    NqrbDestination.History -> PlaceholderScreen(strings.historyTitle, strings.historyBody, strings, appState::openSettings)
+                    NqrbDestination.History -> CallHistoryScreen(strings, appState, callActivity)
                     NqrbDestination.People -> PeopleScreen(strings, contacts, appState)
                     NqrbDestination.Profile -> ProfileScreen(strings, appState)
                 } }
@@ -433,6 +443,13 @@ private fun HomeScreen(
             iconDescription = strings.call,
         )
         CallingDirectorySection(strings, directory, appState)
+        ConceptCard(
+            glyph = NqrbGlyph.History,
+            title = strings.historyTitle,
+            body = strings.historyBody,
+            iconDescription = strings.history,
+            onClick = { appState.selectTopLevel(NqrbDestination.History) },
+        )
         if (microphoneBlocked) InfoNote(strings.microphoneDenied)
         ConceptCard(
             glyph = NqrbGlyph.Link,
@@ -475,7 +492,13 @@ private fun CallingDirectorySection(
             directory.participants.forEach { participant ->
                 CallableParticipantCard(
                     participant = participant,
+                    status = when (participant.availability) {
+                        CallingParticipantAvailability.Online -> strings.onlineNow
+                        CallingParticipantAvailability.Reachable -> strings.availableForCalls
+                        CallingParticipantAvailability.Offline -> strings.currentlyUnavailable
+                    },
                     callLabel = strings.call,
+                    canCall = participant.availability != CallingParticipantAvailability.Offline,
                     onCall = { appState.requestOutgoingCall(participant) },
                 )
             }
@@ -497,7 +520,9 @@ private fun DirectoryRefreshAction(label: String, onClick: () -> Unit) {
 @Composable
 private fun CallableParticipantCard(
     participant: CallableParticipant,
+    status: String,
     callLabel: String,
+    canCall: Boolean,
     onCall: () -> Unit,
 ) {
     val colors = LocalNqrbColors.current
@@ -512,23 +537,13 @@ private fun CallableParticipantCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
         ) {
-            Box(
-                Modifier.size(46.dp).clip(CircleShape).background(colors.accentSoft),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    participant.displayName.trim().take(1).uppercase(),
-                    color = colors.accent,
-                    fontWeight = FontWeight.Bold,
-                )
+            ParticipantAvatar(participant.displayName)
+            Column(Modifier.weight(1f)) {
+                Text(participant.displayName, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                Text(status, style = MaterialTheme.typography.bodySmall,
+                    color = if (participant.availability == CallingParticipantAvailability.Online) colors.positive else colors.textSecondary)
             }
-            Text(
-                participant.displayName,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium,
-                color = colors.textPrimary,
-            )
-            Button(onClick = onCall) {
+            Button(onClick = onCall, enabled = canCall) {
                 NqrbIcon(NqrbGlyph.Call, callLabel, Color.White, Modifier.size(20.dp))
                 Spacer(Modifier.width(NqrbSpacing.Xs))
                 Text(callLabel)
@@ -729,9 +744,16 @@ private fun FoundationStatus(strings: NqrbStrings) {
 }
 
 @Composable
-private fun ConceptCard(glyph: NqrbGlyph, title: String, body: String, iconDescription: String) {
+private fun ConceptCard(
+    glyph: NqrbGlyph,
+    title: String,
+    body: String,
+    iconDescription: String,
+    onClick: (() -> Unit)? = null,
+) {
     val colors = LocalNqrbColors.current
     Surface(
+        modifier = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick),
         color = colors.elevatedSurface,
         shape = RoundedCornerShape(22.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
@@ -783,10 +805,12 @@ private fun SettingsScreen(
     strings: NqrbStrings,
     appState: NqrbAppState,
     layoutDirection: LayoutDirection,
+    activity: CallActivitySnapshot,
 ) {
     val colors = LocalNqrbColors.current
     val locale by appState.locale.state.collectAsState()
     val appearance by appState.appearance.state.collectAsState()
+    var confirmingUsageReset by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
         verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Lg),
@@ -823,7 +847,127 @@ private fun SettingsScreen(
                 onSelect = appState.appearance::select,
             )
         }
+        SettingsGroup(strings.dataUsage, NqrbGlyph.History, strings.dataUsage) {
+            when (activity.usageState) {
+                CallActivityLoadState.Loading, CallActivityLoadState.Idle -> InfoNote(strings.historyLoading)
+                CallActivityLoadState.Error -> InfoNote(strings.historyError)
+                else -> activity.usage?.let { usage ->
+                    Text("${strings.from}: ${usage.startedAtUtc}", color = colors.textSecondary)
+                    UsageLine(strings.sent, usage.bytesSent)
+                    UsageLine(strings.received, usage.bytesReceived)
+                    UsageLine(strings.total, usage.totalBytes)
+                    if (confirmingUsageReset) {
+                        InfoNote(strings.resetUsageConfirmation)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            TextButton(onClick = { confirmingUsageReset = false }) { Text(strings.cancel) }
+                            TextButton(onClick = {
+                                confirmingUsageReset = false
+                                appState.resetUsage()
+                            }) { Text(strings.confirmResetUsage) }
+                        }
+                    } else {
+                        TextButton(onClick = { confirmingUsageReset = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(strings.resetUsage)
+                        }
+                    }
+                }
+            }
+        }
     }
+}
+
+@Composable
+private fun CallHistoryScreen(strings: NqrbStrings, appState: NqrbAppState, activity: CallActivitySnapshot) {
+    val colors = LocalNqrbColors.current
+    activity.selected?.let { detail -> CallDetailScreen(strings, appState, detail); return }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
+        verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md)) {
+        ProductHeader(strings, appState::openSettings)
+        Text(strings.historyTitle, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
+        when (activity.historyState) {
+            CallActivityLoadState.Idle, CallActivityLoadState.Loading -> InfoNote(strings.historyLoading)
+            CallActivityLoadState.Empty -> InfoNote(strings.historyEmpty)
+            CallActivityLoadState.Error -> { InfoNote(strings.historyError); DirectoryRefreshAction(strings.retry, appState::refreshCallHistory) }
+            CallActivityLoadState.Ready -> activity.history.forEach { item ->
+                Surface(modifier = Modifier.fillMaxWidth().clickable { appState.openCallDetail(item.callId) },
+                    color = colors.surface, shape = RoundedCornerShape(20.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.border)) {
+                    Row(Modifier.padding(NqrbSpacing.Md), horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md)) {
+                        ParticipantAvatar(item.participantDisplayName)
+                        Column(Modifier.weight(1f)) {
+                            Text(item.participantDisplayName, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                            Text("${directionLabel(strings, item.direction)} · ${outcomeLabel(strings, item.outcome)}", color = colors.textSecondary)
+                            Text(item.startedAtUtc, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                            item.connectedDurationSeconds?.let { Text(formatDuration(it), color = colors.textSecondary) }
+                            item.totalBytes?.let { Text("${strings.total}: ${humanBytes(it)}", color = colors.textSecondary) }
+                        }
+                    }
+                }
+            }
+        }
+        if (activity.historyState == CallActivityLoadState.Ready && activity.historyHasMore)
+            DirectoryRefreshAction(strings.loadMore, appState::loadMoreCallHistory)
+    }
+}
+
+@Composable
+private fun CallDetailScreen(strings: NqrbStrings, appState: NqrbAppState, detail: CallHistoryDetail) {
+    val colors = LocalNqrbColors.current
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
+        verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md)) {
+        TextButton(onClick = appState::closeCallDetail) { Text(strings.back) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md)) {
+            ParticipantAvatar(detail.participantDisplayNames.firstOrNull().orEmpty())
+            Text(detail.participantDisplayNames.joinToString(), style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
+        }
+        Text("${directionLabel(strings, detail.direction)} · ${outcomeLabel(strings, detail.outcome)}", color = colors.textSecondary)
+        Text("${strings.callTime}: ${detail.startedAtUtc}", color = colors.textSecondary)
+        detail.ringingDurationSeconds?.let { Text("${strings.ringingDuration}: ${formatDuration(it)}", color = colors.textSecondary) }
+        detail.connectedDurationSeconds?.let { Text("${strings.connectedDuration}: ${formatDuration(it)}", color = colors.textSecondary) }
+        UsageLine(strings.sent, detail.bytesSent ?: 0)
+        UsageLine(strings.received, detail.bytesReceived ?: 0)
+        UsageLine(strings.total, detail.totalBytes ?: 0)
+        val connectedSeconds = detail.connectedDurationSeconds
+        val totalBytes = detail.totalBytes
+        if (connectedSeconds != null && connectedSeconds > 0 && totalBytes != null)
+            Text("${humanBytes(totalBytes * 60 / connectedSeconds)} ${strings.averagePerMinute}", color = colors.textSecondary)
+    }
+}
+
+@Composable
+private fun ParticipantAvatar(displayName: String) {
+    val colors = LocalNqrbColors.current
+    Box(
+        Modifier.size(46.dp).clip(CircleShape).background(colors.accentSoft),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(displayName.trim().take(1).uppercase(), color = colors.accent, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable private fun UsageLine(label: String, bytes: Long) {
+    val colors = LocalNqrbColors.current
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = colors.textSecondary); Text(humanBytes(bytes), color = colors.textPrimary)
+    }
+}
+
+private fun humanBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024 -> "${decimalUnits(bytes, 1024L * 1024, 2)} MiB"
+    bytes >= 1024 -> "${decimalUnits(bytes, 1024, 1)} KiB"
+    else -> "$bytes B"
+}
+private fun decimalUnits(value: Long, unit: Long, decimals: Int): String {
+    val scale = if (decimals == 2) 100 else 10
+    val scaled = value * scale / unit
+    return "${scaled / scale}.${(scaled % scale).toString().padStart(decimals, '0')}"
+}
+private fun formatDuration(seconds: Long) = "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
+private fun directionLabel(strings: NqrbStrings, value: String) = if (value.equals("incoming", true)) strings.incoming else strings.outgoing
+private fun outcomeLabel(strings: NqrbStrings, value: String?) = when (value?.lowercase()) {
+    "completed" -> strings.completed; "rejected" -> strings.rejected; "missed" -> strings.missed
+    "cancelled" -> strings.cancelled; "expired" -> strings.expired; "failed" -> strings.failed
+    else -> strings.ringing
 }
 
 @Composable

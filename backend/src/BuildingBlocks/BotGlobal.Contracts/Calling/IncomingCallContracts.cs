@@ -7,6 +7,21 @@ public sealed record CallingParticipantDescriptor(
     string DisplayName,
     bool IsActive);
 
+public enum CallingParticipantAvailability
+{
+    Online = 1,
+    Reachable = 2,
+    Offline = 3
+}
+
+public interface ICallingReachabilityResolver
+{
+    Task<IReadOnlySet<Guid>> FindReachableMembershipsAsync(
+        string applicationKey,
+        IReadOnlyCollection<CallingParticipantDescriptor> participants,
+        CancellationToken cancellationToken);
+}
+
 public interface ICallingParticipantDirectory
 {
     Task<IReadOnlyList<CallingParticipantDescriptor>> ListCallableAsync(

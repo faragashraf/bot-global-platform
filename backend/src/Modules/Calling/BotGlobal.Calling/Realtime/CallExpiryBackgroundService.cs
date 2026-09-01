@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using BotGlobal.Calling.Application;
 
 namespace BotGlobal.Calling.Realtime;
 
@@ -26,13 +27,22 @@ internal sealed class CallExpiryBackgroundService(
     {
         foreach (var session in sessions.Expire(now))
         {
+            await using var scope = scopes.CreateAsyncScope();
+            try
+            {
+                var activity = scope.ServiceProvider.GetService<ICallActivityService>();
+                if (activity is not null) await activity.FinishAsync(session, now, cancellationToken);
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                logger.LogWarning("Expired call history finalization failed. ErrorType={ErrorType}", error.GetType().Name);
+            }
             foreach (var participant in sessions.ConnectedParticipants(session.CallerMembershipId, session.ApplicationKey))
                 await hub.Clients.Client(participant.ConnectionId).SendAsync("CallEnded", new CallEndedEvent(session.CallId, "expired"), cancellationToken);
             foreach (var participant in sessions.ConnectedParticipants(session.CalleeMembershipId, session.ApplicationKey))
                 await hub.Clients.Client(participant.ConnectionId).SendAsync("CallEnded", new CallEndedEvent(session.CallId, "expired"), cancellationToken);
             try
             {
-                await using var scope = scopes.CreateAsyncScope();
                 var dispatcher = scope.ServiceProvider.GetRequiredService<IIncomingCallNotificationDispatcher>();
                 await dispatcher.DispatchAsync(new IncomingCallNotification(session.ApplicationKey, session.CalleeSubjectId,
                     session.CallId, IncomingCallNotificationKind.Expired, session.CallerDisplayName, session.ExpiresAtUtc), cancellationToken);

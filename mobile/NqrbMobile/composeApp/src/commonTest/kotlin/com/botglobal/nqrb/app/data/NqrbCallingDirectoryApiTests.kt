@@ -1,6 +1,7 @@
 package com.botglobal.nqrb.app.data
 
 import com.botglobal.mobile.platform.identity.ApplicationIdentity
+import com.botglobal.mobile.platform.calling.CallingParticipantAvailability
 import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.identity.SessionVault
@@ -27,7 +28,7 @@ class NqrbCallingDirectoryApiTests {
             )
             assertEquals("Bearer access-token", request.headers[HttpHeaders.Authorization])
             respond(
-                content = """[{"membershipId":"remote-member","displayName":"Remote user"}]""",
+                content = """[{"membershipId":"remote-member","displayName":"Remote user","availability":"Reachable"}]""",
                 status = HttpStatusCode.OK,
                 headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
             )
@@ -43,6 +44,7 @@ class NqrbCallingDirectoryApiTests {
         assertEquals(1, result.size)
         assertEquals("remote-member", result.single().membershipId)
         assertEquals("Remote user", result.single().displayName)
+        assertEquals(CallingParticipantAvailability.Reachable, result.single().availability)
     }
 
     @Test

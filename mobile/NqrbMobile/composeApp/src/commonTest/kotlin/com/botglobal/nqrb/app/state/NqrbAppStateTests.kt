@@ -15,6 +15,13 @@ import com.botglobal.mobile.platform.calling.CallSignaling
 import com.botglobal.mobile.platform.calling.CallSignalingEvent
 import com.botglobal.mobile.platform.calling.CallState
 import com.botglobal.mobile.platform.calling.CallTerminationReason
+import com.botglobal.mobile.platform.calling.CallActivityController
+import com.botglobal.mobile.platform.calling.CallActivityGateway
+import com.botglobal.mobile.platform.calling.CallHistoryDetail
+import com.botglobal.mobile.platform.calling.CallHistoryPage
+import com.botglobal.mobile.platform.calling.FinalCallUsage
+import com.botglobal.mobile.platform.calling.PendingCallUsageStore
+import com.botglobal.mobile.platform.calling.UsagePeriod
 import com.botglobal.mobile.platform.calling.OutgoingCallRequest
 import com.botglobal.mobile.platform.calling.StartedCall
 import com.botglobal.mobile.platform.contacts.ContactsController
@@ -38,6 +45,8 @@ import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
 import com.botglobal.mobile.platform.voice.VoiceRoomController
 import com.botglobal.mobile.platform.voice.VoiceRoomSnapshot
+import com.botglobal.mobile.platform.voice.VoiceRoomState
+import com.botglobal.mobile.platform.voice.VoiceMediaStats
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -405,6 +414,44 @@ class NqrbAppStateTests {
         assertEquals(listOf(CallTerminationReason.Rejected), platform.endReasons)
     }
 
+    @Test
+    fun terminal_measured_call_usage_flows_once_through_the_durable_activity_outbox() = runTest {
+        val signaling = RecordingCallSignaling()
+        val voice = RecordingVoiceRoom()
+        val gateway = RecordingCallActivityGateway()
+        val pending = RecordingPendingUsageStore()
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, FixedIdentityGateway(session(), FederatedSignInResult.Rejected)),
+            calling = CallSessionController(backgroundScope, signaling, voice, RecordingCallPlatform()),
+            callActivity = CallActivityController(gateway, pending),
+            permissions = FixedPermission(PermissionState.Granted),
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+        state.requestOutgoingCall(CallableParticipant("remote", "Remote"))
+        runCurrent()
+        voice.snapshot.value = VoiceRoomSnapshot(
+            state = VoiceRoomState.Connected,
+            stats = VoiceMediaStats(outboundBytes = 100, inboundBytes = 200, available = true),
+        )
+        runCurrent()
+        voice.snapshot.value = VoiceRoomSnapshot(
+            state = VoiceRoomState.Connected,
+            stats = VoiceMediaStats(outboundBytes = 1_100, inboundBytes = 2_200, available = true),
+        )
+        runCurrent()
+
+        state.endCall()
+        runCurrent()
+
+        val report = gateway.finalized.single()
+        assertEquals("outgoing", report.callId)
+        assertEquals(1_000, report.bytesSent)
+        assertEquals(2_000, report.bytesReceived)
+        assertEquals("membership", report.ownerMembershipId)
+        assertEquals(emptyList(), pending.load())
+    }
+
     private fun state(
         restored: MobileSession? = null,
         signIn: FederatedSignInResult = FederatedSignInResult.Rejected,
@@ -538,6 +585,23 @@ class NqrbAppStateTests {
         override suspend fun setMuted(muted: Boolean) = Unit
         override suspend fun signalingInterrupted() = Unit
         override suspend fun signalingRecovered() = Unit
+    }
+
+    private class RecordingPendingUsageStore : PendingCallUsageStore {
+        private val reports = linkedMapOf<String, FinalCallUsage>()
+        override suspend fun load() = reports.values.toList()
+        override suspend fun save(usage: FinalCallUsage) { reports[usage.callId] = usage }
+        override suspend fun remove(callId: String) { reports.remove(callId) }
+    }
+
+    private class RecordingCallActivityGateway : CallActivityGateway {
+        val finalized = mutableListOf<FinalCallUsage>()
+        override suspend fun history(page: Int, pageSize: Int) = CallHistoryPage(emptyList(), page, pageSize, false)
+        override suspend fun detail(callId: String): CallHistoryDetail? = null
+        override suspend fun finalizeUsage(usage: FinalCallUsage) { finalized += usage }
+        override suspend fun currentUsage() = UsagePeriod("period", "2026-09-01T00:00:00Z", null, 0, 0, null, null)
+        override suspend fun resetUsage() = currentUsage()
+        override suspend fun scheduleUsageReset(schedule: com.botglobal.mobile.platform.calling.UsageResetSchedule) = currentUsage()
     }
 
     private class RecordingCallPlatform : CallPlatformLifecycle {
