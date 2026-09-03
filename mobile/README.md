@@ -7,12 +7,20 @@ This directory is the shared Kotlin Multiplatform home for Bot Global mobile app
 ```text
 mobile/
 ├── shared/                         # Product-neutral capabilities and decision engines
-└── FamilyGamesMobile/
+├── FamilyGamesMobile/
     ├── composeApp/                 # Shared Family Games state, networking, and Compose UI
-    └── androidApp/                 # Android application shell and platform integrations
+│   └── androidApp/                 # Android application shell and platform integrations
+├── NqrbMobile/
+│   ├── composeApp/                 # Shared NQRB state, networking, and Compose UI
+│   └── androidApp/                 # NQRB Android host and platform integrations
+└── EnpoConnectMobile/
+    ├── composeApp/                 # ENPO shell, product state, and Compose UI
+    └── androidApp/                 # com.enpo.connect Android host
 ```
 
 `composeApp` targets Android, iOS device, iOS simulator, and JVM tests. The Android app is the first runtime target. The iOS framework exposes `MainViewController`; the native shell must inject a Keychain-backed `SessionVault` and platform haptics.
+
+ENPO Connect migration Slice 1 contains only the Arabic-first application shell and shared appearance, localization, navigation, startup, and preference-storage foundations. Pairing, Firebase, notifications, and backend access remain intentionally absent. The Android host preserves `com.enpo.connect`, API 23, the legacy UI preference names, and a non-reading compatibility descriptor for the existing encrypted device storage identifiers.
 
 ## Local Android build
 
