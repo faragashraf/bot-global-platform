@@ -2,7 +2,7 @@ package com.enpo.connect.app.state
 
 /**
  * Names owned by the installed legacy application. Keeping them here prevents
- * accidental storage migration while pairing remains outside Slice 1.
+ * accidental storage migration while pairing remains outside Slice 2.
  * This descriptor never reads or exposes credential values.
  */
 object EnpoLegacyStorageCompatibility {
@@ -26,9 +26,9 @@ object EnpoReleaseIdentity {
     const val MinimumAndroidSdk = 23
 }
 
-object EnpoSlice1Boundaries {
+object EnpoMigrationBoundaries {
     const val FirebaseEnabled = false
     const val PairingEnabled = false
     const val NotificationsEnabled = false
-    const val BackendAccessEnabled = false
+    const val NetworkCallsDuringBootstrap = false
 }

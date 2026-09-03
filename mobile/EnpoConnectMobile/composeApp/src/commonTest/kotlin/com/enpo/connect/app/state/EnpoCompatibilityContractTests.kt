@@ -28,10 +28,11 @@ class EnpoCompatibilityContractTests {
     }
 
     @Test
-    fun sliceOneStartsWithoutFirebaseNotificationsOrBackendAccess() {
-        assertFalse(EnpoSlice1Boundaries.FirebaseEnabled)
-        assertFalse(EnpoSlice1Boundaries.NotificationsEnabled)
-        assertFalse(EnpoSlice1Boundaries.BackendAccessEnabled)
+    fun sliceTwoStartsWithoutFirebaseNotificationsPairingOrNetworkCalls() {
+        assertFalse(EnpoMigrationBoundaries.FirebaseEnabled)
+        assertFalse(EnpoMigrationBoundaries.NotificationsEnabled)
+        assertFalse(EnpoMigrationBoundaries.PairingEnabled)
+        assertFalse(EnpoMigrationBoundaries.NetworkCallsDuringBootstrap)
     }
 
     @Test

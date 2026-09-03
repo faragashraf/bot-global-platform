@@ -44,8 +44,11 @@ import com.botglobal.mobile.platform.appearance.ResolvedAppearance
 import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
 import com.botglobal.mobile.platform.preferences.PreferenceStore
+import com.enpo.connect.app.network.EnpoNetworkConfiguration
 import com.enpo.connect.app.state.EnpoAppState
 import com.enpo.connect.app.state.EnpoBootstrapState
+import com.enpo.connect.app.state.EmptyEnpoDeviceInfrastructure
+import com.enpo.connect.app.state.EnpoDeviceInfrastructure
 import com.enpo.connect.app.state.EnpoDestination
 import com.enpo.connect.app.ui.EnpoStrings
 import com.enpo.connect.app.ui.EnpoSystemBackHandler
@@ -56,9 +59,13 @@ import com.enpo.connect.app.ui.enpoStrings
 fun EnpoConnectApp(
     runtimeVersionName: String,
     preferences: PreferenceStore = InMemoryPreferenceStore(),
+    deviceInfrastructure: EnpoDeviceInfrastructure = EmptyEnpoDeviceInfrastructure,
+    networkConfiguration: EnpoNetworkConfiguration? = null,
     onResolvedAppearanceChanged: (ResolvedAppearance) -> Unit = {},
 ) {
-    val state = remember(preferences) { EnpoAppState(preferences) }
+    val state = remember(preferences, deviceInfrastructure, networkConfiguration) {
+        EnpoAppState(preferences, deviceInfrastructure, networkConfiguration)
+    }
     val locale by state.locale.state.collectAsState()
     val appearance by state.appearance.state.collectAsState()
     val backStack by state.navigation.backStack.collectAsState()
@@ -82,7 +89,7 @@ fun EnpoConnectApp(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
             ) {
-                if (bootstrapState == EnpoBootstrapState.Starting) {
+                if (bootstrapState == EnpoBootstrapState.Initializing) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
@@ -93,6 +100,7 @@ fun EnpoConnectApp(
                         runtimeVersionName = runtimeVersionName,
                         selectedLanguage = locale.languageTag,
                         selectedAppearance = appearance.preference,
+                        bootstrapState = bootstrapState,
                         onOpen = state::open,
                         onBack = state::navigateBack,
                         onLanguage = state::selectLanguage,
@@ -116,13 +124,14 @@ private fun EnpoShell(
     runtimeVersionName: String,
     selectedLanguage: String,
     selectedAppearance: AppearancePreference,
+    bootstrapState: EnpoBootstrapState,
     onOpen: (EnpoDestination) -> Unit,
     onBack: () -> Boolean,
     onLanguage: (String) -> Unit,
     onAppearance: (AppearancePreference) -> Unit,
 ) {
     when (destination) {
-        EnpoDestination.Home -> HomeScreen(strings, onOpen)
+        EnpoDestination.Home -> HomeScreen(strings, bootstrapState, onOpen)
         EnpoDestination.Settings -> SettingsScreen(strings, onOpen, onBack)
         EnpoDestination.Language -> SelectionScreen(
             title = strings.language,
@@ -154,6 +163,7 @@ private fun EnpoShell(
 @Composable
 private fun HomeScreen(
     strings: EnpoStrings,
+    bootstrapState: EnpoBootstrapState,
     onOpen: (EnpoDestination) -> Unit,
 ) {
     ShellColumn {
@@ -175,6 +185,8 @@ private fun HomeScreen(
         Text(strings.foundationBody, style = MaterialTheme.typography.bodyLarge)
         Spacer(Modifier.height(24.dp))
         StatusCard(strings.platformFoundation, strings.platformFoundationBody)
+        Spacer(Modifier.height(12.dp))
+        StatusCard(strings.deviceState, strings.deviceStateText(bootstrapState))
         Spacer(Modifier.height(12.dp))
         StatusCard(strings.deferredCapabilities, strings.deferredCapabilitiesBody)
         Spacer(Modifier.height(24.dp))

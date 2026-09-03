@@ -1,6 +1,13 @@
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+val enpoProductionPublicBaseUrl = "https://bgapi.challengershoes.com"
+val enpoDebugPublicBaseUrl = providers.gradleProperty("enpoDebugPublicBaseUrl")
+    .orElse(providers.environmentVariable("ENPO_DEBUG_PUBLIC_BASE_URL"))
+    .getOrElse(enpoProductionPublicBaseUrl)
+
 val legacySigningFile = file(
     System.getProperty("user.home") + "/.android/enpo-connect/signing.properties",
 )
@@ -55,13 +62,21 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            buildConfigField("String", "PUBLIC_BASE_URL", enpoDebugPublicBaseUrl.asBuildConfigString())
+            buildConfigField("String", "NETWORK_ENVIRONMENT", "development".asBuildConfigString())
+        }
         getByName("release") {
             isMinifyEnabled = false
+            buildConfigField("String", "PUBLIC_BASE_URL", enpoProductionPublicBaseUrl.asBuildConfigString())
+            buildConfigField("String", "NETWORK_ENVIRONMENT", "production".asBuildConfigString())
             if (enpoSigningConfigured) {
                 signingConfig = signingConfigs.getByName("legacyRelease")
             }
         }
     }
+
+    buildFeatures.buildConfig = true
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -73,9 +88,9 @@ kotlin {
     compilerOptions.jvmTarget.set(JvmTarget.JVM_11)
 }
 
-tasks.register("verifyEnpoSlice1Identity") {
+tasks.register("verifyEnpoMigrationIdentity") {
     group = "verification"
-    description = "Verifies the immutable ENPO package and API floor for migration Slice 1."
+    description = "Verifies the immutable ENPO package and API floor during migration."
     doLast {
         check(android.defaultConfig.applicationId == "com.enpo.connect")
         check(android.defaultConfig.minSdk == 23)
@@ -83,5 +98,5 @@ tasks.register("verifyEnpoSlice1Identity") {
 }
 
 tasks.named("preBuild").configure {
-    dependsOn("verifyEnpoSlice1Identity")
+    dependsOn("verifyEnpoMigrationIdentity")
 }

@@ -23,6 +23,21 @@ class AndroidPreferenceStore(
             "Unable to persist application preference."
         }
     }
+
+    override fun boolean(key: String): Boolean? {
+        val safeKey = key.requireStorageIdentifier("preference key")
+        return if (preferences.contains(safeKey)) preferences.getBoolean(safeKey, false) else null
+    }
+
+    override fun putBoolean(key: String, value: Boolean) {
+        check(
+            preferences.edit()
+                .putBoolean(key.requireStorageIdentifier("preference key"), value)
+                .commit(),
+        ) {
+            "Unable to persist application preference."
+        }
+    }
 }
 
 private fun String.requireStorageIdentifier(label: String): String =

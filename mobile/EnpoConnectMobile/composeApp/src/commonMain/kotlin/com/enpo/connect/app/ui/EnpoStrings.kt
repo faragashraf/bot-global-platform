@@ -1,5 +1,7 @@
 package com.enpo.connect.app.ui
 
+import com.enpo.connect.app.state.EnpoBootstrapState
+
 data class EnpoStrings(
     val productName: String,
     val organizationName: String,
@@ -20,6 +22,11 @@ data class EnpoStrings(
     val version: String,
     val platformFoundation: String,
     val platformFoundationBody: String,
+    val deviceState: String,
+    val unpaired: String,
+    val deviceCredentialAvailable: String,
+    val credentialUnreadable: String,
+    val initializationError: String,
     val deferredCapabilities: String,
     val deferredCapabilitiesBody: String,
 ) {
@@ -43,9 +50,22 @@ data class EnpoStrings(
         version,
         platformFoundation,
         platformFoundationBody,
+        deviceState,
+        unpaired,
+        deviceCredentialAvailable,
+        credentialUnreadable,
+        initializationError,
         deferredCapabilities,
         deferredCapabilitiesBody,
     )
+
+    fun deviceStateText(state: EnpoBootstrapState): String = when (state) {
+        EnpoBootstrapState.Initializing -> platformFoundationBody
+        EnpoBootstrapState.Unpaired -> unpaired
+        EnpoBootstrapState.DeviceCredentialAvailable -> deviceCredentialAvailable
+        EnpoBootstrapState.CredentialUnreadable -> credentialUnreadable
+        EnpoBootstrapState.Error -> initializationError
+    }
 }
 
 fun enpoStrings(languageTag: String): EnpoStrings =
@@ -57,7 +77,7 @@ private val ArabicStrings = EnpoStrings(
     foundationEyebrow = "CONNECT",
     foundationTitle = "رفيقك الآمن لمنصة Connect",
     foundationBody = "هيكل ENPO Connect يعمل الآن داخل منصة Bot Global مع الحفاظ على هوية التطبيق.",
-    sliceNotice = "هذه المرحلة تؤسس تجربة التطبيق فقط؛ الربط والإشعارات ستنتقل في مراحل مستقلة.",
+    sliceNotice = "تجهز هذه المرحلة هوية التثبيت وحالة الجهاز فقط؛ الربط والإشعارات ستنتقل في مراحل مستقلة.",
     settings = "الإعدادات",
     language = "اللغة",
     appearance = "المظهر",
@@ -71,6 +91,11 @@ private val ArabicStrings = EnpoStrings(
     version = "رقم الإصدار",
     platformFoundation = "أساس المنصة جاهز",
     platformFoundationBody = "اللغة والمظهر والتنقل والتخزين التفضيلي تستخدم قدرات المنصة المشتركة.",
+    deviceState = "حالة الجهاز",
+    unpaired = "لا توجد بيانات ربط محفوظة. لم يتم إجراء أي اتصال بالشبكة.",
+    deviceCredentialAvailable = "بيانات الجهاز المشفرة متاحة للاستعادة في مرحلة الربط القادمة.",
+    credentialUnreadable = "توجد بيانات جهاز لا يمكن قراءتها بأمان؛ لم يتم حذفها أو استبدالها.",
+    initializationError = "تعذر فحص حالة الجهاز محلياً.",
     deferredCapabilities = "القدرات المؤجلة",
     deferredCapabilitiesBody = "لا يوجد اقتران أو Firebase أو إشعارات أو اتصال بالخلفية في هذه المرحلة.",
 )
@@ -81,7 +106,7 @@ private val EnglishStrings = EnpoStrings(
     foundationEyebrow = "CONNECT",
     foundationTitle = "Your secure Connect companion",
     foundationBody = "The ENPO Connect shell now runs inside Bot Global Platform while preserving its app identity.",
-    sliceNotice = "This slice establishes the app experience only; pairing and notifications move in dedicated phases.",
+    sliceNotice = "This slice prepares installation identity and local device state only; pairing and notifications move in dedicated phases.",
     settings = "Settings",
     language = "Language",
     appearance = "Appearance",
@@ -95,6 +120,11 @@ private val EnglishStrings = EnpoStrings(
     version = "Version",
     platformFoundation = "Platform foundation ready",
     platformFoundationBody = "Language, appearance, navigation, and preference storage use shared platform capabilities.",
+    deviceState = "Device state",
+    unpaired = "No stored pairing data is available. No network request was made.",
+    deviceCredentialAvailable = "Encrypted device data is available for restoration in the pairing slice.",
+    credentialUnreadable = "Device data exists but cannot be read safely; it was not removed or replaced.",
+    initializationError = "The local device state could not be inspected.",
     deferredCapabilities = "Capabilities intentionally deferred",
     deferredCapabilitiesBody = "Pairing, Firebase, notifications, and backend access are not included in this slice.",
 )

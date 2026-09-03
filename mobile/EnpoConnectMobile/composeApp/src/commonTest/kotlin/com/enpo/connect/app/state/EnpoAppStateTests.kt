@@ -4,6 +4,8 @@ import com.botglobal.mobile.platform.appearance.AppearancePreference
 import com.botglobal.mobile.platform.appearance.ResolvedAppearance
 import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
+import com.enpo.connect.app.network.EnpoNetworkConfiguration
+import com.botglobal.mobile.platform.networking.NetworkEnvironment
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -54,13 +56,13 @@ class EnpoAppStateTests {
     fun bootstrapMakesHomeTheRootWithoutFakingPairingState() = runTest {
         val state = EnpoAppState()
 
-        assertEquals(EnpoBootstrapState.Starting, state.bootstrapState.value)
+        assertEquals(EnpoBootstrapState.Initializing, state.bootstrapState.value)
         state.bootstrap()
 
-        assertEquals(EnpoBootstrapState.Ready, state.bootstrapState.value)
+        assertEquals(EnpoBootstrapState.Unpaired, state.bootstrapState.value)
         assertEquals(EnpoDestination.Home, state.navigation.current)
         assertFalse(state.navigation.canNavigateBack)
-        assertFalse(EnpoSlice1Boundaries.PairingEnabled)
+        assertFalse(EnpoMigrationBoundaries.PairingEnabled)
     }
 
     @Test
@@ -75,5 +77,44 @@ class EnpoAppStateTests {
         assertTrue(state.navigateBack())
         assertEquals(EnpoDestination.Home, state.navigation.current)
         assertFalse(state.navigateBack())
+    }
+
+    @Test
+    fun bootstrapReflectsCompatibleCredentialAvailabilityWithoutNetworkPairing() = runTest {
+        var inspections = 0
+        val configuration = EnpoNetworkConfiguration.from(
+            "https://bgapi.challengershoes.com",
+            NetworkEnvironment.Production,
+        )
+        val state = EnpoAppState(
+            deviceInfrastructure = EnpoDeviceInfrastructure {
+                inspections += 1
+                EnpoDeviceBootstrapResult.DeviceCredentialAvailable
+            },
+            networkConfiguration = configuration,
+        )
+
+        state.bootstrap()
+
+        assertEquals(1, inspections)
+        assertEquals(EnpoBootstrapState.DeviceCredentialAvailable, state.bootstrapState.value)
+        assertEquals(configuration, state.networkConfiguration)
+        assertFalse(EnpoMigrationBoundaries.NetworkCallsDuringBootstrap)
+    }
+
+    @Test
+    fun bootstrapPreservesExistingAppProtectionPreference() = runTest {
+        val preferences = InMemoryPreferenceStore(
+            initialBooleanValues = mapOf(
+                EnpoLegacyStorageCompatibility.AppProtectionPreferenceKey to true,
+            ),
+        )
+
+        EnpoAppState(preferences).bootstrap()
+
+        assertEquals(
+            true,
+            preferences.boolean(EnpoLegacyStorageCompatibility.AppProtectionPreferenceKey),
+        )
     }
 }

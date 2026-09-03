@@ -14,4 +14,15 @@ class PreferenceStoreTests {
 
         assertEquals("ar", store.string("language"))
     }
+
+    @Test
+    fun booleanValuesRemainTypedAndAbsentValuesRemainDistinguishable() {
+        val store = InMemoryPreferenceStore()
+
+        assertNull(store.boolean("protected"))
+        store.putBoolean("protected", true)
+
+        assertEquals(true, store.boolean("protected"))
+        assertNull(store.string("protected"))
+    }
 }

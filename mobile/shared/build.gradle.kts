@@ -22,13 +22,23 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
+            api(libs.ktor.client.core)
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.kotlinx.json)
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.credentials)
             implementation(libs.androidx.credentials.playServicesAuth)
             implementation(libs.google.identity.googleId)
+            implementation(libs.ktor.client.okhttp)
             implementation(libs.webrtc.android)
+        }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
+        }
+        jvmMain.dependencies {
+            implementation(libs.ktor.client.okhttp)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

@@ -73,6 +73,35 @@ interface MobileDeviceCredentialVault {
     suspend fun restore(): MobileDeviceCredential?
     suspend fun save(credential: MobileDeviceCredential)
     suspend fun clear()
+
+    suspend fun availability(): MobileDeviceCredentialAvailability =
+        if (restore() == null) {
+            MobileDeviceCredentialAvailability.Absent
+        } else {
+            MobileDeviceCredentialAvailability.Available
+        }
+}
+
+enum class MobileDeviceCredentialAvailability {
+    Absent,
+    Available,
+    Unreadable,
+}
+
+class InMemoryMobileDeviceCredentialVault(
+    initialCredential: MobileDeviceCredential? = null,
+) : MobileDeviceCredentialVault {
+    private var credential = initialCredential
+
+    override suspend fun restore(): MobileDeviceCredential? = credential
+
+    override suspend fun save(credential: MobileDeviceCredential) {
+        this.credential = credential
+    }
+
+    override suspend fun clear() {
+        credential = null
+    }
 }
 
 interface PushRegistrationLifecycle {
