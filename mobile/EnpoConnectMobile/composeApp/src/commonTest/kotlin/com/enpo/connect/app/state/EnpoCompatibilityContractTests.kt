@@ -4,6 +4,7 @@ import com.enpo.connect.app.ui.enpoStrings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class EnpoCompatibilityContractTests {
     @Test
@@ -28,10 +29,10 @@ class EnpoCompatibilityContractTests {
     }
 
     @Test
-    fun sliceTwoStartsWithoutFirebaseNotificationsPairingOrNetworkCalls() {
+    fun sliceThreeEnablesOnlyPairingAndKeepsBootstrapOffline() {
         assertFalse(EnpoMigrationBoundaries.FirebaseEnabled)
         assertFalse(EnpoMigrationBoundaries.NotificationsEnabled)
-        assertFalse(EnpoMigrationBoundaries.PairingEnabled)
+        assertTrue(EnpoMigrationBoundaries.PairingEnabled)
         assertFalse(EnpoMigrationBoundaries.NetworkCallsDuringBootstrap)
     }
 

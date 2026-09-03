@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -45,6 +46,8 @@ import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
 import com.botglobal.mobile.platform.preferences.PreferenceStore
 import com.enpo.connect.app.network.EnpoNetworkConfiguration
+import com.enpo.connect.app.pairing.EnpoPairingCoordinator
+import com.enpo.connect.app.pairing.EnpoPairingState
 import com.enpo.connect.app.state.EnpoAppState
 import com.enpo.connect.app.state.EnpoBootstrapState
 import com.enpo.connect.app.state.EmptyEnpoDeviceInfrastructure
@@ -54,6 +57,7 @@ import com.enpo.connect.app.ui.EnpoStrings
 import com.enpo.connect.app.ui.EnpoSystemBackHandler
 import com.enpo.connect.app.ui.EnpoTheme
 import com.enpo.connect.app.ui.enpoStrings
+import kotlinx.coroutines.launch
 
 @Composable
 fun EnpoConnectApp(
@@ -61,15 +65,23 @@ fun EnpoConnectApp(
     preferences: PreferenceStore = InMemoryPreferenceStore(),
     deviceInfrastructure: EnpoDeviceInfrastructure = EmptyEnpoDeviceInfrastructure,
     networkConfiguration: EnpoNetworkConfiguration? = null,
+    pairingCoordinator: EnpoPairingCoordinator = EnpoPairingCoordinator(),
     onResolvedAppearanceChanged: (ResolvedAppearance) -> Unit = {},
 ) {
-    val state = remember(preferences, deviceInfrastructure, networkConfiguration) {
-        EnpoAppState(preferences, deviceInfrastructure, networkConfiguration)
+    val state = remember(preferences, deviceInfrastructure, networkConfiguration, pairingCoordinator) {
+        EnpoAppState(
+            preferences = preferences,
+            deviceInfrastructure = deviceInfrastructure,
+            networkConfiguration = networkConfiguration,
+            pairingCoordinator = pairingCoordinator,
+        )
     }
     val locale by state.locale.state.collectAsState()
     val appearance by state.appearance.state.collectAsState()
     val backStack by state.navigation.backStack.collectAsState()
     val bootstrapState by state.bootstrapState.collectAsState()
+    val pairingState by state.pairingState.collectAsState()
+    val scope = rememberCoroutineScope()
     val systemIsDark = isSystemInDarkTheme()
 
     LaunchedEffect(state) { state.bootstrap() }
@@ -101,10 +113,15 @@ fun EnpoConnectApp(
                         selectedLanguage = locale.languageTag,
                         selectedAppearance = appearance.preference,
                         bootstrapState = bootstrapState,
+                        pairingState = pairingState,
                         onOpen = state::open,
                         onBack = state::navigateBack,
                         onLanguage = state::selectLanguage,
                         onAppearance = state::selectAppearance,
+                        onStartPairing = {
+                            scope.launch { state.startPairing(strings.scannerPrompt) }
+                        },
+                        onEnterPairedShell = state::enterPairedShell,
                     )
                 }
             }
@@ -125,12 +142,22 @@ private fun EnpoShell(
     selectedLanguage: String,
     selectedAppearance: AppearancePreference,
     bootstrapState: EnpoBootstrapState,
+    pairingState: EnpoPairingState,
     onOpen: (EnpoDestination) -> Unit,
     onBack: () -> Boolean,
     onLanguage: (String) -> Unit,
     onAppearance: (AppearancePreference) -> Unit,
+    onStartPairing: () -> Unit,
+    onEnterPairedShell: () -> Unit,
 ) {
     when (destination) {
+        EnpoDestination.Pairing -> PairingScreen(
+            strings = strings,
+            state = pairingState,
+            onStartPairing = onStartPairing,
+            onSettings = { onOpen(EnpoDestination.Settings) },
+        )
+        EnpoDestination.PairingSuccess -> PairingSuccessScreen(strings, onEnterPairedShell)
         EnpoDestination.Home -> HomeScreen(strings, bootstrapState, onOpen)
         EnpoDestination.Settings -> SettingsScreen(strings, onOpen, onBack)
         EnpoDestination.Language -> SelectionScreen(
@@ -157,6 +184,79 @@ private fun EnpoShell(
             onBack = onBack,
         )
         EnpoDestination.About -> AboutScreen(strings, runtimeVersionName, onBack)
+    }
+}
+
+@Composable
+private fun PairingScreen(
+    strings: EnpoStrings,
+    state: EnpoPairingState,
+    onStartPairing: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    val busy = state == EnpoPairingState.Scanning ||
+        state == EnpoPairingState.Validating ||
+        state == EnpoPairingState.Claiming ||
+        state == EnpoPairingState.PersistingCredential
+    val canRetry = state == EnpoPairingState.Unpaired || state is EnpoPairingState.RecoverableError
+
+    ShellColumn {
+        BrandHeader(strings)
+        Spacer(Modifier.height(30.dp))
+        Text(
+            strings.pairingTitle,
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(strings.pairingBody, style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.height(24.dp))
+        StatusCard(strings.deviceState, strings.pairingStateText(state))
+        if (busy) {
+            Spacer(Modifier.height(24.dp))
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
+        if (canRetry) {
+            Spacer(Modifier.height(24.dp))
+            Button(onClick = onStartPairing, modifier = Modifier.fillMaxWidth()) {
+                Text(if (state is EnpoPairingState.RecoverableError) strings.retry else strings.scanQr)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth()) {
+            Text(strings.settings)
+        }
+    }
+}
+
+@Composable
+private fun PairingSuccessScreen(
+    strings: EnpoStrings,
+    onEnterPairedShell: () -> Unit,
+) {
+    ShellColumn {
+        BrandHeader(strings)
+        Spacer(Modifier.height(36.dp))
+        Text(
+            strings.pairingSuccessTitle,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            strings.pairingSuccessBody,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Spacer(Modifier.height(28.dp))
+        Button(onClick = onEnterPairedShell, modifier = Modifier.fillMaxWidth()) {
+            Text(strings.continueToApp)
+        }
     }
 }
 

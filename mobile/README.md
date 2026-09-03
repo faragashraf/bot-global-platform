@@ -20,7 +20,7 @@ mobile/
 
 `composeApp` targets Android, iOS device, iOS simulator, and JVM tests. The Android app is the first runtime target. The iOS framework exposes `MainViewController`; the native shell must inject a Keychain-backed `SessionVault` and platform haptics.
 
-ENPO Connect migration Slice 2 adds product-neutral networking/result contracts, installation identity, and a configurable Android secure device-credential vault to the Arabic-first Slice 1 shell. The Android host preserves `com.enpo.connect`, API 23, and the exact legacy preference files, keys, AES-GCM representation, and Android Keystore alias. Bootstrap performs local availability checks only: Pairing requests and credential writes, Firebase, notifications, and backend execution remain intentionally absent. The ENPO public-service base URL is composed once from a production HTTPS value or an injectable debug override; request execution is deferred to later capability slices.
+ENPO Connect migration Slice 3 adds the production Connect V2 QR-pairing flow to the Arabic-first shell. It reuses the shared camera-permission and one-shot scanner contracts, Ktor network foundation, installation identity, and configurable AES-GCM credential vault. Connect V2 token validation, claim DTOs/routes, state presentation, and error semantics remain product-specific. A paired transition is emitted only after the credential is committed and restored successfully. Existing readable legacy credentials bypass scanning; unreadable legacy data is retained without reset. Firebase, FCM, notifications, profile data, App Protection, and unpair remain intentionally absent.
 
 ## Local Android build
 

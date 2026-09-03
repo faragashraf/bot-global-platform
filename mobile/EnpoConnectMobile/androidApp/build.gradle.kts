@@ -36,6 +36,10 @@ dependencies {
     implementation(projects.enpoConnectMobile.composeApp)
     implementation(libs.androidx.activity.compose)
     implementation(libs.compose.uiToolingPreview)
+    implementation(libs.zxing.core.api23)
+    implementation(libs.zxing.android.embedded) {
+        isTransitive = false
+    }
 }
 
 android {
@@ -48,6 +52,7 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 3
         versionName = "1.0.2"
+        manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
 
     signingConfigs {
@@ -63,11 +68,13 @@ android {
 
     buildTypes {
         getByName("debug") {
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
             buildConfigField("String", "PUBLIC_BASE_URL", enpoDebugPublicBaseUrl.asBuildConfigString())
             buildConfigField("String", "NETWORK_ENVIRONMENT", "development".asBuildConfigString())
         }
         getByName("release") {
             isMinifyEnabled = false
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
             buildConfigField("String", "PUBLIC_BASE_URL", enpoProductionPublicBaseUrl.asBuildConfigString())
             buildConfigField("String", "NETWORK_ENVIRONMENT", "production".asBuildConfigString())
             if (enpoSigningConfigured) {

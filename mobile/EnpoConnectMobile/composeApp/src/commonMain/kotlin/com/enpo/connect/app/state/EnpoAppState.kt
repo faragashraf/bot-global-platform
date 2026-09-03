@@ -10,11 +10,15 @@ import com.botglobal.mobile.platform.startup.StartupOrchestrator
 import com.botglobal.mobile.platform.startup.StartupStage
 import com.botglobal.mobile.platform.startup.StartupStep
 import com.enpo.connect.app.network.EnpoNetworkConfiguration
+import com.enpo.connect.app.pairing.EnpoPairingCoordinator
+import com.enpo.connect.app.pairing.EnpoPairingState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 enum class EnpoDestination {
+    Pairing,
+    PairingSuccess,
     Home,
     Settings,
     Language,
@@ -34,10 +38,12 @@ class EnpoAppState(
     private val preferences: PreferenceStore = InMemoryPreferenceStore(),
     private val deviceInfrastructure: EnpoDeviceInfrastructure = EmptyEnpoDeviceInfrastructure,
     val networkConfiguration: EnpoNetworkConfiguration? = null,
+    private val pairingCoordinator: EnpoPairingCoordinator = EnpoPairingCoordinator(),
 ) {
     val locale = LocaleController(restoredLanguageTag())
     val appearance = AppearanceController(initialPreference = restoredAppearance())
     val navigation = BackStackNavigator(EnpoDestination.Home)
+    val pairingState: StateFlow<EnpoPairingState> = pairingCoordinator.state
 
     private val mutableBootstrapState = MutableStateFlow<EnpoBootstrapState>(EnpoBootstrapState.Initializing)
     val bootstrapState: StateFlow<EnpoBootstrapState> = mutableBootstrapState.asStateFlow()
@@ -63,16 +69,41 @@ class EnpoAppState(
         mutableBootstrapState.value = if (!result.canNavigate) {
             EnpoBootstrapState.Error
         } else when (deviceResult) {
-            EnpoDeviceBootstrapResult.Unpaired -> EnpoBootstrapState.Unpaired
-            EnpoDeviceBootstrapResult.DeviceCredentialAvailable ->
+            EnpoDeviceBootstrapResult.Unpaired -> {
+                pairingCoordinator.initializeUnpaired()
+                navigation.reset(EnpoDestination.Pairing)
+                EnpoBootstrapState.Unpaired
+            }
+            EnpoDeviceBootstrapResult.DeviceCredentialAvailable -> {
+                pairingCoordinator.initializePaired()
+                navigation.reset(EnpoDestination.Home)
                 EnpoBootstrapState.DeviceCredentialAvailable
-            EnpoDeviceBootstrapResult.CredentialUnreadable -> EnpoBootstrapState.CredentialUnreadable
+            }
+            EnpoDeviceBootstrapResult.CredentialUnreadable -> {
+                pairingCoordinator.initializeCredentialUnreadable()
+                navigation.reset(EnpoDestination.Pairing)
+                EnpoBootstrapState.CredentialUnreadable
+            }
             null -> EnpoBootstrapState.Error
         }
     }
 
+    suspend fun startPairing(scannerPrompt: String) {
+        pairingCoordinator.startPairing(scannerPrompt)
+        if (pairingCoordinator.state.value == EnpoPairingState.Paired) {
+            mutableBootstrapState.value = EnpoBootstrapState.DeviceCredentialAvailable
+            navigation.reset(EnpoDestination.PairingSuccess)
+        }
+    }
+
+    fun enterPairedShell() {
+        if (pairingCoordinator.state.value == EnpoPairingState.Paired) {
+            navigation.reset(EnpoDestination.Home)
+        }
+    }
+
     fun open(destination: EnpoDestination) {
-        require(destination != EnpoDestination.Home) { "Home is the navigation root." }
+        require(destination !in RootDestinations) { "Root destinations cannot be pushed." }
         navigation.push(destination)
     }
 
@@ -123,5 +154,10 @@ class EnpoAppState(
         private const val LegacySystem = "SYSTEM"
         private const val LegacyLight = "LIGHT"
         private const val LegacyDark = "DARK"
+        private val RootDestinations = setOf(
+            EnpoDestination.Home,
+            EnpoDestination.Pairing,
+            EnpoDestination.PairingSuccess,
+        )
     }
 }

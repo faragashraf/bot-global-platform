@@ -3,9 +3,23 @@ package com.enpo.connect.app.state
 import com.botglobal.mobile.platform.appearance.AppearancePreference
 import com.botglobal.mobile.platform.appearance.ResolvedAppearance
 import com.botglobal.mobile.platform.localization.ContentDirection
+import com.botglobal.mobile.platform.device.InstallationId
+import com.botglobal.mobile.platform.device.InstallationIdentity
+import com.botglobal.mobile.platform.device.PermissionController
+import com.botglobal.mobile.platform.device.PermissionKind
+import com.botglobal.mobile.platform.device.PermissionState
+import com.botglobal.mobile.platform.device.PreferenceInstallationIdStore
+import com.botglobal.mobile.platform.invitations.QrScanResult
+import com.botglobal.mobile.platform.invitations.QrScannerCapability
+import com.botglobal.mobile.platform.notifications.InMemoryMobileDeviceCredentialVault
+import com.botglobal.mobile.platform.notifications.MobileDeviceCredential
 import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
 import com.enpo.connect.app.network.EnpoNetworkConfiguration
 import com.botglobal.mobile.platform.networking.NetworkEnvironment
+import com.enpo.connect.app.pairing.EnpoPairingState
+import com.enpo.connect.app.pairing.EnpoPairingClaimResult
+import com.enpo.connect.app.pairing.EnpoPairingClient
+import com.enpo.connect.app.pairing.EnpoPairingCoordinator
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -53,21 +67,26 @@ class EnpoAppStateTests {
     }
 
     @Test
-    fun bootstrapMakesHomeTheRootWithoutFakingPairingState() = runTest {
+    fun bootstrapMakesPairingTheRootOnlyWhenNoCredentialExists() = runTest {
         val state = EnpoAppState()
 
         assertEquals(EnpoBootstrapState.Initializing, state.bootstrapState.value)
         state.bootstrap()
 
         assertEquals(EnpoBootstrapState.Unpaired, state.bootstrapState.value)
-        assertEquals(EnpoDestination.Home, state.navigation.current)
+        assertEquals(EnpoDestination.Pairing, state.navigation.current)
         assertFalse(state.navigation.canNavigateBack)
-        assertFalse(EnpoMigrationBoundaries.PairingEnabled)
+        assertTrue(EnpoMigrationBoundaries.PairingEnabled)
+        assertEquals(EnpoPairingState.Unpaired, state.pairingState.value)
     }
 
     @Test
     fun androidBackContractReturnsThroughTheSharedNavigator() = runTest {
-        val state = EnpoAppState()
+        val state = EnpoAppState(
+            deviceInfrastructure = EnpoDeviceInfrastructure {
+                EnpoDeviceBootstrapResult.DeviceCredentialAvailable
+            },
+        )
         state.bootstrap()
         state.open(EnpoDestination.Settings)
         state.open(EnpoDestination.Theme)
@@ -98,6 +117,8 @@ class EnpoAppStateTests {
 
         assertEquals(1, inspections)
         assertEquals(EnpoBootstrapState.DeviceCredentialAvailable, state.bootstrapState.value)
+        assertEquals(EnpoDestination.Home, state.navigation.current)
+        assertEquals(EnpoPairingState.Paired, state.pairingState.value)
         assertEquals(configuration, state.networkConfiguration)
         assertFalse(EnpoMigrationBoundaries.NetworkCallsDuringBootstrap)
     }
@@ -116,5 +137,71 @@ class EnpoAppStateTests {
             true,
             preferences.boolean(EnpoLegacyStorageCompatibility.AppProtectionPreferenceKey),
         )
+    }
+
+    @Test
+    fun durablePairingNavigatesThroughSuccessAndSurvivesProcessRecreation() = runTest {
+        val vault = InMemoryMobileDeviceCredentialVault()
+        val coordinator = EnpoPairingCoordinator(
+            permissions = GrantedCameraPermission,
+            scanner = FixedScanner(QrScanResult.Recognized("A".repeat(43))),
+            client = EnpoPairingClient {
+                EnpoPairingClaimResult.Success(
+                    MobileDeviceCredential("test-device", "test-credential"),
+                )
+            },
+            credentialVault = vault,
+        )
+        val firstProcess = EnpoAppState(pairingCoordinator = coordinator)
+        firstProcess.bootstrap()
+
+        firstProcess.startPairing("scan")
+
+        assertEquals(EnpoDestination.PairingSuccess, firstProcess.navigation.current)
+        firstProcess.enterPairedShell()
+        assertEquals(EnpoDestination.Home, firstProcess.navigation.current)
+
+        val installationIdentity = InstallationIdentity(
+            PreferenceInstallationIdStore(InMemoryPreferenceStore(), "installation_id"),
+        ) { InstallationId("installation") }
+        val restarted = EnpoAppState(
+            deviceInfrastructure = PlatformEnpoDeviceInfrastructure(installationIdentity, vault),
+            pairingCoordinator = EnpoPairingCoordinator(credentialVault = vault),
+        )
+
+        restarted.bootstrap()
+
+        assertEquals(EnpoBootstrapState.DeviceCredentialAvailable, restarted.bootstrapState.value)
+        assertEquals(EnpoPairingState.Paired, restarted.pairingState.value)
+        assertEquals(EnpoDestination.Home, restarted.navigation.current)
+        assertFalse(restarted.navigation.canNavigateBack)
+    }
+
+    @Test
+    fun unreadableLegacyCredentialNeverOffersPairingOrOverwritesState() = runTest {
+        val state = EnpoAppState(
+            deviceInfrastructure = EnpoDeviceInfrastructure {
+                EnpoDeviceBootstrapResult.CredentialUnreadable
+            },
+        )
+
+        state.bootstrap()
+        state.startPairing("scan")
+
+        assertEquals(EnpoBootstrapState.CredentialUnreadable, state.bootstrapState.value)
+        assertEquals(EnpoDestination.Pairing, state.navigation.current)
+        assertEquals(
+            EnpoPairingState.FatalError(com.enpo.connect.app.pairing.EnpoPairingError.CredentialUnreadable),
+            state.pairingState.value,
+        )
+    }
+
+    private object GrantedCameraPermission : PermissionController {
+        override suspend fun state(permission: PermissionKind) = PermissionState.Granted
+        override suspend fun requestAfterExplanation(permission: PermissionKind) = PermissionState.Granted
+    }
+
+    private class FixedScanner(private val result: QrScanResult) : QrScannerCapability {
+        override suspend fun scan(prompt: String): QrScanResult = result
     }
 }

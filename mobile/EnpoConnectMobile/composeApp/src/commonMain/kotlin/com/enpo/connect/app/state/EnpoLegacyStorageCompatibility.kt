@@ -28,7 +28,7 @@ object EnpoReleaseIdentity {
 
 object EnpoMigrationBoundaries {
     const val FirebaseEnabled = false
-    const val PairingEnabled = false
+    const val PairingEnabled = true
     const val NotificationsEnabled = false
     const val NetworkCallsDuringBootstrap = false
 }

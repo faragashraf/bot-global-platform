@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- Shared capability dependencies declare biometric permissions, but Slice 2
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <!-- Shared capability dependencies declare biometric permissions, but Slice 3
          does not ship App Protection and must not request unused capabilities. -->
     <uses-permission
         android:name="android.permission.USE_BIOMETRIC"
@@ -16,6 +21,7 @@
         android:label="@string/app_name"
         android:roundIcon="@drawable/ic_enpo_launcher"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="${usesCleartextTraffic}"
         android:theme="@style/Theme.EnpoConnect">
         <activity
             android:name=".MainActivity"

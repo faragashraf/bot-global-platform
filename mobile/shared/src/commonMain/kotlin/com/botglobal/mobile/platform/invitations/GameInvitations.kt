@@ -90,7 +90,13 @@ interface PlatformShareCapability {
 }
 
 sealed interface QrScanResult {
-    data class Recognized(val content: String) : QrScanResult
+    data class Recognized(val content: String) : QrScanResult {
+        init {
+            require(content.isNotBlank()) { "Recognized QR content cannot be blank." }
+        }
+
+        override fun toString(): String = "QrScanResult.Recognized(content=<redacted>)"
+    }
     data object Cancelled : QrScanResult
     data object Unavailable : QrScanResult
 }
