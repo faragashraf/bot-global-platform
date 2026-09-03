@@ -1,5 +1,6 @@
 using FirebaseAdmin.Messaging;
 using BotGlobal.Communication.Application.MobileNotifications.Push;
+using BotGlobal.Communication.Contracts.MobileNotifications;
 using Microsoft.Extensions.Logging;
 
 namespace BotGlobal.Communication.Application.MobileNotifications.Fcm;
@@ -87,7 +88,7 @@ internal sealed class FirebaseAdminFcmPushSender(
                     new AndroidConfig
                     {
                         Priority =
-                            Priority.High,
+                            MapAndroidPriority(message.Priority),
 
                         TimeToLive =
                             timeToLive,
@@ -122,4 +123,10 @@ internal sealed class FirebaseAdminFcmPushSender(
             throw;
         }
     }
+
+    private static Priority MapAndroidPriority(
+        MobileNotificationPriority priority) =>
+        priority == MobileNotificationPriority.High
+            ? Priority.High
+            : Priority.Normal;
 }

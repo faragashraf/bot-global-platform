@@ -8,6 +8,7 @@ import com.botglobal.mobile.platform.notifications.PushMessageHandler
 import com.botglobal.mobile.platform.notifications.PushRegistrationController
 import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
 import com.google.android.gms.tasks.Task
+import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.RemoteMessage
 import kotlin.coroutines.resume
@@ -28,6 +29,10 @@ class AndroidFirebaseMessagingRuntime(
     private val messageHandler: PushMessageHandler = IgnorePushMessages,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) : PushRegistrationLifecycle {
+    init {
+        AndroidFirebaseBootstrap.ensureInitialized(context.applicationContext)
+    }
+
     private val coordinator = FirebaseRegistrationCoordinator(
         controller = registrationController,
         store = AndroidFirebaseDestinationStore(context.applicationContext),
@@ -66,27 +71,11 @@ class AndroidFirebaseMessagingRuntime(
     }
 }
 
-private class AndroidFirebaseDestinationStore(
-    context: Context,
-) : FirebaseDestinationStore {
-    private val preferences = context.getSharedPreferences(
-        "botglobal_firebase_push_destination",
-        Context.MODE_PRIVATE,
-    )
-
-    override fun read(): String? = preferences.getString(KEY_IDENTIFIER, null)
-
-    override fun write(identifier: String) {
-        preferences.edit().putString(KEY_IDENTIFIER, identifier).apply()
-    }
-
-    override fun clear() {
-        preferences.edit().remove(KEY_IDENTIFIER).apply()
-    }
-
-    private companion object {
-        const val KEY_IDENTIFIER = "registration_identifier"
-    }
+object AndroidFirebaseBootstrap {
+    fun ensureInitialized(context: Context): FirebaseApp =
+        FirebaseApp.getApps(context).firstOrNull { it.name == FirebaseApp.DEFAULT_APP_NAME }
+            ?: FirebaseApp.initializeApp(context)
+            ?: error("Firebase configuration is unavailable for this application.")
 }
 
 private class AndroidFirebaseRegistrationClient : FirebaseRegistrationClient {

@@ -1,5 +1,6 @@
 using BotGlobal.Communication.Application.MobileNotifications.Fcm;
 using BotGlobal.Communication.Application.MobileNotifications.Push;
+using BotGlobal.Communication.Contracts.MobileNotifications;
 using BotGlobal.Contracts.Notifications;
 using Microsoft.Extensions.Options;
 
@@ -143,6 +144,32 @@ public sealed class ApplicationPushProviderIsolationTests
         Assert.Equal(
             applicationId,
             fcm.LastConfiguration!.Application.ApplicationId);
+        Assert.Equal(MobileNotificationPriority.Normal, fcm.LastMessage!.Priority);
+    }
+
+    [Fact]
+    public async Task Dispatcher_propagates_high_priority_without_changing_application_scope()
+    {
+        var applicationId = Guid.NewGuid();
+        var fcm = new RecordingFcmSender();
+        var dispatcher = new ApplicationPushNotificationDispatcher(
+            Resolver(Provider(
+                applicationId,
+                "firebase-app",
+                "project-app",
+                "com.botglobal.app")),
+            fcm);
+
+        var result = await dispatcher.DispatchAsync(
+            Message(applicationId) with
+            {
+                Priority = MobileNotificationPriority.High
+            },
+            CancellationToken.None);
+
+        Assert.Equal(ApplicationPushDispatchKind.Accepted, result.Kind);
+        Assert.Equal(applicationId, fcm.LastConfiguration!.Application.ApplicationId);
+        Assert.Equal(MobileNotificationPriority.High, fcm.LastMessage!.Priority);
     }
 
     [Fact]
@@ -212,6 +239,8 @@ public sealed class ApplicationPushProviderIsolationTests
             private set;
         }
 
+        public FcmPushMessage? LastMessage { get; private set; }
+
         public Task<FcmPushSendResult> SendAsync(
             ResolvedApplicationPushProvider configuration,
             FcmPushMessage message,
@@ -219,6 +248,7 @@ public sealed class ApplicationPushProviderIsolationTests
         {
             Calls++;
             LastConfiguration = configuration;
+            LastMessage = message;
             return Task.FromResult(
                 new FcmPushSendResult(true, "message-id"));
         }

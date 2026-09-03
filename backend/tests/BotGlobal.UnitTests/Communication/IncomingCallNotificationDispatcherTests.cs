@@ -39,6 +39,7 @@ public sealed class IncomingCallNotificationDispatcherTests
         Assert.Equal("Caller", request.BodyAr);
         Assert.Equal("Caller", request.BodyEn);
         Assert.Equal("incoming_call", request.Type);
+        Assert.Equal(MobileNotificationPriority.High, request.Priority);
         Assert.Equal(callId.ToString("D"), request.Data!["callId"]);
         Assert.Equal(expiresAtUtc.ToString("O"), request.Data["expiresAtUtc"]);
     }

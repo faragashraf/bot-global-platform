@@ -1,4 +1,5 @@
 using BotGlobal.Communication.Application.MobileNotifications.Push;
+using BotGlobal.Communication.Contracts.MobileNotifications;
 
 namespace BotGlobal.Communication.Application.MobileNotifications.Fcm;
 
@@ -7,7 +8,8 @@ internal sealed record FcmPushMessage(
     string Title,
     string Body,
     IReadOnlyDictionary<string, string>? Data,
-    TimeSpan TimeToLive);
+    TimeSpan TimeToLive,
+    MobileNotificationPriority Priority = MobileNotificationPriority.Normal);
 
 internal sealed record FcmPushSendResult(
     bool Accepted,

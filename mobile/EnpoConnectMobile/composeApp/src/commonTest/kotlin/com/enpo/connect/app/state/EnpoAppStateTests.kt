@@ -20,9 +20,11 @@ import com.enpo.connect.app.pairing.EnpoPairingState
 import com.enpo.connect.app.pairing.EnpoPairingClaimResult
 import com.enpo.connect.app.pairing.EnpoPairingClient
 import com.enpo.connect.app.pairing.EnpoPairingCoordinator
+import com.enpo.connect.app.notifications.EnpoNotificationSound
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 
@@ -120,7 +122,84 @@ class EnpoAppStateTests {
         assertEquals(EnpoDestination.Home, state.navigation.current)
         assertEquals(EnpoPairingState.Paired, state.pairingState.value)
         assertEquals(configuration, state.networkConfiguration)
-        assertFalse(EnpoMigrationBoundaries.NetworkCallsDuringBootstrap)
+        assertFalse(EnpoMigrationBoundaries.NetworkCallsDuringUiBootstrap)
+    }
+
+    @Test
+    fun pairedShellKeepsProfileNotificationsAndSettingsReachable() = runTest {
+        val state = EnpoAppState(
+            deviceInfrastructure = EnpoDeviceInfrastructure {
+                EnpoDeviceBootstrapResult.DeviceCredentialAvailable
+            },
+        )
+        state.bootstrap()
+
+        listOf(
+            EnpoDestination.Profile,
+            EnpoDestination.Notifications,
+            EnpoDestination.Settings,
+        ).forEach { destination ->
+            state.openPairedDestination(destination)
+            assertEquals(destination, state.navigation.current)
+            assertTrue(state.navigation.canNavigateBack)
+            assertTrue(state.navigateBack())
+            assertEquals(EnpoDestination.Home, state.navigation.current)
+        }
+        state.openPairedDestination(EnpoDestination.Home)
+        assertEquals(EnpoDestination.Home, state.navigation.current)
+        assertFalse(state.navigation.canNavigateBack)
+    }
+
+    @Test
+    fun unpairedStateCannotOpenTheAuthenticatedProductShell() = runTest {
+        val state = EnpoAppState()
+        state.bootstrap()
+
+        assertFailsWith<IllegalArgumentException> {
+            state.openPairedDestination(EnpoDestination.Notifications)
+        }
+        assertEquals(EnpoDestination.Pairing, state.navigation.current)
+    }
+
+    @Test
+    fun unpairedPairingActionInvokesTheQrScanner() = runTest {
+        var scanCount = 0
+        val coordinator = EnpoPairingCoordinator(
+            permissions = GrantedCameraPermission,
+            scanner = object : QrScannerCapability {
+                override suspend fun scan(prompt: String): QrScanResult {
+                    scanCount += 1
+                    return QrScanResult.Recognized("A".repeat(43))
+                }
+            },
+            client = EnpoPairingClient {
+                EnpoPairingClaimResult.Success(MobileDeviceCredential("device", "credential"))
+            },
+            credentialVault = InMemoryMobileDeviceCredentialVault(),
+        )
+        val state = EnpoAppState(pairingCoordinator = coordinator)
+        state.bootstrap()
+
+        state.startPairing("scan")
+
+        assertEquals(1, scanCount)
+        assertEquals(EnpoDestination.PairingSuccess, state.navigation.current)
+    }
+
+    @Test
+    fun notificationPreferencesUseLegacyKeysAndSixEnpoSoundChoices() {
+        val preferences = InMemoryPreferenceStore()
+        val state = EnpoAppState(preferences)
+
+        state.setNotificationsEnabled(false)
+        state.selectNotificationSound(EnpoNotificationSound.Chime)
+
+        assertFalse(state.notificationsEnabled.value)
+        assertEquals(EnpoNotificationSound.Chime, state.notificationSound.value)
+        assertEquals(false, preferences.boolean(EnpoLegacyStorageCompatibility.NotificationsEnabledPreferenceKey))
+        assertEquals("chime", preferences.string(EnpoLegacyStorageCompatibility.NotificationSoundPreferenceKey))
+        assertEquals("", preferences.string(EnpoLegacyStorageCompatibility.DeviceNotificationSoundUriPreferenceKey))
+        assertEquals(6, EnpoNotificationSound.entries.size)
     }
 
     @Test

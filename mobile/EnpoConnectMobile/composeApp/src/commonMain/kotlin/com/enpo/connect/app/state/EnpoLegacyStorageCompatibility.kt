@@ -10,6 +10,10 @@ object EnpoLegacyStorageCompatibility {
     const val LanguagePreferenceKey = "preferred_language"
     const val ThemePreferenceKey = "preferred_theme"
     const val AppProtectionPreferenceKey = "app_protection_enabled"
+    const val NotificationsEnabledPreferenceKey = "notifications_enabled"
+    const val NotificationSoundPreferenceKey = "notification_sound"
+    const val DeviceNotificationSoundUriPreferenceKey = "device_notification_sound_uri"
+    const val NotificationPermissionRequestedPreferenceKey = "notification_permission_requested"
 
     const val InstallationPreferencesFile = "enpo_connect_installation"
     const val InstallationIdKey = "installation_id"
@@ -27,8 +31,8 @@ object EnpoReleaseIdentity {
 }
 
 object EnpoMigrationBoundaries {
-    const val FirebaseEnabled = false
+    const val FirebaseEnabled = true
     const val PairingEnabled = true
-    const val NotificationsEnabled = false
-    const val NetworkCallsDuringBootstrap = false
+    const val NotificationsEnabled = true
+    const val NetworkCallsDuringUiBootstrap = false
 }

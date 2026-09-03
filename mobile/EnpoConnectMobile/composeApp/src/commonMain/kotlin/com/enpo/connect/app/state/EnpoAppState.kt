@@ -10,6 +10,7 @@ import com.botglobal.mobile.platform.startup.StartupOrchestrator
 import com.botglobal.mobile.platform.startup.StartupStage
 import com.botglobal.mobile.platform.startup.StartupStep
 import com.enpo.connect.app.network.EnpoNetworkConfiguration
+import com.enpo.connect.app.notifications.EnpoNotificationSound
 import com.enpo.connect.app.pairing.EnpoPairingCoordinator
 import com.enpo.connect.app.pairing.EnpoPairingState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,9 +21,14 @@ enum class EnpoDestination {
     Pairing,
     PairingSuccess,
     Home,
+    Notifications,
+    NotificationSettings,
+    Profile,
     Settings,
     Language,
     Theme,
+    DeviceStatus,
+    PairingInfo,
     About,
 }
 
@@ -49,6 +55,18 @@ class EnpoAppState(
     val bootstrapState: StateFlow<EnpoBootstrapState> = mutableBootstrapState.asStateFlow()
 
     private var bootstrapComplete = false
+    private val mutableSelectedNotificationId = MutableStateFlow<String?>(null)
+    val selectedNotificationId: StateFlow<String?> = mutableSelectedNotificationId.asStateFlow()
+    private val mutableNotificationsEnabled = MutableStateFlow(
+        preferences.boolean(EnpoLegacyStorageCompatibility.NotificationsEnabledPreferenceKey) != false,
+    )
+    val notificationsEnabled: StateFlow<Boolean> = mutableNotificationsEnabled.asStateFlow()
+    private val mutableNotificationSound = MutableStateFlow(
+        EnpoNotificationSound.fromStorage(
+            preferences.string(EnpoLegacyStorageCompatibility.NotificationSoundPreferenceKey),
+        ),
+    )
+    val notificationSound: StateFlow<EnpoNotificationSound> = mutableNotificationSound.asStateFlow()
 
     suspend fun bootstrap() {
         if (bootstrapComplete) return
@@ -107,6 +125,34 @@ class EnpoAppState(
         navigation.push(destination)
     }
 
+    fun openNotifications() {
+        mutableSelectedNotificationId.value = null
+        open(EnpoDestination.Notifications)
+    }
+
+    fun openPairedDestination(destination: EnpoDestination) {
+        require(destination in PairedDestinations) { "Destination is not part of the paired shell." }
+        require(bootstrapState.value == EnpoBootstrapState.DeviceCredentialAvailable) {
+            "Paired destinations require a readable device credential."
+        }
+        mutableSelectedNotificationId.value = null
+        if (navigation.current != destination) {
+            if (destination == EnpoDestination.Home) navigation.reset(destination)
+            else navigation.push(destination)
+        }
+    }
+
+    fun openNotification(id: String) {
+        mutableSelectedNotificationId.value = id
+        if (navigation.current != EnpoDestination.Notifications) {
+            open(EnpoDestination.Notifications)
+        }
+    }
+
+    fun closeNotificationDetail() {
+        mutableSelectedNotificationId.value = null
+    }
+
     fun navigateBack(): Boolean = navigation.navigateBack()
 
     fun selectLanguage(languageTag: String) {
@@ -124,6 +170,17 @@ class EnpoAppState(
             EnpoLegacyStorageCompatibility.ThemePreferenceKey,
             preference.toLegacyValue(),
         )
+    }
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        mutableNotificationsEnabled.value = enabled
+        preferences.putBoolean(EnpoLegacyStorageCompatibility.NotificationsEnabledPreferenceKey, enabled)
+    }
+
+    fun selectNotificationSound(sound: EnpoNotificationSound) {
+        mutableNotificationSound.value = sound
+        preferences.putString(EnpoLegacyStorageCompatibility.NotificationSoundPreferenceKey, sound.storageKey)
+        preferences.putString(EnpoLegacyStorageCompatibility.DeviceNotificationSoundUriPreferenceKey, "")
     }
 
     private fun restoredLanguageTag(): String =
@@ -158,6 +215,12 @@ class EnpoAppState(
             EnpoDestination.Home,
             EnpoDestination.Pairing,
             EnpoDestination.PairingSuccess,
+        )
+        private val PairedDestinations = setOf(
+            EnpoDestination.Home,
+            EnpoDestination.Notifications,
+            EnpoDestination.Profile,
+            EnpoDestination.Settings,
         )
     }
 }

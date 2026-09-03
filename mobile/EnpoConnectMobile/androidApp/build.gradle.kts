@@ -1,7 +1,12 @@
 import java.util.Properties
+import java.security.MessageDigest
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+fun File.sha256(): String = MessageDigest.getInstance("SHA-256")
+    .digest(readBytes())
+    .joinToString("") { byte -> "%02x".format(byte) }
 
 val enpoProductionPublicBaseUrl = "https://bgapi.challengershoes.com"
 val enpoDebugPublicBaseUrl = providers.gradleProperty("enpoDebugPublicBaseUrl")
@@ -30,10 +35,12 @@ check(enpoSigningValues.none { it != null } || enpoSigningConfigured) {
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.googleServices)
 }
 
 dependencies {
     implementation(projects.enpoConnectMobile.composeApp)
+    implementation(projects.firebaseMessaging)
     implementation(libs.androidx.activity.compose)
     implementation(libs.compose.uiToolingPreview)
     implementation(libs.zxing.core.api23)
@@ -104,6 +111,55 @@ tasks.register("verifyEnpoMigrationIdentity") {
     }
 }
 
+tasks.register("verifyEnpoFirebaseConfiguration") {
+    group = "verification"
+    description = "Requires the locally or CI-provisioned ENPO Firebase configuration."
+    doLast {
+        val configuration = file("google-services.json")
+        check(configuration.exists()) {
+            "Provision EnpoConnectMobile/androidApp/google-services.json from the ENPO Firebase project."
+        }
+        val configurationText = configuration.readText()
+        check("\"package_name\": \"com.enpo.connect\"" in configurationText) {
+            "The provisioned Firebase configuration does not target com.enpo.connect."
+        }
+        check("com.botglobal.nqrb" !in configurationText) {
+            "The ENPO Android module must not use the NQRB Firebase configuration."
+        }
+    }
+}
+
+tasks.register("verifyEnpoProductBranding") {
+    group = "verification"
+    description = "Verifies the authoritative ENPO launcher and product artwork."
+    doLast {
+        val expectedAssets = mapOf(
+            file("src/main/res/drawable/connect_launcher_mark.png") to
+                "51a9586ee94592a95ea95405d97ea7c49d4e6f6b50af557e99151cc365516fb6",
+            file("../composeApp/src/commonMain/composeResources/drawable/connect_logo_dark.png") to
+                "8a8e3ac2f7cbc8302c926665d66c7e711f5202dcd9673c7ad61c353688ff7b45",
+            file("../composeApp/src/commonMain/composeResources/drawable/connect_logo_light.png") to
+                "05468c71bf0b04ad303c0359666155341e844084aa11ee44a19fd4ee439fe0d3",
+            file("../composeApp/src/commonMain/composeResources/drawable/organization_logo_dark.png") to
+                "8ce02296b054a855f399b42afbe8d03b1726f59e1eecd74247ccc705e0797c33",
+            file("../composeApp/src/commonMain/composeResources/drawable/organization_logo_light.png") to
+                "fdf874799bc43e24881994db6db932db8457ce7c3eae150c7e77622d6fbcc946",
+            file("../composeApp/src/commonMain/composeResources/drawable/splash_cinematic_background.png") to
+                "c6ffe94b366977223b27d3ec06701aab99f051ce4fbeba21067053c7ec6869c1",
+        )
+        expectedAssets.forEach { (asset, expectedHash) ->
+            check(asset.exists() && asset.sha256() == expectedHash) {
+                "ENPO product artwork is missing or differs from the authoritative legacy asset: ${asset.name}"
+            }
+        }
+        val manifest = file("src/main/AndroidManifest.xml").readText()
+        check("android:icon=\"@mipmap/ic_launcher\"" in manifest)
+        check("android:roundIcon=\"@mipmap/ic_launcher_round\"" in manifest)
+    }
+}
+
 tasks.named("preBuild").configure {
     dependsOn("verifyEnpoMigrationIdentity")
+    dependsOn("verifyEnpoFirebaseConfiguration")
+    dependsOn("verifyEnpoProductBranding")
 }

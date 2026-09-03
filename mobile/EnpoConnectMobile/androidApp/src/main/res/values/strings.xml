@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">ENPO Connect</string>
+    <string name="notification_channel_name">ENPO Connect</string>
+    <string name="notification_channel_description">ENPO Connect notifications</string>
 </resources>

@@ -113,7 +113,8 @@ internal sealed class CampaignMobileNotificationTransport(
                     request.TitleAr,
                     request.BodyAr,
                     pushData,
-                    request.TimeToLive),
+                    request.TimeToLive,
+                    priority),
                 cancellationToken);
 
             if (pushResult.InvalidatesDestination)

@@ -73,7 +73,8 @@ internal sealed class CompositeMobileNotificationDelivery(
                             Math.Clamp(
                                 pushOptions.Value.DefaultTimeToLiveDays,
                                 1,
-                                28))),
+                                28)),
+                        notification.Priority),
                     cancellationToken);
 
             if (pushResult.Kind

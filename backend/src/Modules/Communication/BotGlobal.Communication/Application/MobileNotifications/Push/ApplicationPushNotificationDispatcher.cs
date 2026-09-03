@@ -1,4 +1,5 @@
 using BotGlobal.Communication.Application.MobileNotifications.Fcm;
+using BotGlobal.Communication.Contracts.MobileNotifications;
 using BotGlobal.Contracts.Notifications;
 using FirebaseAdmin.Messaging;
 
@@ -22,7 +23,8 @@ internal sealed record ApplicationPushMessage(
     string Title,
     string Body,
     IReadOnlyDictionary<string, string> Data,
-    TimeSpan TimeToLive);
+    TimeSpan TimeToLive,
+    MobileNotificationPriority Priority = MobileNotificationPriority.Normal);
 
 internal sealed record ApplicationPushDispatchResult(
     ApplicationPushDispatchKind Kind,
@@ -88,7 +90,8 @@ internal sealed class ApplicationPushNotificationDispatcher(
                     message.Title,
                     message.Body,
                     message.Data,
-                    message.TimeToLive),
+                    message.TimeToLive,
+                    message.Priority),
                 cancellationToken);
 
             if (result.Accepted)

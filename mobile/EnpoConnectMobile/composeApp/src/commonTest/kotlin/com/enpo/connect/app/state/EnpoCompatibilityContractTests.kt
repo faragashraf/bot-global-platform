@@ -19,6 +19,12 @@ class EnpoCompatibilityContractTests {
         assertEquals("preferred_language", EnpoLegacyStorageCompatibility.LanguagePreferenceKey)
         assertEquals("preferred_theme", EnpoLegacyStorageCompatibility.ThemePreferenceKey)
         assertEquals("app_protection_enabled", EnpoLegacyStorageCompatibility.AppProtectionPreferenceKey)
+        assertEquals("notifications_enabled", EnpoLegacyStorageCompatibility.NotificationsEnabledPreferenceKey)
+        assertEquals("notification_sound", EnpoLegacyStorageCompatibility.NotificationSoundPreferenceKey)
+        assertEquals(
+            "device_notification_sound_uri",
+            EnpoLegacyStorageCompatibility.DeviceNotificationSoundUriPreferenceKey,
+        )
         assertEquals("enpo_connect_installation", EnpoLegacyStorageCompatibility.InstallationPreferencesFile)
         assertEquals("installation_id", EnpoLegacyStorageCompatibility.InstallationIdKey)
         assertEquals("enpo_connect_mobile_device", EnpoLegacyStorageCompatibility.DevicePreferencesFile)
@@ -29,11 +35,11 @@ class EnpoCompatibilityContractTests {
     }
 
     @Test
-    fun sliceThreeEnablesOnlyPairingAndKeepsBootstrapOffline() {
-        assertFalse(EnpoMigrationBoundaries.FirebaseEnabled)
-        assertFalse(EnpoMigrationBoundaries.NotificationsEnabled)
+    fun sliceFourEnablesPushAfterPairingAndKeepsUiBootstrapOffline() {
+        assertTrue(EnpoMigrationBoundaries.FirebaseEnabled)
+        assertTrue(EnpoMigrationBoundaries.NotificationsEnabled)
         assertTrue(EnpoMigrationBoundaries.PairingEnabled)
-        assertFalse(EnpoMigrationBoundaries.NetworkCallsDuringBootstrap)
+        assertFalse(EnpoMigrationBoundaries.NetworkCallsDuringUiBootstrap)
     }
 
     @Test

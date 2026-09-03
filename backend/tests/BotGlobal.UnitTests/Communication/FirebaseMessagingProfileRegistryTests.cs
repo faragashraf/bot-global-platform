@@ -1,5 +1,6 @@
 using BotGlobal.Communication.Application.MobileNotifications.Fcm;
 using BotGlobal.Communication.Application.MobileNotifications.Push;
+using BotGlobal.Communication.Contracts.MobileNotifications;
 using BotGlobal.Contracts.Notifications;
 using FirebaseAdmin.Messaging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -283,6 +284,71 @@ public sealed class FirebaseMessagingProfileRegistryTests
         Assert.Equal(0, enpoClient.Calls);
     }
 
+    [Fact]
+    public async Task Sender_maps_normal_semantic_priority_to_normal_android_transport()
+    {
+        var enpo = Guid.NewGuid();
+        var enpoClient = new RecordingMessagingClient("enpo-message");
+        using var registry = Registry(
+            Profile(enpo, "enpo-firebase", "enpo-project", enpoClient));
+        var sender = new FirebaseAdminFcmPushSender(
+            registry,
+            NullLogger<FirebaseAdminFcmPushSender>.Instance);
+
+        var result = await sender.SendAsync(
+            Route(enpo, "enpo-firebase", "enpo-project", "com.enpo.connect"),
+            PushMessage(MobileNotificationPriority.Normal),
+            CancellationToken.None);
+
+        Assert.True(result.Accepted);
+        var message = Assert.IsType<Message>(enpoClient.LastMessage);
+        Assert.Equal(Priority.Normal, message.Android!.Priority);
+        Assert.Equal("com.enpo.connect", message.Android.RestrictedPackageName);
+        Assert.Equal("test", message.Data["type"]);
+        Assert.Equal("Title", message.Data["title"]);
+        Assert.Equal("Body", message.Data["body"]);
+    }
+
+    [Fact]
+    public async Task Sender_maps_high_semantic_priority_to_high_android_transport()
+    {
+        var applicationId = Guid.NewGuid();
+        var client = new RecordingMessagingClient("message");
+        using var registry = Registry(
+            Profile(applicationId, "nqrb-firebase", "nqrb-project", client));
+        var sender = new FirebaseAdminFcmPushSender(
+            registry,
+            NullLogger<FirebaseAdminFcmPushSender>.Instance);
+
+        var result = await sender.SendAsync(
+            Route(applicationId, "nqrb-firebase", "nqrb-project", "com.botglobal.nqrb"),
+            PushMessage(MobileNotificationPriority.High),
+            CancellationToken.None);
+
+        Assert.True(result.Accepted);
+        Assert.Equal(Priority.High, client.LastMessage!.Android!.Priority);
+    }
+
+    [Fact]
+    public async Task Sender_defaults_omitted_semantic_priority_to_normal_android_transport()
+    {
+        var applicationId = Guid.NewGuid();
+        var client = new RecordingMessagingClient("message");
+        using var registry = Registry(
+            Profile(applicationId, "firebase", "project", client));
+        var sender = new FirebaseAdminFcmPushSender(
+            registry,
+            NullLogger<FirebaseAdminFcmPushSender>.Instance);
+
+        var result = await sender.SendAsync(
+            Route(applicationId, "firebase", "project", "com.botglobal.app"),
+            PushMessageWithoutPriority(),
+            CancellationToken.None);
+
+        Assert.True(result.Accepted);
+        Assert.Equal(Priority.Normal, client.LastMessage!.Android!.Priority);
+    }
+
     private static RuntimeFcmOptions Options(params FcmProfileOptions[] profiles) =>
         new()
         {
@@ -336,7 +402,20 @@ public sealed class FirebaseMessagingProfileRegistryTests
             packageName,
             null);
 
-    private static FcmPushMessage PushMessage() =>
+    private static FcmPushMessage PushMessage(
+        MobileNotificationPriority priority = MobileNotificationPriority.Normal) =>
+        new(
+            "test-registration-token",
+            "Title",
+            "Body",
+            new Dictionary<string, string>
+            {
+                ["type"] = "test"
+            },
+            TimeSpan.FromMinutes(5),
+            priority);
+
+    private static FcmPushMessage PushMessageWithoutPriority() =>
         new(
             "test-registration-token",
             "Title",
@@ -351,12 +430,14 @@ public sealed class FirebaseMessagingProfileRegistryTests
         : IFirebaseMessagingClient
     {
         public int Calls { get; private set; }
+        public Message? LastMessage { get; private set; }
 
         public Task<string> SendAsync(
             Message message,
             CancellationToken cancellationToken)
         {
             Calls++;
+            LastMessage = message;
             return Task.FromResult(messageId);
         }
     }

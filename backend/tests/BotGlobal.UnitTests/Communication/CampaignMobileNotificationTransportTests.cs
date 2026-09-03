@@ -1,5 +1,6 @@
 using BotGlobal.Communication.Application.MobileNotifications;
 using BotGlobal.Communication.Application.MobileNotifications.Push;
+using BotGlobal.Communication.Contracts.MobileNotifications;
 using BotGlobal.Communication.Hubs;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Notifications;
@@ -58,6 +59,31 @@ public sealed class CampaignMobileNotificationTransportTests
         Assert.Equal(
             request.DeliveryAttemptId.ToString("N"),
             push.LastMessage.Data["deliveryAttemptId"]);
+        Assert.Equal(MobileNotificationPriority.Normal, push.LastMessage.Priority);
+    }
+
+    [Fact]
+    public async Task High_priority_campaign_preserves_semantic_priority_for_provider_dispatch()
+    {
+        var deviceId = Guid.NewGuid();
+        var push = new RecordingPushDispatcher();
+        var transport = CreateTransport(
+            new MobileNotificationConnectionRegistry(),
+            new RecordingClientProxy(),
+            new PushResolver(new MobilePushDestination(deviceId, "fcm", "test-token")),
+            new DeviceStateReader(true, false),
+            push);
+
+        var request = Request(deviceId) with
+        {
+            Priority = (int)MobileNotificationPriority.High
+        };
+
+        var outcome = await transport.DispatchAsync(request, CancellationToken.None);
+
+        Assert.Equal(MobileNotificationTransportOutcomeKind.FcmAccepted, outcome.Kind);
+        Assert.Equal(MobileNotificationPriority.High, push.LastMessage!.Priority);
+        Assert.Equal("High", push.LastMessage.Data["priority"]);
     }
 
     [Fact]
