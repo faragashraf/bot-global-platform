@@ -113,4 +113,26 @@ public sealed class PairingPersistenceModelTests
             nameof(MobilePushRegistration.MobileDeviceId),
             Assert.Single(foreignKey.Properties).Name);
     }
+
+    [Fact]
+    public void ProfileProjectionHasApplicationSubjectUniquenessAndConcurrency()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(MobileProfileSnapshot))!;
+        var identity = entity.GetIndexes().Single(index =>
+            index.GetDatabaseName()
+            == "UX_MobileProfileSnapshots_PlatformClientId_ExternalSubjectId");
+
+        Assert.True(identity.IsUnique);
+        Assert.Equal(
+            [
+                nameof(MobileProfileSnapshot.PlatformClientId),
+                nameof(MobileProfileSnapshot.ExternalSubjectId)
+            ],
+            identity.Properties.Select(property => property.Name));
+        Assert.True(
+            entity.FindProperty(nameof(MobileProfileSnapshot.RowVersion))!
+                .IsConcurrencyToken);
+        Assert.Empty(entity.GetForeignKeys());
+    }
 }

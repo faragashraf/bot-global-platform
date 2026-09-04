@@ -4,6 +4,7 @@ using BotGlobal.Pairing.Infrastructure.Persistence;
 using BotGlobal.Pairing.Security;
 using BotGlobal.Pairing.Application.MobileDevices;
 using BotGlobal.Contracts.Notifications;
+using BotGlobal.Pairing.Application.Profiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,6 +49,8 @@ public sealed class PairingRuntimeRegistrationTests
             scope.ServiceProvider.GetRequiredService<IPairingChallengeService>());
         Assert.NotNull(
             scope.ServiceProvider.GetRequiredService<IMobileDeviceEnrollmentService>());
+        Assert.NotNull(
+            scope.ServiceProvider.GetRequiredService<IMobileProfileSnapshotService>());
 
         var connectionString =
             scope.ServiceProvider

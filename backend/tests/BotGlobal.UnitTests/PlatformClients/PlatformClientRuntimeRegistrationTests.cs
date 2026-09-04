@@ -3,6 +3,7 @@ using BotGlobal.PlatformClients.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using BotGlobal.PlatformClients.Application.Capabilities;
 
 namespace BotGlobal.UnitTests.PlatformClients;
 
@@ -64,6 +65,25 @@ public sealed class PlatformClientRuntimeRegistrationTests
         Assert.NotNull(
             scope.ServiceProvider
                 .GetRequiredService<PlatformClientsDbContext>());
+    }
+
+    [Fact]
+    public void CapabilityCatalogIncludesProductNeutralProfilePublishing()
+    {
+        var services = new ServiceCollection();
+        services.AddPlatformClientsModule(BuildConfiguration());
+
+        using var provider = services.BuildServiceProvider();
+        var catalog = provider.GetRequiredService<IPlatformCapabilityCatalog>();
+        var capability = Assert.Single(
+            catalog.GetAll(),
+            item => item.Capability == "profiles:publish");
+
+        Assert.Equal(PlatformCapabilityImpact.Medium, capability.Impact);
+        Assert.DoesNotContain(
+            "ENPO",
+            capability.Description,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static IConfiguration BuildConfiguration()

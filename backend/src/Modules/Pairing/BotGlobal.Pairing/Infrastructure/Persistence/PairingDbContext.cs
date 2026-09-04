@@ -17,6 +17,9 @@ public sealed class PairingDbContext(
     public DbSet<MobileDeviceAuditEntry> DeviceAuditEntries =>
         Set<MobileDeviceAuditEntry>();
 
+    public DbSet<MobileProfileSnapshot> ProfileSnapshots =>
+        Set<MobileProfileSnapshot>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(PairingModule.DatabaseSchema);

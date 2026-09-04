@@ -10,4 +10,5 @@ public static class PairingCapabilities
 {
     public const string Create = "pairing:create";
     public const string Status = "pairing:status";
+    public const string PublishProfile = "profiles:publish";
 }

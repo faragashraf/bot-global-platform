@@ -53,6 +53,14 @@ internal sealed class PlatformCapabilityCatalog
                 PlatformCapabilityImpact.High),
 
             new(
+                "profiles:publish",
+                "Publish mobile profile snapshots",
+                "Allows the platform client to publish minimized profile snapshots for its own paired mobile users.",
+                "The client can create and update its paired users' mobile profile projections.",
+                "The client can no longer publish profile changes. Existing projections remain readable by their paired devices.",
+                PlatformCapabilityImpact.Medium),
+
+            new(
                 "platform-clients:probe",
                 "Probe platform authentication",
                 "Allows diagnostic calls used to verify machine authentication and capability authorization.",

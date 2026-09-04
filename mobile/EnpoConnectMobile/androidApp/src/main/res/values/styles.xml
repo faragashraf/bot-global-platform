@@ -1,9 +1,9 @@
 <resources>
     <style name="Theme.EnpoConnect" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowBackground">@color/connect_launcher_background</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:navigationBarColor">#F7F9F8</item>
-        <item name="android:statusBarColor">#F7F9F8</item>
+        <item name="android:windowBackground">@drawable/enpo_launch_window</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/enpo_splash_background</item>
+        <item name="android:statusBarColor">@color/enpo_splash_background</item>
     </style>
 </resources>

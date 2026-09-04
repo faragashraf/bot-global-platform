@@ -42,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +61,10 @@ import com.botglobal.mobile.platform.notifications.SemanticNotificationDestinati
 import com.botglobal.mobile.platform.notifications.isSemanticNotificationId
 import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
 import com.botglobal.mobile.platform.preferences.PreferenceStore
+import com.botglobal.mobile.platform.profile.ProfileController
+import com.botglobal.mobile.platform.profile.ProfileLoadState
+import com.botglobal.mobile.platform.profile.ProfileRepository
+import com.botglobal.mobile.platform.profile.UnavailableProfileRepository
 import com.enpo.connect.app.network.EnpoNetworkConfiguration
 import com.enpo.connect.app.notifications.EnpoNotificationActionHandler
 import com.enpo.connect.app.notifications.EnpoNotificationPermissionRequester
@@ -73,6 +78,9 @@ import com.enpo.connect.app.state.EnpoAppState
 import com.enpo.connect.app.state.EnpoBootstrapState
 import com.enpo.connect.app.state.EnpoDestination
 import com.enpo.connect.app.state.EnpoDeviceInfrastructure
+import com.enpo.connect.app.state.EnpoStartupAnimationSpec
+import com.enpo.connect.app.state.EnpoVisibleLaunchState
+import com.enpo.connect.app.state.synchronizeEnpoProfile
 import com.enpo.connect.app.ui.EnpoBrandHeader
 import com.enpo.connect.app.ui.EnpoNotificationsScreen
 import com.enpo.connect.app.ui.EnpoPairedScreen
@@ -92,6 +100,7 @@ fun EnpoConnectApp(
     deviceInfrastructure: EnpoDeviceInfrastructure = EmptyEnpoDeviceInfrastructure,
     networkConfiguration: EnpoNetworkConfiguration? = null,
     pairingCoordinator: EnpoPairingCoordinator = EnpoPairingCoordinator(),
+    profileRepository: ProfileRepository = UnavailableProfileRepository,
     notificationInbox: NotificationInbox = InMemoryNotificationInbox(),
     notificationId: String? = null,
     onNotificationHandled: () -> Unit = {},
@@ -104,6 +113,7 @@ fun EnpoConnectApp(
     val state = remember(preferences, deviceInfrastructure, networkConfiguration, pairingCoordinator) {
         EnpoAppState(preferences, deviceInfrastructure, networkConfiguration, pairingCoordinator)
     }
+    val profileController = remember(profileRepository) { ProfileController(profileRepository) }
     val locale by state.locale.state.collectAsState()
     val appearance by state.appearance.state.collectAsState()
     val backStack by state.navigation.backStack.collectAsState()
@@ -113,17 +123,29 @@ fun EnpoConnectApp(
     val notificationsEnabled by state.notificationsEnabled.collectAsState()
     val notificationSound by state.notificationSound.collectAsState()
     val notifications by notificationInbox.notifications.collectAsState()
+    val profileState by profileController.state.collectAsState()
     val scope = rememberCoroutineScope()
     val systemIsDark = isSystemInDarkTheme()
-    var splashMinimumElapsed by remember { mutableStateOf(false) }
+    val visibleLaunch = rememberSaveable(saver = EnpoVisibleLaunchState.Saver) {
+        EnpoVisibleLaunchState()
+    }
 
     LaunchedEffect(state) { state.bootstrap() }
-    LaunchedEffect(Unit) {
-        delay(1_600)
-        splashMinimumElapsed = true
+    LaunchedEffect(visibleLaunch) {
+        if (!visibleLaunch.isComplete) {
+            delay(EnpoStartupAnimationSpec.VisibleLaunchDurationMillis)
+            visibleLaunch.complete()
+        }
     }
     LaunchedEffect(systemIsDark) { state.appearance.updateSystemAppearance(systemIsDark) }
-    LaunchedEffect(appearance.resolved) { onResolvedAppearanceChanged(appearance.resolved) }
+    LaunchedEffect(appearance.resolved, visibleLaunch.isComplete) {
+        if (visibleLaunch.isComplete) {
+            onResolvedAppearanceChanged(appearance.resolved)
+        }
+    }
+    LaunchedEffect(bootstrapState) {
+        synchronizeEnpoProfile(bootstrapState, profileController)
+    }
     LaunchedEffect(notificationId, bootstrapState) {
         if (notificationId == null) return@LaunchedEffect
         if (!isSemanticNotificationId(notificationId) ||
@@ -148,7 +170,7 @@ fun EnpoConnectApp(
     CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
         EnpoTheme(appearance.resolved) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                if (bootstrapState == EnpoBootstrapState.Initializing || !splashMinimumElapsed) {
+                if (bootstrapState == EnpoBootstrapState.Initializing || !visibleLaunch.isComplete) {
                     EnpoSplash(strings)
                 } else {
                     EnpoShell(
@@ -164,6 +186,7 @@ fun EnpoConnectApp(
                         notificationSound = notificationSound,
                         notifications = notifications,
                         selectedNotificationId = selectedNotificationId,
+                        profileState = profileState,
                         onOpen = state::open,
                         onOpenPaired = state::openPairedDestination,
                         onOpenNotifications = {
@@ -180,6 +203,7 @@ fun EnpoConnectApp(
                         onAppearance = state::selectAppearance,
                         onNotificationsEnabled = state::setNotificationsEnabled,
                         onNotificationSound = state::selectNotificationSound,
+                        onRetryProfile = { scope.launch { profileController.refresh() } },
                         onStartPairing = {
                             scope.launch {
                                 state.startPairing(strings.scannerPrompt)
@@ -218,6 +242,7 @@ private fun EnpoShell(
     notificationSound: EnpoNotificationSound,
     notifications: List<SemanticNotification>,
     selectedNotificationId: String?,
+    profileState: ProfileLoadState,
     onOpen: (EnpoDestination) -> Unit,
     onOpenPaired: (EnpoDestination) -> Unit,
     onOpenNotifications: () -> Unit,
@@ -231,6 +256,7 @@ private fun EnpoShell(
     onAppearance: (AppearancePreference) -> Unit,
     onNotificationsEnabled: (Boolean) -> Unit,
     onNotificationSound: (EnpoNotificationSound) -> Unit,
+    onRetryProfile: () -> Unit,
     onStartPairing: () -> Unit,
     onEnterPairedShell: () -> Unit,
 ) {
@@ -274,7 +300,13 @@ private fun EnpoShell(
             onBack = onBack,
         )
         EnpoDestination.Profile -> ProfileScreen(
-            strings, unreadCount, openSettings, onOpenNotifications, openProfile,
+            strings,
+            profileState,
+            unreadCount,
+            openSettings,
+            onOpenNotifications,
+            openProfile,
+            onRetryProfile,
         )
         EnpoDestination.Settings -> SettingsScreen(
             strings = strings,
@@ -391,27 +423,89 @@ private fun HomeScreen(
 @Composable
 private fun ProfileScreen(
     strings: EnpoStrings,
+    state: ProfileLoadState,
     unreadCount: Int,
     onSettings: () -> Unit,
     onNotifications: () -> Unit,
     onProfile: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     EnpoPairedScreen(strings, EnpoPairedTab.Profile, unreadCount, onSettings, onNotifications, onProfile) {
         Text(strings.profile, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(28.dp))
-        Surface(
-            Modifier.size(96.dp).align(Alignment.CenterHorizontally),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = .12f),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text("EN", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        when (state) {
+            ProfileLoadState.NotLoaded,
+            ProfileLoadState.Loading,
+            -> Box(
+                Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+
+            is ProfileLoadState.Ready -> {
+                ProfileAvatar(state.snapshot.displayName)
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    state.snapshot.displayName,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                state.snapshot.jobTitle?.let {
+                    Spacer(Modifier.height(22.dp))
+                    ProductCard(strings.jobTitle, it)
+                }
+                state.snapshot.organizationUnit?.let {
+                    Spacer(Modifier.height(12.dp))
+                    ProductCard(strings.organizationUnit, it)
+                }
+                Spacer(Modifier.height(12.dp))
+                ProductCard(strings.deviceState, strings.pairedAndSecure, emphasized = true)
+            }
+
+            ProfileLoadState.NotAvailableYet ->
+                ProductCard(strings.profileUnavailable, strings.profileUnavailableBody)
+
+            ProfileLoadState.AuthenticationRequired -> {
+                ProductCard(strings.profileLoadError, strings.profileAuthenticationRequired)
+                Spacer(Modifier.height(18.dp))
+                Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text(strings.retry) }
+            }
+
+            ProfileLoadState.Error -> {
+                ProductCard(strings.profileLoadError, strings.profileLoadErrorBody)
+                Spacer(Modifier.height(18.dp))
+                Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text(strings.retry) }
             }
         }
-        Spacer(Modifier.height(22.dp))
-        ProductCard(strings.profileUnavailable, strings.profileUnavailableBody)
-        Spacer(Modifier.height(12.dp))
-        ProductCard(strings.deviceState, strings.pairedAndSecure, emphasized = true)
+    }
+}
+
+@Composable
+private fun ColumnScope.ProfileAvatar(displayName: String) {
+    val initials = displayName
+        .split(" ")
+        .filter(String::isNotBlank)
+        .take(2)
+        .mapNotNull { part -> part.firstOrNull()?.uppercaseChar() }
+        .joinToString("")
+        .ifBlank { "EN" }
+
+    Surface(
+        Modifier.size(96.dp).align(Alignment.CenterHorizontally),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primary.copy(alpha = .12f),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                initials,
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }
 

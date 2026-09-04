@@ -210,6 +210,46 @@ public sealed class BackendBoundaryTests
         Assert.Empty(capabilityReferences);
     }
 
+    [Fact]
+    public void Mobile_profile_read_path_has_no_live_upstream_dependency()
+    {
+        var profileDirectory = Path.Combine(
+            ModulesRoot,
+            "Pairing",
+            "BotGlobal.Pairing",
+            "Application",
+            "Profiles");
+        var endpoint = Path.Combine(
+            ModulesRoot,
+            "Pairing",
+            "BotGlobal.Pairing",
+            "Endpoints",
+            "MobileProfileEndpoints.cs");
+        var source = Directory
+            .EnumerateFiles(profileDirectory, "*.cs", SearchOption.AllDirectories)
+            .Append(endpoint)
+            .Select(File.ReadAllText)
+            .ToArray();
+
+        var forbidden = new[]
+        {
+            "HttpClient",
+            "System.Net.Http",
+            "ConnectV2ApiClient",
+            "IConnectV2",
+            "connect-v2"
+        };
+
+        foreach (var token in forbidden)
+        {
+            Assert.DoesNotContain(
+                source,
+                content => content.Contains(
+                    token,
+                    StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
     private static IReadOnlyCollection<string> GetCapabilityModuleProjects()
     {
         return Directory

@@ -30,6 +30,10 @@ class EnpoNetworkConfigurationTests {
             "https://bgapi.challengershoes.com/api/mobile/devices/push-registration",
             configuration.endpoint(EnpoPublicServiceRoute.PushRegistration),
         )
+        assertEquals(
+            "https://bgapi.challengershoes.com/api/mobile/profile",
+            configuration.endpoint(EnpoPublicServiceRoute.Profile),
+        )
     }
 
     @Test

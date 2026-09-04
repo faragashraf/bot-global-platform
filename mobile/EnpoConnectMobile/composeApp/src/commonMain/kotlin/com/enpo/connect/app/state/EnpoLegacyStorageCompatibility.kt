@@ -34,5 +34,6 @@ object EnpoMigrationBoundaries {
     const val FirebaseEnabled = true
     const val PairingEnabled = true
     const val NotificationsEnabled = true
+    const val ProfileProjectionEnabled = true
     const val NetworkCallsDuringUiBootstrap = false
 }

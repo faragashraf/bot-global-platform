@@ -1,11 +1,11 @@
 <resources>
     <style name="Theme.EnpoConnect" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowSplashScreenBackground">@color/connect_launcher_background</item>
+        <item name="android:windowSplashScreenBackground">@color/enpo_splash_background</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/connect_launcher_mark</item>
         <item name="android:windowSplashScreenAnimationDuration">500</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:navigationBarColor">@color/connect_launcher_background</item>
-        <item name="android:statusBarColor">@color/connect_launcher_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/enpo_splash_background</item>
+        <item name="android:statusBarColor">@color/enpo_splash_background</item>
     </style>
 </resources>

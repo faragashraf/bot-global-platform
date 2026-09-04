@@ -28,6 +28,7 @@ import com.botglobal.mobile.platform.preferences.AndroidPreferenceStore
 import com.enpo.connect.app.EnpoConnectApp
 import com.enpo.connect.app.network.EnpoConnectV2PairingApi
 import com.enpo.connect.app.network.EnpoNetworkConfiguration
+import com.enpo.connect.app.network.EnpoProfileApi
 import com.enpo.connect.app.pairing.EnpoPairingCoordinator
 import com.enpo.connect.app.pairing.EnpoPairingDeviceInfo
 import com.enpo.connect.app.notifications.EnpoNotificationActionHandler
@@ -93,7 +94,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        val launchSystemBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
+        enableEdgeToEdge(
+            statusBarStyle = launchSystemBarStyle,
+            navigationBarStyle = launchSystemBarStyle,
+        )
 
         pendingNotificationId.value = intent.getStringExtra(NotificationIdExtra)
         val enpoApplication = application as EnpoApplication
@@ -146,6 +151,11 @@ class MainActivity : ComponentActivity() {
                 deviceInfrastructure = deviceInfrastructure,
                 networkConfiguration = networkConfiguration,
                 pairingCoordinator = pairingCoordinator,
+                profileRepository = EnpoProfileApi(
+                    networkClient,
+                    networkConfiguration,
+                    credentialVault,
+                ),
                 notificationInbox = enpoApplication.notificationInbox,
                 notificationId = pendingNotificationId.value,
                 onNotificationHandled = { pendingNotificationId.value = null },

@@ -11,6 +11,7 @@ using BotGlobal.Pairing.Application.PushRegistrations;
 using BotGlobal.Pairing.Application.MobileDevices;
 using BotGlobal.Contracts.Notifications;
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Pairing.Application.Profiles;
 
 namespace BotGlobal.UnitTests.Pairing;
 
@@ -88,6 +89,52 @@ public sealed class PairingEndpointContractTests
     }
 
     [Fact]
+    public void Profile_publish_requiresDedicatedMachineCapabilityAndRateLimit()
+    {
+        using var app = BuildApp();
+        var endpoint = FindEndpoint(app, "/api/mobile-profile-snapshots");
+
+        AssertCapability(endpoint, PairingCapabilities.PublishProfile);
+        var rateLimit = Assert.Single(
+            endpoint.Metadata.OfType<EnableRateLimitingAttribute>());
+        Assert.Equal(
+            PairingModule.MachineProfilePublishRateLimitPolicy,
+            rateLimit.PolicyName);
+    }
+
+    [Fact]
+    public void MyProfileReadRequiresDeviceIdentityAndAcceptsNoTargetIdentifier()
+    {
+        using var app = BuildApp();
+        var endpoint = FindEndpoint(app, "/api/mobile/profile");
+
+        var policy = Assert.Single(
+            endpoint.Metadata.OfType<AuthorizationPolicy>());
+        Assert.Contains(
+            MobileDeviceAuthenticationDefaults.Scheme,
+            policy.AuthenticationSchemes);
+        Assert.DoesNotContain("{", endpoint.RoutePattern.RawText);
+
+        var properties = typeof(PublishMobileProfileSnapshotRequest)
+            .GetProperties()
+            .Select(property => property.Name)
+            .ToArray();
+        Assert.DoesNotContain("ApplicationId", properties);
+
+        Assert.Equal(
+            [
+                nameof(MobileProfileSnapshotResponse.DisplayName),
+                nameof(MobileProfileSnapshotResponse.JobTitle),
+                nameof(MobileProfileSnapshotResponse.OrganizationUnit),
+                nameof(MobileProfileSnapshotResponse.Version),
+                nameof(MobileProfileSnapshotResponse.UpdatedAtUtc)
+            ],
+            typeof(MobileProfileSnapshotResponse)
+                .GetProperties()
+                .Select(property => property.Name));
+    }
+
+    [Fact]
     public void Machine_authenticated_create_request_accepts_external_subject_identity()
     {
         var properties =
@@ -143,6 +190,7 @@ public sealed class PairingEndpointContractTests
     {
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddScoped<IPairingChallengeService, FakePairingChallengeService>();
+        builder.Services.AddScoped<IMobileProfileSnapshotService, FakeMobileProfileSnapshotService>();
         builder.Services.AddScoped<IMobileDeviceEnrollmentService, FakeMobileDeviceEnrollmentService>();
         builder.Services.AddScoped<
             IMobilePushRegistrationService,
@@ -216,6 +264,25 @@ public sealed class PairingEndpointContractTests
             Guid deviceId,
             CancellationToken cancellationToken)
             => Task.CompletedTask;
+    }
+
+    private sealed class FakeMobileProfileSnapshotService
+        : IMobileProfileSnapshotService
+    {
+        public Task<PublishMobileProfileSnapshotResult> PublishAsync(
+            Guid platformClientId,
+            PublishMobileProfileSnapshotRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(
+                new PublishMobileProfileSnapshotResult(
+                    MobileProfilePublishOutcome.Unchanged,
+                    request.Version));
+
+        public Task<MobileProfileSnapshotResponse?> ReadAsync(
+            Guid platformClientId,
+            string externalSubjectId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<MobileProfileSnapshotResponse?>(null);
     }
 
     private sealed class FakeMobileDeviceEnrollmentService

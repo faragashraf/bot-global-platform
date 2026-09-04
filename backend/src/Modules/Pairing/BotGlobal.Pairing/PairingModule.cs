@@ -17,6 +17,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using BotGlobal.Contracts.Notifications;
 using BotGlobal.Contracts.Calling;
 using BotGlobal.Pairing.Application.Calling;
+using BotGlobal.Pairing.Application.Profiles;
 
 namespace BotGlobal.Pairing;
 
@@ -30,6 +31,8 @@ public static class PairingModule
     public const string MachineStatusRateLimitPolicy = "pairing-machine-status";
     public const string MobileClaimRateLimitPolicy = "pairing-mobile-claim";
     public const string MobileEnrollmentRateLimitPolicy = "pairing-mobile-enrollment";
+    public const string MachineProfilePublishRateLimitPolicy = "profile-machine-publish";
+    public const string MobileProfileReadRateLimitPolicy = "profile-mobile-read";
 
     public static IServiceCollection AddPairingModule(
         this IServiceCollection services,
@@ -68,6 +71,7 @@ public static class PairingModule
 
         services.AddScoped<IMobileDeviceLifecycleService, MobileDeviceLifecycleService>();
         services.AddScoped<IMobileDeviceEnrollmentService, MobileDeviceEnrollmentService>();
+        services.AddScoped<IMobileProfileSnapshotService, MobileProfileSnapshotService>();
         services.AddSingleton<IMobileDeviceCredentialService, MobileDeviceCredentialService>();
         services.AddScoped<
             IMobileDeviceAuthenticator,
@@ -141,6 +145,30 @@ public static class PairingModule
                             QueueLimit = 0,
                             Window = TimeSpan.FromMinutes(1)
                         }));
+
+                options.AddPolicy(
+                    MachineProfilePublishRateLimitPolicy,
+                    context => RateLimitPartition.GetFixedWindowLimiter(
+                        GetRemotePartitionKey(context, "profile-publish"),
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            AutoReplenishment = true,
+                            PermitLimit = 120,
+                            QueueLimit = 0,
+                            Window = TimeSpan.FromMinutes(1)
+                        }));
+
+                options.AddPolicy(
+                    MobileProfileReadRateLimitPolicy,
+                    context => RateLimitPartition.GetFixedWindowLimiter(
+                        GetRemotePartitionKey(context, "profile-read"),
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            AutoReplenishment = true,
+                            PermitLimit = 60,
+                            QueueLimit = 0,
+                            Window = TimeSpan.FromMinutes(1)
+                        }));
             });
 
         return services;
@@ -153,6 +181,7 @@ public static class PairingModule
         ArgumentNullException.ThrowIfNull(machineAuthorization);
 
         endpoints.MapPairingEndpoints(machineAuthorization);
+        endpoints.MapMobileProfileEndpoints(machineAuthorization);
         endpoints.MapAdminDevicePairingEndpoints();
         return endpoints;
     }

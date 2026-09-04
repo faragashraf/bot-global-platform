@@ -39,6 +39,7 @@ class EnpoCompatibilityContractTests {
         assertTrue(EnpoMigrationBoundaries.FirebaseEnabled)
         assertTrue(EnpoMigrationBoundaries.NotificationsEnabled)
         assertTrue(EnpoMigrationBoundaries.PairingEnabled)
+        assertTrue(EnpoMigrationBoundaries.ProfileProjectionEnabled)
         assertFalse(EnpoMigrationBoundaries.NetworkCallsDuringUiBootstrap)
     }
 
