@@ -1,7 +1,8 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import {
   provideHttpClient,
-  withInterceptors
+  withInterceptors,
+  withNoXsrfProtection
 } from '@angular/common/http';
 import { registerLocaleData } from '@angular/common';
 import localeArEG from '@angular/common/locales/ar-EG';
@@ -17,6 +18,7 @@ import { CATALOG_REPOSITORY } from './features/catalog/services/catalog.reposito
 import { HttpCatalogRepository } from './features/catalog/services/http-catalog.repository';
 
 import { apiBaseUrlInterceptor } from './core/http/api-base-url.interceptor';
+import { browserAntiforgeryInterceptor } from './core/http/browser-antiforgery.interceptor';
 
 registerLocaleData(localeArEG);
 
@@ -24,8 +26,11 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideHttpClient(
+      // The central integration also supports a separately hosted API.
+      withNoXsrfProtection(),
       withInterceptors([
         apiBaseUrlInterceptor,
+        browserAntiforgeryInterceptor,
       ]),
     ),
     provideAnimationsAsync(),

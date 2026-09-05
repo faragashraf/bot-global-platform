@@ -3,6 +3,8 @@ using BotGlobal.Communication.Application.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace BotGlobal.Communication.Endpoints;
 
@@ -15,6 +17,14 @@ public static class CommunicationTestEndpoints
     public static IEndpointRouteBuilder MapCommunicationTestEndpoints(
         this IEndpointRouteBuilder endpoints)
     {
+        // This bypasses normal recipient policy solely to verify local realtime
+        // transport. Never expose it in Production, Staging, or an unknown host.
+        if (!endpoints.ServiceProvider.GetRequiredService<IHostEnvironment>()
+                .IsDevelopment())
+        {
+            return endpoints;
+        }
+
         var group = endpoints
             .MapGroup("/api/communication/test")
             .RequireAuthorization()

@@ -147,8 +147,10 @@ capability. `CommunicationHub` does not own EF entities or database behavior.
 
 ## Realtime transport verification endpoint
 
-A temporary authenticated HTTP endpoint is available for end-to-end transport
-verification:
+A temporary authenticated HTTP endpoint is available **only in Development**
+for local end-to-end transport verification. It is not mapped in Production,
+Staging, or other environments. Cookie-authenticated requests also require the
+platform antiforgery proof:
 
 ```text
 POST /api/communication/test/send-to-user

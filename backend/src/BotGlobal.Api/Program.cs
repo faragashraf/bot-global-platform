@@ -1,4 +1,5 @@
 using BotGlobal.Catalog;
+using BotGlobal.Api.Security;
 using BotGlobal.Catalog.Endpoints;
 using BotGlobal.Calling;
 using BotGlobal.Communication;
@@ -65,11 +66,7 @@ builder.Services.AddCors(options =>
         });
 });
 
-builder.Services.ConfigureApplicationCookie(options =>
-{
-    options.Cookie.SameSite = SameSiteMode.None;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-});
+builder.Services.AddPlatformHttpSecurity();
 
 var app = builder.Build();
 
@@ -89,7 +86,9 @@ app.UseCors(FrontendCorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
+app.UsePlatformHttpSecurity();
 
+app.MapPlatformHttpSecurity();
 app.MapControllers();
 app.MapCatalogEndpoints();
 app.MapAdminCatalogEndpoints();
