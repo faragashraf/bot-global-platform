@@ -17,7 +17,10 @@ public sealed class NotificationDeliveryOutboxMigrationTests
     [Fact]
     public void Forward_sql_backfills_a_deterministic_application_campaign_device_key()
     {
-        var sql = ForwardSql();
+        // The forward backfill is now a constant EXEC payload. Unescape its
+        // string literals for these existing content checks; compilation
+        // boundaries and expression semantics are tested with ScriptDom.
+        var sql = ForwardSql().Replace("''", "'", StringComparison.Ordinal);
 
         Assert.Contains(
             "LOWER(REPLACE(CONVERT(varchar(36), campaign.[PlatformClientId]), '-', ''))",

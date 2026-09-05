@@ -11,6 +11,10 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // EF owns the transaction. Generated scripts also need to abort it
+            // on a backfill/constraint error rather than continue to history.
+            migrationBuilder.Sql("SET XACT_ABORT ON;");
+
             migrationBuilder.DropCheckConstraint(
                 name: "CK_NotificationCampaigns_Status",
                 schema: "notifications",
@@ -42,7 +46,7 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                 maxLength: 100,
                 nullable: true);
 
-            migrationBuilder.Sql(
+            migrationBuilder.Sql(DeferCompilation(
                 """
                 UPDATE recipient
                 SET [DeliveryKey] =
@@ -52,7 +56,7 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                 FROM [notifications].[NotificationRecipients] AS recipient
                 INNER JOIN [notifications].[NotificationCampaigns] AS campaign
                     ON campaign.[Id] = recipient.[CampaignId];
-                """);
+                """));
 
             migrationBuilder.AlterColumn<string>(
                 name: "DeliveryKey",
@@ -106,7 +110,10 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
-            migrationBuilder.Sql(
+            // Reconstruct one latest-known result, not the complete attempt
+            // history. The new IDs are synthetic correlation identifiers;
+            // they do not recover historical lease ownership or provider IDs.
+            migrationBuilder.Sql(DeferCompilation(
                 """
                 UPDATE [notifications].[NotificationRecipients]
                 SET [AttemptCount] = CASE
@@ -152,7 +159,7 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                     ON campaign.[Id] = recipient.[CampaignId]
                 WHERE recipient.[CurrentAttemptId] IS NOT NULL
                     AND recipient.[Status] IN (2, 3, 4, 5, 6);
-                """);
+                """));
 
             migrationBuilder.AddCheckConstraint(
                 name: "CK_NotificationCampaigns_Status",
@@ -160,13 +167,13 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                 table: "NotificationCampaigns",
                 sql: "[Status] BETWEEN 1 AND 8");
 
-            migrationBuilder.CreateIndex(
-                name: "UX_NotificationRecipients_CurrentAttempt",
-                schema: "notifications",
-                table: "NotificationRecipients",
-                column: "CurrentAttemptId",
-                unique: true,
-                filter: "[CurrentAttemptId] IS NOT NULL");
+            // The filtered predicate also binds the newly introduced column.
+            migrationBuilder.Sql(DeferCompilation(
+                """
+                CREATE UNIQUE INDEX [UX_NotificationRecipients_CurrentAttempt]
+                ON [notifications].[NotificationRecipients] ([CurrentAttemptId])
+                WHERE [CurrentAttemptId] IS NOT NULL;
+                """));
 
             migrationBuilder.CreateIndex(
                 name: "UX_NotificationRecipients_DeliveryKey",
@@ -212,6 +219,12 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                 columns: new[] { "NotificationRecipientId", "AttemptNumber" },
                 unique: true);
         }
+
+        // GenerateScript can combine EF commands into one SQL Server batch.
+        // Constant dynamic SQL binds dependent expressions only after the
+        // preceding DDL has run, while retaining EF's ambient transaction.
+        private static string DeferCompilation(string sql) =>
+            $"EXEC(N'{sql.Replace("'", "''", StringComparison.Ordinal)}');";
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
