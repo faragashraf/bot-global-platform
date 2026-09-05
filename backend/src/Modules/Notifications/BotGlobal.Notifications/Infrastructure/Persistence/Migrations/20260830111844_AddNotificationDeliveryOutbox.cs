@@ -182,11 +182,14 @@ namespace BotGlobal.Notifications.Infrastructure.Persistence.Migrations
                 column: "DeliveryKey",
                 unique: true);
 
-            migrationBuilder.AddCheckConstraint(
-                name: "CK_NotificationRecipients_CurrentAttempt",
-                schema: "notifications",
-                table: "NotificationRecipients",
-                sql: "[Status] IN (1, 2, 7, 10) OR [CurrentAttemptId] IS NOT NULL");
+            // CHECK expressions also bind before the batch's ADD COLUMN runs
+            // on an existing table (SQL Server error 207). Defer this predicate.
+            migrationBuilder.Sql(DeferCompilation(
+                """
+                ALTER TABLE [notifications].[NotificationRecipients]
+                ADD CONSTRAINT [CK_NotificationRecipients_CurrentAttempt]
+                CHECK ([Status] IN (1, 2, 7, 10) OR [CurrentAttemptId] IS NOT NULL);
+                """));
 
             migrationBuilder.AddCheckConstraint(
                 name: "CK_NotificationRecipients_NextAttempt",

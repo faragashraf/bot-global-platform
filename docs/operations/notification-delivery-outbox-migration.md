@@ -10,18 +10,44 @@ migration, hand-edit a generated artifact, or reset campaign statuses.
 
 EF executes individual migration commands sequentially inside its transaction.
 The SQL Server script generator can concatenate those commands into one batch.
-The migration therefore uses constant `EXEC(N'...')` payloads for both backfills
-and the filtered current-attempt index. Their dependent expressions compile
-after the new columns exist. Quotes are escaped by the migration; no external
-values enter these payloads.
+The migration therefore uses constant `EXEC(N'...')` payloads for both backfills,
+the filtered current-attempt index, and the current-attempt CHECK constraint.
+Their dependent expressions compile after the new columns exist. Quotes are
+escaped by the migration; no external values enter these payloads.
+
+On SQL Server 2019, an existing table followed by `ADD CurrentAttemptId` and a
+bare `ADD CHECK (... CurrentAttemptId ...)` in one batch fails with Msg 207,
+Level 16, State 1 before the column is added. Delaying the CHECK through EXEC
+succeeds. Creating the table in that same batch can hide this defect through
+deferred binding; a reproduction must initialize the old table in an earlier
+batch. See the [synthetic reproduction](https://dbfiddle.uk/QB3WTaPy) and the
+[remaining DDL binding rehearsal](https://dbfiddle.uk/OD3hTDhi), both on a
+disposable SQL Server 2019 engine. These generic examples contain no application
+schema or data and do not constitute execution of the complete migration.
+
+The binding audit covers all dependencies:
+
+| Dependency | Execution boundary |
+| --- | --- |
+| DeliveryKey UPDATE | Constant EXEC after ADD COLUMN |
+| DeliveryKey default-constraint lookup/drop | Metadata string lookup; dynamic DDL for the discovered constraint |
+| DeliveryKey ALTER COLUMN NOT NULL and ordinary unique index | Ordinary DDL, verified in the synthetic same-batch rehearsal |
+| Attempts table's columns, inline PK/checks, recipient FK | CREATE TABLE definition; referenced recipient Id already exists |
+| CurrentAttemptId UPDATE and attempts INSERT/SELECT | Constant EXEC after both columns and the attempts table exist |
+| CurrentAttemptId filtered index and CHECK | Constant EXEC after ADD COLUMN/backfill |
+| Attempts lookup/recovery/recipient-number indexes | Ordinary DDL after CREATE TABLE, verified in the rehearsal |
+| Replaced status/next-attempt checks | Expressions reference pre-existing columns only |
+| Migration-history INSERT | Pre-existing history table; last operation before commit |
 
 `SET XACT_ABORT ON` makes SQL Server runtime errors abort the transaction. EF
 still owns transaction creation and rollback; no transaction is suppressed or
 nested by the migration. The generated script includes the migration-history
 insert after all schema/backfill/index operations and before its sole commit.
 Scripts must also run in a fresh, dedicated connection with a client that exits
-on every SQL error and closes the connection. This is necessary for compilation
-errors and connection/cancellation failures as well as runtime errors. Never
+on every SQL error and closes the connection. Compilation errors are not covered
+by XACT_ABORT, and a client stop is not a server-side TRY/CATCH. An unchanged
+database after an earlier failure is an observation, not a guarantee for every
+failure. Always verify the outcome using a new read-only connection. Never
 continue a failed script, execute selected statements, or use `--no-transactions`.
 
 Historical semantics are unchanged:
@@ -55,8 +81,8 @@ dotnet ef migrations script \
   --context NotificationsDbContext \
   --project backend/src/Modules/Notifications/BotGlobal.Notifications \
   --startup-project backend/src/Modules/Notifications/BotGlobal.Notifications \
-  --output /tmp/20260830111844_AddNotificationDeliveryOutbox.corrected.sql
-shasum -a 256 /tmp/20260830111844_AddNotificationDeliveryOutbox.corrected.sql
+  --output /tmp/20260830111844_AddNotificationDeliveryOutbox.corrected-v2.sql
+shasum -a 256 /tmp/20260830111844_AddNotificationDeliveryOutbox.corrected-v2.sql
 ```
 
 Record the source revision, EF version, complete SQL review, exact SHA-256,
@@ -111,21 +137,11 @@ apply approval; never use production as a test database.
 1. Reserve one executor and keep every campaign worker paused. Generated SQL
    does not acquire EF's migration lock. Obtain the exact reviewed SHA-256 from
    the approval record; stop if the artifact differs.
-2. Use the approved secret-backed profile in a new `sqlcmd` process/session.
-   Credentials are supplied securely through the existing environment/profile,
-   never echoed, committed, or placed on the command line. For the reviewed
-   sqlcmd client, the required execution behavior is:
-
-   ```sh
-   cd "$BOTGLOBAL_REPO"
-   sqlcmd -b -V 11 -r 1 -x -l 15 -t 120 \
-     -i /tmp/20260830111844_AddNotificationDeliveryOutbox.corrected.sql
-   ```
-
-   Supply the separately approved target/authentication/TLS profile to that
-   invocation. `-b -V 11` stops on SQL errors; `-x` disables script variable
-   expansion. Preserve the script's transaction and `XACT_ABORT ON`. Do not
-   wrap it in another transaction or enable automatic replay.
+2. Use the approved secret-backed profile in a new `sqlcmd` process/session and
+   the protected capture procedure below. Credentials are supplied through the
+   existing environment/profile, never echoed, committed, or placed on the
+   command line. Preserve the approved TLS options, script transaction and
+   `XACT_ABORT ON`. Do not wrap it in another transaction or enable replay.
 3. Any SQL error, nonzero exit, timeout, cancellation, or lost connection stops
    the operation. Close the dedicated connection so an uncommitted transaction
    rolls back. Keep the worker paused. Re-read history and metadata using a new
@@ -146,6 +162,113 @@ apply approval; never use production as a test database.
    - no reconstructed provider message IDs or newly pending historical rows.
 5. A failed verification blocks worker resume and requires review. Do not
    manually alter campaigns, recipients, attempts, or migration history.
+
+### Protected capture for the future approved execution
+
+This procedure is prepared only; it must not run during diagnosis or review.
+Require new approval for the v2 checksum. The earlier artifact/checksum is not
+approval for this version. Reserve one executor and complete every gate above.
+
+For Go sqlcmd 1.9.0, **omit `-r` entirely**, including `-r 0`: that option's
+[error callback](https://github.com/microsoft/go-sqlcmd/blob/v1.9.0/cmd/sqlcmd/sqlcmd.go#L779-L790)
+can bypass the default formatter and print only the message body. The
+[default formatter](https://github.com/microsoft/go-sqlcmd/blob/v1.9.0/pkg/sqlcmd/format.go#L199-L222)
+preserves SQL Server Msg number, Level (severity), State and Line. `-b -V 11`
+stops the client on SQL errors; in this version an exit code of 16 with these
+options denotes SQL Server severity 16, not error number 16. Re-review capture
+behavior if the binary/version changes.
+
+The approved secure loader must already have supplied `SQLCMDSERVER`,
+`SQLCMDDBNAME`, `SQLCMDUSER` and `SQLCMDPASSWORD` to the child environment. Set
+`OUTBOX_APPROVED_SHA256`, `OUTBOX_APPROVED_SERVER` (the expected `@@SERVERNAME`)
+and `OUTBOX_APPROVED_DATABASE` from the separate approval record. Do not place
+credentials in this document or log the environment. `-N -C` below preserves
+the previously reviewed TLS profile; a changed profile needs separate review.
+
+```sh
+cd "$BOTGLOBAL_REPO"
+python3 - <<'PY'
+import datetime, hashlib, json, os, pathlib, re, shutil, subprocess, tempfile
+
+os.umask(0o077)
+sql = pathlib.Path('/tmp/20260830111844_AddNotificationDeliveryOutbox.corrected-v2.sql')
+payload = sql.read_bytes()
+digest = hashlib.sha256(payload).hexdigest()
+if digest != os.environ['OUTBOX_APPROVED_SHA256']:
+    raise SystemExit('STOP: SQL checksum mismatch')
+if os.environ.get('SQLCMDINI'):
+    raise SystemExit('STOP: unexpected SQLCMDINI startup script')
+for name in ('SQLCMDSERVER', 'SQLCMDDBNAME', 'SQLCMDUSER', 'SQLCMDPASSWORD'):
+    if not os.environ.get(name):
+        raise SystemExit('STOP: approved secure profile incomplete')
+binary = shutil.which('sqlcmd')
+if not binary:
+    raise SystemExit('STOP: sqlcmd unavailable')
+
+evidence = pathlib.Path(tempfile.mkdtemp(prefix='notification-outbox-apply-', dir='/tmp'))
+evidence.chmod(0o700)
+def save(name, data):
+    with (evidence / name).open('xb') as handle:
+        handle.write(data)
+    (evidence / name).chmod(0o600)
+
+# Freeze the reviewed bytes for execution and later statement/line correlation.
+save('reviewed.sql', payload)
+save('sql.sha256', (digest + '\n').encode())
+def capture(label, arguments, timeout):
+    record = {'binary': binary, 'arguments': arguments,
+              'startedUtc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'exitCode': None, 'sha256': digest}
+    try:
+        with (evidence / (label + '.stdout')).open('xb') as stdout, \
+             (evidence / (label + '.stderr')).open('xb') as stderr:
+            # Raw bytes go directly to protected files, even on timeout/error.
+            result = subprocess.run([binary, *arguments], stdin=subprocess.DEVNULL,
+                                    stdout=stdout, stderr=stderr, timeout=timeout)
+            record['exitCode'] = result.returncode
+            if result.returncode != 0:
+                raise SystemExit('STOP: ' + label + ' failed; retain both output files')
+    except subprocess.TimeoutExpired:
+        record['timedOut'] = True
+        raise SystemExit('STOP: timeout; no retry; worker remains paused')
+    finally:
+        record['endedUtc'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        save(label + '.json', json.dumps(record, indent=2).encode())
+
+print('Protected evidence directory:', evidence, flush=True)
+capture('version', ['--version'], 10)
+version = (evidence / 'version.stdout').read_text().strip()
+if not re.search(r'^Version: 1\.9\.0$', version, re.MULTILINE):
+    raise SystemExit('STOP: sqlcmd version needs review')
+
+common = ['-N', '-C', '-b', '-V', '11', '-x', '-l', '15', '-w', '65535']
+capture('target', common + ['-t', '30', '-h', '-1', '-y', '0', '-Q',
+        'SELECT @@SERVERNAME AS ServerName, DB_NAME() AS DatabaseName '
+        'FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;'], 50)
+raw = (evidence / 'target.stdout').read_text()
+target = json.JSONDecoder().raw_decode(raw[raw.index('{'):])[0]
+save('target.identity.json', json.dumps(target, indent=2).encode())
+if (target['ServerName'].casefold() != os.environ['OUTBOX_APPROVED_SERVER'].casefold()
+        or target['DatabaseName'] != os.environ['OUTBOX_APPROVED_DATABASE']):
+    raise SystemExit('STOP: target mismatch')
+
+# Exactly one apply process. No loop, fallback, selected fragments or retry.
+capture('apply', common + ['-t', '120', '-i', str(evidence / 'reviewed.sql')], 145)
+print('Client completed; SELECT-only schema/history/backfill verification is still required.')
+PY
+```
+
+All files inherit mode `0600` from the restrictive umask inside the new `0700`
+directory. Preserve both raw streams and each exit record, including after
+timeout/interruption. Do not replace them with regex summaries. Retain any
+unparsed output for authorized review; absence of a parsed Msg is not success.
+Keep this evidence outside Git and do not publish it without redaction.
+
+Use `reviewed.sql` to map outer-batch line numbers. For an error inside EXEC,
+decode that constant payload with ScriptDom and preserve its inner line numbers
+and outer EXEC location. Do not assume an inner Line number is an artifact line
+or guess between multiple possible payloads. The frozen artifact and raw error
+streams must survive even when automated context extraction fails.
 
 ## Resume and observe: separate approval required
 

@@ -60,6 +60,85 @@ public sealed class NotificationOutboxSqlCompilationTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void No_outer_batch_expression_binds_new_schema_before_it_exists(bool idempotent)
+    {
+        var script = Script(idempotent);
+        foreach (var batch in script.Batches)
+        {
+            var addedColumns = Nodes<AlterTableAddTableElementStatement>(batch)
+                .SelectMany(add => add.Definition.ColumnDefinitions)
+                .Select(column => column.ColumnIdentifier.Value)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var createdTables = Nodes<CreateTableStatement>(batch);
+            var createdNames = createdTables.Select(table => table.SchemaObjectName.BaseIdentifier.Value)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // SQL Server 2019 permits ordinary index keys, ALTER COLUMN and
+            // inline CREATE TABLE constraints to use the new schema. Query,
+            // CHECK and filtered-index expressions bind earlier. EXEC strings
+            // are parsed separately below and cannot appear as outer references.
+            var ordinaryIndexes = Nodes<CreateIndexStatement>(batch)
+                .Where(index => index.FilterPredicate is null).ToArray();
+            foreach (var reference in Nodes<ColumnReferenceExpression>(batch)
+                         .Where(column => addedColumns.Contains(Column(column))))
+            {
+                Assert.True(createdTables.Any(table => Contains(table, reference))
+                    || ordinaryIndexes.Any(index => Contains(index, reference)),
+                    $"Outer-batch binding of {Column(reference)} at line {reference.StartLine} requires review/delayed EXEC.");
+            }
+
+            // This also catches INSERT/SELECT/UPDATE against the new attempts
+            // table even when the referenced column has a common name like Id.
+            Assert.DoesNotContain(Nodes<NamedTableReference>(batch), table =>
+                createdNames.Contains(table.SchemaObject.BaseIdentifier.Value));
+        }
+
+        // Audit the boundary ordering as well as the absence of outer bindings.
+        var additions = Nodes<AlterTableAddTableElementStatement>(script)
+            .SelectMany(add => add.Definition.ColumnDefinitions.Select(column =>
+                (Name: column.ColumnIdentifier.Value, Offset: add.StartOffset)))
+            .ToDictionary(column => column.Name, column => column.Offset, StringComparer.OrdinalIgnoreCase);
+        var tables = Nodes<CreateTableStatement>(script).ToDictionary(
+            table => table.SchemaObjectName.BaseIdentifier.Value, table => table.StartOffset,
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var deferred in DeferredStatements(script))
+        {
+            foreach (var reference in Nodes<ColumnReferenceExpression>(deferred.Sql))
+                if (additions.TryGetValue(Column(reference), out var offset))
+                    Assert.True(offset < deferred.Offset);
+            foreach (var reference in Nodes<NamedTableReference>(deferred.Sql))
+                if (tables.TryGetValue(reference.SchemaObject.BaseIdentifier.Value, out var offset))
+                    Assert.True(offset < deferred.Offset);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Current_attempt_check_is_delayed_and_preserves_its_predicate(bool idempotent)
+    {
+        var script = Script(idempotent);
+        Assert.DoesNotContain(Nodes<CheckConstraintDefinition>(script), check =>
+            check.ConstraintIdentifier.Value == "CK_NotificationRecipients_CurrentAttempt");
+        var check = Assert.Single(DeferredStatements(script)
+            .SelectMany(item => Nodes<CheckConstraintDefinition>(item.Sql)), check =>
+                check.ConstraintIdentifier.Value == "CK_NotificationRecipients_CurrentAttempt");
+        Assert.Equal("CK_NotificationRecipients_CurrentAttempt", check.ConstraintIdentifier.Value);
+        var condition = Assert.IsType<BooleanBinaryExpression>(check.CheckCondition);
+        Assert.Equal(BooleanBinaryExpressionType.Or, condition.BinaryExpressionType);
+        var statuses = Assert.IsType<InPredicate>(condition.FirstExpression);
+        Assert.Equal("Status", Column(Assert.IsType<ColumnReferenceExpression>(statuses.Expression)));
+        Assert.False(statuses.NotDefined);
+        Assert.Equal([1, 2, 7, 10], statuses.Values.Select(value =>
+            int.Parse(Assert.IsType<IntegerLiteral>(value).Value, CultureInfo.InvariantCulture)));
+        var pointer = Assert.IsType<BooleanIsNullExpression>(condition.SecondExpression);
+        Assert.True(pointer.IsNot);
+        Assert.Equal("CurrentAttemptId", Column(Assert.IsType<ColumnReferenceExpression>(pointer.Expression)));
+    }
+
+    [Theory]
     [InlineData("ABCDEF01-2345-6789-ABCD-EF0123456789", "01234567-89AB-CDEF-0123-456789ABCDEF", "FEDCBA98-7654-3210-FEDC-BA9876543210")]
     [InlineData("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "FFFFFFFF-EEEE-DDDD-CCCC-BBBBBBBBBBBB", "12345678-ABCD-EF01-2345-6789ABCDEF01")]
     public void Actual_backfill_expression_matches_runtime_delivery_key(string application, string campaign, string device)
@@ -204,7 +283,7 @@ public sealed class NotificationOutboxSqlCompilationTests
 
     private static TSqlScript Parse(string sql)
     {
-        var script = new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(sql), out var errors);
+        var script = new TSql150Parser(initialQuotedIdentifiers: true).Parse(new StringReader(sql), out var errors);
         Assert.Empty(errors);
         return Assert.IsType<TSqlScript>(script);
     }
@@ -222,6 +301,10 @@ public sealed class NotificationOutboxSqlCompilationTests
 
     private static string Column(ColumnReferenceExpression column) => column.MultiPartIdentifier.Identifiers[^1].Value;
     private static string Table(TableReference table) => Assert.IsType<NamedTableReference>(table).SchemaObject.BaseIdentifier.Value;
+
+    private static bool Contains(TSqlFragment parent, TSqlFragment child) =>
+        parent.StartOffset <= child.StartOffset
+        && child.StartOffset + child.FragmentLength <= parent.StartOffset + parent.FragmentLength;
 
     private static List<T> Nodes<T>(TSqlFragment fragment) where T : TSqlFragment
     {
