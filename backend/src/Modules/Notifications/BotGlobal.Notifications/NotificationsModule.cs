@@ -109,6 +109,7 @@ public static class NotificationsModule
             && options.Worker.PollIntervalSeconds >= 1
             && options.Worker.LeaseSeconds >= 10
             && options.Worker.MaxParallelDeliveries is >= 1 and <= 64
+            && options.Retry.MaximumAttempts is >= 1 and <= 100
             && options.Retry.InitialDelaySeconds >= 1
             && options.Retry.MaximumDelayMinutes >= 1;
     }

@@ -11,6 +11,18 @@ namespace BotGlobal.UnitTests.Notifications;
 
 public sealed class NotificationsRuntimeRegistrationTests
 {
+    [Theory]
+    [InlineData("0")]
+    [InlineData("101")]
+    public void Unbounded_or_invalid_retry_budget_is_rejected(string budget)
+    {
+        var services = new ServiceCollection();
+        services.AddNotificationsModule(Configuration(("Notifications:Retry:MaximumAttempts", budget)));
+        using var provider = services.BuildServiceProvider();
+        Assert.Throws<OptionsValidationException>(() =>
+            provider.GetRequiredService<IOptions<NotificationCampaignOptions>>().Value);
+    }
+
     [Fact]
     public void Dedicated_connection_string_is_required()
     {

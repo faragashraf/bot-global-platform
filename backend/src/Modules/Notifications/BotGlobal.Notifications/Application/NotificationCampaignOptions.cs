@@ -22,6 +22,9 @@ public sealed class NotificationWorkerOptions
 
 public sealed class NotificationRetryOptions
 {
+    // Includes the first attempt. With the default backoff, eight attempts
+    // allow about an hour for registration/provider recovery, not 28 days.
+    public int MaximumAttempts { get; init; } = 8;
     public int InitialDelaySeconds { get; init; } = 30;
     public int MaximumDelayMinutes { get; init; } = 60;
 }

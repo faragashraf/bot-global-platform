@@ -123,8 +123,27 @@ internal sealed class CampaignMobileNotificationTransport(
                     request.Application,
                     request.MobileDeviceId,
                     destination.Provider,
+                    destination.RegistrationToken,
                     pushResult.SafeErrorCode ?? "provider-rejected",
                     cancellationToken);
+
+                // A permanent rejection belongs to the attempted destination.
+                // If registration changed during the send, keep the delivery
+                // retryable within its existing budget so the replacement wins.
+                var replacement = await pushDestinations.ResolveActiveAsync(
+                    request.Application,
+                    request.MobileDeviceId,
+                    destination.Provider,
+                    cancellationToken);
+                if (replacement is not null && !string.Equals(
+                        replacement.RegistrationToken, destination.RegistrationToken,
+                        StringComparison.Ordinal))
+                {
+                    return new MobileNotificationTransportOutcome(
+                        MobileNotificationTransportOutcomeKind.TransientFailure,
+                        "destination-replaced",
+                        Transport: "Fcm");
+                }
             }
 
             return pushResult.Kind switch

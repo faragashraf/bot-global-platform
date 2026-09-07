@@ -17,8 +17,7 @@ internal sealed class NotificationCampaignSummaryService(
             .AsNoTracking()
             .Where(campaign =>
                 campaign.Status == NotificationCampaignStatus.Dispatching
-                && dbContext.Recipients.Any(recipient =>
-                    recipient.CampaignId == campaign.Id)
+                && campaign.IsAudienceExpansionComplete
                 && !dbContext.Recipients.Any(recipient =>
                     recipient.CampaignId == campaign.Id
                     && (recipient.Status == NotificationRecipientStatus.Pending
@@ -51,7 +50,10 @@ internal sealed class NotificationCampaignSummaryService(
                 candidate => candidate.Id == campaignId,
                 cancellationToken);
 
-        if (campaign is null || !campaign.IsAudienceExpansionComplete)
+        if (campaign is null || !campaign.IsAudienceExpansionComplete
+            || campaign.Status is NotificationCampaignStatus.Completed
+                or NotificationCampaignStatus.CompletedWithFailures
+                or NotificationCampaignStatus.Failed)
         {
             return;
         }
@@ -71,8 +73,7 @@ internal sealed class NotificationCampaignSummaryService(
                 cancellationToken);
 
         if (counts.Count == 0
-            && campaign.Status == NotificationCampaignStatus.Expired
-            && campaign.AudienceDeviceCount > 0)
+            && campaign.Status == NotificationCampaignStatus.Expired)
         {
             return;
         }
@@ -93,6 +94,14 @@ internal sealed class NotificationCampaignSummaryService(
             now);
 
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        if (counts.Count == 0 && campaign.Status == NotificationCampaignStatus.Completed)
+        {
+            logger?.LogInformation(
+                "Notification campaign completed with an empty audience. ApplicationId={ApplicationId} CampaignId={CampaignId}",
+                campaign.PlatformClientId,
+                campaign.Id);
+        }
 
         logger?.LogInformation(
             "Notification campaign summary projection refreshed. CampaignId={CampaignId} Pending={PendingCount} SignalRDispatched={SignalRDispatchedCount} FcmAccepted={FcmAcceptedCount} FailedOrAmbiguous={FailedCount} Skipped={SkippedCount} Expired={ExpiredCount} CampaignStatus={CampaignStatus}",

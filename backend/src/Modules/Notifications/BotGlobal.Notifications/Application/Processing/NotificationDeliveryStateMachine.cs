@@ -74,6 +74,17 @@ internal static class NotificationDeliveryStateMachine
                 "The delivery attempt is not ready for recipient projection.")
         };
 
+        // Keep the persisted attempt's transport outcome intact. Exhaustion
+        // is a recipient policy decision, also replayed by crash recovery.
+        // Previously scheduled work may get one final attempt after a budget
+        // reduction; a replacement route can still succeed on that attempt.
+        var exhausted = recipientStatus == NotificationRecipientStatus.RetryScheduled
+            && attempt.AttemptNumber >= retry.MaximumAttempts;
+        if (exhausted)
+        {
+            recipientStatus = NotificationRecipientStatus.FailedPermanent;
+        }
+
         DateTimeOffset? nextAttemptAtUtc = recipientStatus
             == NotificationRecipientStatus.RetryScheduled
             ? completedAtUtc + CalculateRetryDelay(
@@ -86,7 +97,7 @@ internal static class NotificationDeliveryStateMachine
             recipientStatus,
             completedAtUtc,
             attempt.Transport,
-            attempt.SafeErrorCode,
+            exhausted ? "retry-budget-exhausted" : attempt.SafeErrorCode,
             nextAttemptAtUtc);
     }
 

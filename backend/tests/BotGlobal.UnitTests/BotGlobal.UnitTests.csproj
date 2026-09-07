@@ -9,6 +9,9 @@
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.10" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
+    <!-- Use the maintained native bundle for the isolated relational tests. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="161.9142.1" />
     <PackageReference Include="xunit" Version="2.9.3" />

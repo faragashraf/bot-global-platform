@@ -128,6 +128,12 @@ internal sealed class MobilePushRegistrationService(
                 request.RegistrationToken,
                 now);
 
+            // A provider rejection can invalidate the old destination after
+            // this request reads it. A successful refresh must explicitly clear
+            // that invalidation even when the originally tracked value was null.
+            dbContext.Entry(registration)
+                .Property(item => item.InvalidatedAtUtc).IsModified = true;
+
             auditRecorder.Record(
                 deviceId,
                 await ResolvePlatformClientIdAsync(
@@ -199,34 +205,60 @@ internal sealed class MobilePushRegistrationService(
         NotificationApplicationContext application,
         Guid deviceId,
         string provider,
+        string rejectedRegistrationToken,
         string safeReason,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(application);
+        ArgumentException.ThrowIfNullOrWhiteSpace(rejectedRegistrationToken);
         var normalizedProvider = provider?.Trim().ToLowerInvariant();
         if (deviceId == Guid.Empty || normalizedProvider != "fcm")
         {
             return;
         }
 
-        var registration = await (
-                from pushRegistration in dbContext.PushRegistrations
-                join device in dbContext.Devices
-                    on pushRegistration.MobileDeviceId equals device.Id
-                where device.Id == deviceId
-                      && device.PlatformClientId == application.ApplicationId
-                      && pushRegistration.Provider == normalizedProvider
-                      && pushRegistration.InvalidatedAtUtc == null
-                select pushRegistration)
-            .SingleOrDefaultAsync(cancellationToken);
+        var registrations = dbContext.PushRegistrations.Where(registration =>
+            registration.MobileDeviceId == deviceId
+            && registration.Provider == normalizedProvider
+            && registration.InvalidatedAtUtc == null
+            && dbContext.Devices.Any(device =>
+                device.Id == registration.MobileDeviceId
+                && device.PlatformClientId == application.ApplicationId));
+        var now = timeProvider.GetUtcNow();
+        await using var transaction = dbContext.Database.IsRelational()
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
-        if (registration is null)
+        if (dbContext.Database.IsRelational())
         {
-            return;
+            // Compare and invalidate in ONE statement. A late result for an
+            // old token must not revoke a replacement registered during send.
+            // Tokens are case-sensitive even in a case-insensitive database.
+            var changed = await registrations
+                .Where(registration => EF.Functions.Collate(
+                    registration.RegistrationToken, "Latin1_General_100_BIN2")
+                    == rejectedRegistrationToken)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(registration => registration.InvalidatedAtUtc, now)
+                    .SetProperty(registration => registration.UpdatedAtUtc, now),
+                    cancellationToken);
+            if (changed == 0)
+            {
+                return;
+            }
+        }
+        else
+        {
+            var registration = await registrations.SingleOrDefaultAsync(cancellationToken);
+            if (registration is null || !string.Equals(
+                    registration.RegistrationToken, rejectedRegistrationToken, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            registration.Invalidate(now);
         }
 
-        var now = timeProvider.GetUtcNow();
-        registration.Invalidate(now);
         auditRecorder.Record(
             deviceId,
             application.ApplicationId,
@@ -236,6 +268,10 @@ internal sealed class MobilePushRegistrationService(
             $"provider={normalizedProvider}; reason={NormalizeSafeReason(safeReason)}",
             now);
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
     }
 
     private static string NormalizeSafeReason(string safeReason)

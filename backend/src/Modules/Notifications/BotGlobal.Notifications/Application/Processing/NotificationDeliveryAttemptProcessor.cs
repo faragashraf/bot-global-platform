@@ -206,6 +206,18 @@ internal sealed class NotificationDeliveryAttemptProcessor(
             options.Value.Retry);
         await SaveLocalTransitionAsync(cancellationToken);
 
+        logger.LogInformation(
+            "Notification recipient outcome projected. ApplicationId={ApplicationId} CampaignId={CampaignId} AttemptId={AttemptId} AttemptNumber={AttemptNumber} AttemptStatus={AttemptStatus} RecipientStatus={RecipientStatus} TransportError={TransportError} LifecycleReason={LifecycleReason} NextAttemptAtUtc={NextAttemptAtUtc}",
+            attempt.ApplicationId,
+            attempt.CampaignId,
+            attempt.Id,
+            attempt.AttemptNumber,
+            attempt.Status,
+            recipient.Status,
+            attempt.SafeErrorCode,
+            recipient.LastSafeErrorCode,
+            recipient.NextAttemptAtUtc);
+
         return new NotificationAttemptResult(
             recipient.CampaignId,
             true,

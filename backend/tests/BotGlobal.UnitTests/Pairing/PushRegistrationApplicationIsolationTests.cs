@@ -138,12 +138,14 @@ public sealed class PushRegistrationApplicationIsolationTests
             new NotificationApplicationContext(appA),
             deviceA.Id,
             "fcm",
+            "fid-a",
             "fcm-unregistered",
             CancellationToken.None);
         await service.InvalidateAsync(
             new NotificationApplicationContext(appB),
             deviceA.Id,
             "fcm",
+            "fid-a",
             "cross-application-attempt",
             CancellationToken.None);
 

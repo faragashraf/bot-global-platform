@@ -205,6 +205,13 @@ public sealed class NotificationCampaign
         int expired,
         DateTimeOffset now)
     {
+        if (Status is NotificationCampaignStatus.Completed
+            or NotificationCampaignStatus.CompletedWithFailures
+            or NotificationCampaignStatus.Failed)
+        {
+            return;
+        }
+
         PendingCount = pending;
         SignalRDispatchedCount = signalRDispatched;
         FcmAcceptedCount = fcmAccepted;
@@ -212,7 +219,8 @@ public sealed class NotificationCampaign
         SkippedCount = skipped;
         ExpiredCount = expired;
 
-        if (Status == NotificationCampaignStatus.Cancelled)
+        if (Status is NotificationCampaignStatus.Cancelled
+            or NotificationCampaignStatus.Expired)
         {
             return;
         }
@@ -229,7 +237,9 @@ public sealed class NotificationCampaign
             return;
         }
 
-        Status = expired > 0
+        var emptyAndExpired = pending + signalRDispatched + fcmAccepted
+            + failed + skipped + expired == 0 && ExpiresAtUtc <= now;
+        Status = expired > 0 || emptyAndExpired
             ? NotificationCampaignStatus.Expired
             : failed > 0 || skipped > 0
                 ? NotificationCampaignStatus.CompletedWithFailures

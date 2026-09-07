@@ -118,6 +118,7 @@ public interface IMobilePushDestinationInvalidator
         NotificationApplicationContext application,
         Guid deviceId,
         string provider,
+        string rejectedRegistrationToken,
         string safeReason,
         CancellationToken cancellationToken);
 }

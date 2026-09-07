@@ -206,11 +206,10 @@ internal sealed class NotificationWorkClaimer(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        NotificationDeliveryAttempt attempt;
-        if (recipient.Status == NotificationRecipientStatus.Pending
-            && recipient.CurrentAttemptId is Guid currentAttemptId)
+        NotificationDeliveryAttempt? currentAttempt = null;
+        if (recipient.CurrentAttemptId is Guid currentAttemptId)
         {
-            attempt = await dbContext.DeliveryAttempts
+            currentAttempt = await dbContext.DeliveryAttempts
                 .SingleOrDefaultAsync(
                     candidate =>
                         candidate.Id == currentAttemptId
@@ -218,10 +217,21 @@ internal sealed class NotificationWorkClaimer(
                     cancellationToken)
                 ?? throw new InvalidOperationException(
                     "A claimed notification recipient references a missing delivery attempt.");
+        }
 
+        NotificationDeliveryAttempt attempt;
+        if (currentAttempt?.Status
+            == NotificationDeliveryAttemptStatus.Prepared)
+        {
+            attempt = currentAttempt;
             attempt.ReassignPreparedLease(leaseId);
         }
-        else
+        else if ((recipient.Status == NotificationRecipientStatus.Pending
+                && currentAttempt is null)
+            || (recipient.Status
+                    == NotificationRecipientStatus.RetryScheduled
+                && currentAttempt?.Status
+                    == NotificationDeliveryAttemptStatus.RetryableFailure))
         {
             attempt = NotificationDeliveryAttempt.Create(
                 Guid.NewGuid(),
@@ -234,6 +244,11 @@ internal sealed class NotificationWorkClaimer(
                 leaseId,
                 now);
             dbContext.DeliveryAttempts.Add(attempt);
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "A claimed notification recipient is not ready for a new or reassigned delivery attempt.");
         }
 
         recipient.Claim(

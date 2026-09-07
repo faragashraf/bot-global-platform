@@ -88,13 +88,15 @@ internal sealed class NotificationDeliveryRecoveryProcessor(
             affectedCampaignIds.Add(recipient.CampaignId);
 
             logger.LogInformation(
-                "Notification delivery projection repaired. DeliveryId={DeliveryId} ApplicationId={ApplicationId} CampaignId={CampaignId} AttemptId={AttemptId} AttemptNumber={AttemptNumber} AttemptStatus={AttemptStatus}",
+                "Notification delivery projection repaired. DeliveryId={DeliveryId} ApplicationId={ApplicationId} CampaignId={CampaignId} AttemptId={AttemptId} AttemptNumber={AttemptNumber} AttemptStatus={AttemptStatus} RecipientStatus={RecipientStatus} LifecycleReason={LifecycleReason}",
                 attempt.DeliveryKey,
                 attempt.ApplicationId,
                 attempt.CampaignId,
                 attempt.Id,
                 attempt.AttemptNumber,
-                attempt.Status);
+                attempt.Status,
+                recipient.Status,
+                recipient.LastSafeErrorCode);
         }
 
         if (affectedCampaignIds.Count > 0)
