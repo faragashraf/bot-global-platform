@@ -1,4 +1,4 @@
-# Native Codex settings only. Supervisor policy and role selection live in .agents.
+# Native Codex settings only. Symphony/Critiques policy and role selection live in .agents.
 # Trusted-project/session/managed settings determine actual effective selection.
 model = "gpt-6-astra"
 model_reasoning_effort = "high"

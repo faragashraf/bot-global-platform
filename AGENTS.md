@@ -1,20 +1,21 @@
 # Bot Global Platform project policy
 
-## Supervisor integration
+## Symphony orchestration and Critiques acceptance
 
-Ordinary work remains OFF. Explicit AUTO/SUPERVISED and run controls use the global
-`~/.agents/skills/supervisor-core/SKILL.md` through `.agents/supervisor.json`.
-Load that installed contract; do not copy its orchestration, scoring, storage,
-monitor, notification or VPN implementation into this repository. Bootstrap
-discovery and operator details are in `.agents/BOOTSTRAP.md`.
+Bot Global Platform uses Symphony for orchestration and execution, and Critiques for
+independent review and final acceptance. The repository binding and evidence contract
+are defined by `.agents/symphony-critiques.json` and
+`.agents/SYMPHONY_CRITIQUES.md`. Reuse the external Symphony and Symphony+ contracts;
+do not copy their schedulers, worker lifecycle, assessment engine, storage, monitoring
+or notification implementation into this repository.
 
-In SUPERVISED mode the Supervisor owns capability decomposition, benchmark scoring,
-selection, verification, escalation/down-shift, rework, acceptance and Project Gates.
-Use the project pool, never another project's mapping. Reasoning autonomy is HIGH;
-permission boundary is RESTRICTED. Model strength never changes authority. Native
-session/sandbox restrictions remain effective; this policy grants no host access.
-Limits: one active executor, one active child total, no nested agents, two executor
-rework cycles TOTAL per original capability, including replacements and UX rework.
+Symphony owns capability decomposition, execution-unit selection, dispatch evidence,
+validation collection, bounded correction and escalation. Critiques owns the independent
+review and final PASS/FAIL decision. Critiques does not execute or repair the reviewed
+delta. Permission authority remains RESTRICTED: model strength, Symphony execution or a
+Critiques PASS grants no operation that the human owner did not authorize. Native
+session/sandbox restrictions remain effective. Limits remain one active executor, one
+active child total, no nested agents and two executor rework cycles per capability.
 
 Before work, report recommended model/effort, limit strategy, reason and branch
 decision. Every terminal command block starts with `cd` to this repository (or the
@@ -25,25 +26,20 @@ or revise, merge or wait, and next step.
 
 Inspect branch, HEAD, status and worktrees first. Read-only tasks preserve and report
 dirty work without changing Git. File-changing tasks require a clean tree unless
-the user explicitly approves identified existing work as a baseline; use the Core's
-hash/status snapshot and reconciliation for that exception. Unknown/unrelated changes
-pause mutation. Never reset, stash, restore, clean or accidentally commit baseline work.
+the user explicitly approves identified existing work as a baseline. For that exception,
+record the branch, full HEAD, `git status`, exact owned/reviewed paths and SHA-256 of the
+approved diff or index before execution; compare the same evidence before acceptance and
+commit. Any mismatch pauses mutation. Unknown/unrelated changes pause mutation. Never
+reset, stash, restore, clean or accidentally commit baseline work.
 Create a feature branch before changing files on main. Do not destructively switch
 branches. Stage explicit owned paths only; inspect the index before every commit.
-
-The 2026-09-07 bootstrap user explicitly approved preserving 15 modified backend
-Shared Notification Lifecycle files and one untracked test on
-`fix/shared-notification-lifecycle` at `615de7cfc0f758b1d728311c97a1e432ea4bd9a4`.
-Bootstrap owns ONLY `AGENTS.md`, `.agents/supervisor.json`, `.agents/model-pool.json`,
-`.agents/BOOTSTRAP.md` and `.codex/config.toml`. Its one authorized commit must contain
-only those files. This exception does not approve unrelated dirty work or authorize
-future bootstrap repetition, feature implementation, push, merge or deployment.
 
 ## Capability and architecture acceptance
 
 Build one bounded capability with business value, owned paths, dependencies,
-acceptance evidence and demo readiness. Supervisor/critical reasoner owns architecture;
-mechanical executors receive accepted contracts and invariants, not boundary decisions.
+acceptance evidence and demo readiness. Symphony records architecture decisions and
+invariants before execution; executors do not silently redefine boundaries. Critiques
+independently verifies those decisions and invariants before final acceptance.
 
 - Backend: thin endpoints/composition root; reusable capability engines/services;
   centralized validation, workflow rules and result/error handling. Follow
@@ -64,28 +60,59 @@ mechanical executors receive accepted contracts and invariants, not boundary dec
   revocation, capability authorization, application scope and Phase 1A HTTP protections.
   No tokens, provider credentials, raw recipient payloads or PII in diagnostics/evidence.
 
-Verification follows the global independent benchmark, including retained parent risk
+Verification follows the global independent benchmark, including retained original risk
 after down-shift. Shared cross-module regressions need V3; trust/persistence/production
-decisions need V4 and a strong independent non-implementing review context. No self-review
-claim of independence. Scope checks to changed consumers and actual hazards; inspect
-scripts before tests so local validation cannot silently reach real providers/databases.
+decisions need V4 and a strong independent Critiques context. The Critiques actor/session
+must differ from every executor actor/session where practical and always for V3/V4; no
+self-review claim of independence. Scope checks to changed consumers and actual hazards;
+inspect scripts before tests so local validation cannot silently reach real providers/databases.
 Backend source checks normally use `backend/BotGlobal.sln` and relevant tests; frontend
 and mobile checks are selected from actual package/Gradle scripts, not stale README claims.
+
+### Critiques final-acceptance contract
+
+A valid Critiques decision identifies the Symphony execution contract, unit, run and
+revision; the reviewed branch and HEAD; whether the subject is a committed diff or staged
+index; a SHA-256 fingerprint of that exact diff/index and its owned path list; validation
+evidence; all blocking findings; and an explicit PASS or FAIL. A PASS is valid only when
+all blocking findings are closed. Any later change to HEAD, the reviewed path set, the
+diff/index fingerprint, the Symphony run revision or relied-on validation makes the PASS
+stale and requires a new Critiques review. See `.agents/SYMPHONY_CRITIQUES.md` for the
+canonical evidence rules.
+
+### One-time workflow-migration transition
+
+The repository owner authorized the initial Symphony + Critiques policy migration on
+branch `chore/symphony-critiques-workflow` from HEAD
+`284b8394acc16665e8cf3843d5621e24e948dd46`. Because Bot Global Platform was not yet
+bound to Symphony when that delta was authored, only its initial policy-migration commit
+may omit pre-existing Symphony execution evidence. It still requires an independent
+Critiques final-acceptance PASS correlated to that exact branch, HEAD, final staged-index
+SHA-256 and reviewed path set; `git diff --cached --check` PASS; proof that application
+source is untouched; explicit repository-owner authorization for the migration; explicit
+scoped commit authorization; and a reviewed index containing only the seven paths listed
+in `.agents/SYMPHONY_CRITIQUES.md`.
+
+This transition is consumed permanently when the first qualifying policy-migration commit
+is created. It cannot authorize an amendment, replacement, replay, cherry-pick or any
+later commit, even if the original commit is reverted. It grants no merge or push authority.
+After that one commit, every local commit requires normal correlated Symphony execution
+evidence and a current Critiques PASS.
 
 ## Project Gates
 
 Technical acceptance and user operation authorization are separate. Existing exact
 authorization persists; otherwise prepare a reviewable operation and PAUSE AT GATE.
-No generic AUTO/SUPERVISED request authorizes the following operations.
+No Symphony run or Critiques review authorizes the following operations by itself.
 
 | Gate | Required evidence/authority before action |
 | --- | --- |
-| Local commit | Supervisor final acceptance PASS and explicit scoped commit authorization; owned paths/index reviewed. Bootstrap has the single config-only authorization above. |
+| Local commit | Correlated Symphony execution evidence, a current Critiques final-acceptance PASS for the exact reviewed Git state, explicit scoped commit authorization, and reviewed owned paths/index. |
 | Push / merge | Separate explicit authorization, exact branch/diff/remote and passing required validation. No automatic main integration or blanket normal-push permission. |
 | Production deployment / worker control | Explicit target/artifact approval, accepted code, health/rollback plan, approved configuration and worker semantics; then separate runtime evidence. Restart/worker toggles are mutations too. |
 | Staging deployment with remote mutation | Explicit environment/artifact/side-effect scope and rollback; staging is not assumed disposable. |
 | Database mutation / migration | Explicit target and reviewed script checksum, module history/preflight, transaction/recovery plan and applicable rehearsal evidence. Generation/static review is separate from apply. No startup auto-migration. |
-| Auth/security/trust-boundary change | Supervisor/critical decision, explicit acceptance criteria and authorized change scope before implementation; V4 independent security/invariant review before acceptance. Local explanatory text does not change enforcement. |
+| Auth/security/trust-boundary change | Symphony contract with explicit acceptance criteria and authorized change scope before implementation; V4 independent Critiques security/invariant review before acceptance. Local explanatory text does not change enforcement. |
 | Credentials/secrets | Explicit scope for provisioning/rotation/revocation/configuration; approved secret mechanism, no values in Git/prompts/logs. |
 | External-provider side effect | Explicit application/provider/recipient/environment authorization, bounded operation and idempotency proof. Do not send test FCM, calling or machine-client requests by implication. |
 | Broad shared-platform change | Accepted consumer inventory, contract/compatibility plan and regression scope before executor dispatch. Newly discovered consumers require reassessment, not automatic scope expansion. |
@@ -101,9 +128,9 @@ history/state before any future proposal; never replay it merely because the fil
 ## Frontend specialist and runtime
 
 Official Impeccable is the global specialist (4.2.2 observed during bootstrap).
-For material UI: pre-implementation critique/shape -> Supervisor UX criteria -> executor
+For material UI: pre-implementation critique/shape -> Symphony UX criteria -> executor
 -> technical and interactive runtime verification -> official final critique/audit
--> bounded rework -> Supervisor acceptance. Apply its current native setup and relevant
+-> bounded rework -> Critiques acceptance. Apply its current native setup and relevant
 platform playbook at execution, honoring its stricter review-pass ceiling. P0/P1 block;
 P2 is fixed unless explicitly justified/deferred with owner/follow-up; P3 may be backlogged.
 One-child limit still applies: no parallel specialist fan-out. Disclose sequential
@@ -127,19 +154,18 @@ checkpoint, distinguish infrastructure from application failure, and consume no 
 rework for infrastructure retries. Use a global VPN guard only if actually available and
 applicable; never implement one here or store passwords, OTPs or secrets in profiles.
 
-## Observability and next capability
+## Orchestration evidence and next capability
 
 Use global canonical storage, live monitor and L2 notification contracts; no local
-implementations/hooks/daemons. The manifest enables both features. Run storage is outside
-Git under the declared workspace; validate actual approved roots and ownership first.
-Actual model/effort, child state and timestamps must be evidence-backed or unknown.
-Bootstrap uses simulations only; it does not dispatch a feature executor or start a
-feature run. Notification/monitor compatibility is not proof of OS delivery or runtime UX.
+implementations/hooks/daemons. Symphony run storage remains outside Git under its declared
+workspace; validate approved roots and ownership before treating it as evidence. Actual
+model/effort, child state and timestamps must be evidence-backed or unknown. Discovery or
+monitor compatibility is not execution, Critiques acceptance, OS delivery or runtime UX.
 
-After bootstrap, the next SUPERVISED capability is Shared Notification Lifecycle FINAL
-CHECKPOINT REVIEW and acceptance, not reimplementation. Historical tests are evidence
-to reconcile, not fresh PASS. Reverify proportionately; feature commit needs its existing
-conditional authorization plus final acceptance PASS. Merge/deployment remain gates.
+The next orchestrated capability is Shared Notification Lifecycle FINAL CHECKPOINT REVIEW
+and acceptance, not reimplementation. Historical tests are evidence to reconcile, not a
+fresh PASS. Reverify proportionately; its feature commit still needs the existing scoped
+authorization and a current Critiques final-acceptance PASS. Merge/deployment remain gates.
 Production closeout must prove ENPO bounded terminal delivery/no duplicate loop, NQRB
 automatic zero-recipient Completed with zero counts/no manual DB update, and provider
 isolation. Only after genuine lifecycle closeout and production validation, recover the

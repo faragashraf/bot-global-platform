@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "kind": "repository-workflow-policy-binding",
+  "policy": "AGENTS.md",
+  "contract": ".agents/SYMPHONY_CRITIQUES.md",
+  "orchestration": {
+    "authority": "symphony",
+    "execution_evidence_schema": "symphony-plus.completed-run.v0.1",
+    "execution_contract_schema": "symphony-plus.execution-contract.v0.1",
+    "automatic_dispatch_claimed": false
+  },
+  "review": {
+    "authority": "critiques",
+    "quality_review_schema": "symphony-plus.quality-review.v0.1",
+    "assessment_schema": "symphony-plus.assessment.v0.1",
+    "required_outcome": "ACCEPTED",
+    "required_reason_code": "ALL_REQUIRED_EVIDENCE_PASSED",
+    "required_verifier_status": "PASS",
+    "independent_from_executor": true,
+    "exact_git_state_required": true,
+    "automatic_acceptance_claimed": false
+  },
+  "initial_policy_migration_transition": {
+    "one_time": true,
+    "reusable": false,
+    "branch": "chore/symphony-critiques-workflow",
+    "base_head": "284b8394acc16665e8cf3843d5621e24e948dd46",
+    "symphony_execution_evidence_may_be_absent": true,
+    "required_review_authority": "critiques",
+    "required_review_verdict": "PASS",
+    "exact_staged_index_fingerprint_required": true,
+    "cached_diff_check_required": true,
+    "application_source_must_be_untouched": true,
+    "owner_migration_authorization_required": true,
+    "scoped_commit_authorization_required": true,
+    "exhausted_by": "first-qualifying-policy-migration-commit",
+    "allowed_staged_paths": [
+      "AGENTS.md",
+      ".agents/SYMPHONY_CRITIQUES.md",
+      ".agents/symphony-critiques.json",
+      ".agents/model-pool.json",
+      ".codex/config.toml",
+      ".agents/supervisor.json",
+      ".agents/BOOTSTRAP.md"
+    ]
+  },
+  "risk_profile": {
+    "project_risk_class": "high",
+    "routing_bias": "conservative",
+    "evidence": [
+      "BotGlobal.Api composes shared Identity, PlatformClients, Pairing, Communication, Calling and Notifications capabilities.",
+      "Public machine, mobile and pairing identity boundaries require explicit authorization and application scope.",
+      "Shared mobile and notification code has multiple product consumers whose compatibility and provider isolation must be preserved.",
+      "Module-owned SQL Server persistence requires explicit migration and production-operation gates."
+    ]
+  },
+  "frontend_specialist": {
+    "skill": "impeccable",
+    "enabled": true,
+    "required_when_material": true
+  },
+  "model_profile": ".codex/config.toml",
+  "role_profile": ".agents/model-pool.json",
+  "limits": {
+    "max_active_executors": 1,
+    "max_active_children": 1,
+    "max_executor_rework_cycles": 2
+  },
+  "permission_boundary": "restricted",
+  "notifications": {
+    "enabled": true,
+    "display_name": "Bot Global Platform"
+  },
+  "run_storage": {
+    "workspace_root": "/Users/ashraffarag/Repo",
+    "project_name": "bot-global-platform"
+  }
+}

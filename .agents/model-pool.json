@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "roles": {
-    "supervisor": { "model": "gpt-6-astra", "reasoning_effort": "high" },
+    "symphony_planner": { "model": "gpt-6-astra", "reasoning_effort": "high" },
     "mechanical_executor": { "model": "gpt-5.6-luna", "reasoning_effort": "low" },
     "fast_executor": { "model": "gpt-5.6-luna", "reasoning_effort": "medium" },
     "standard_executor": { "model": "gpt-5.6-terra", "reasoning_effort": "medium" },
     "senior_executor": { "model": "gpt-5.6-sol", "reasoning_effort": "high" },
-    "critical_reasoner": { "model": "gpt-6-astra", "reasoning_effort": "xhigh" },
-    "independent_verifier": { "model": "gpt-6-astra", "reasoning_effort": "xhigh" },
+    "critical_reasoner": { "model": "gpt-6-astra", "reasoning_effort": "high" },
+    "critiques_reviewer": { "model": "gpt-6-astra", "reasoning_effort": "high" },
     "frontend_specialist": { "skill": "impeccable" }
   },
   "cost_preference": [
@@ -19,13 +19,13 @@
   ],
   "selection_notes": [
     "Discovered using codex-cli 0.153.4 debug models --bundled and checked against this session's callable spawn_agent model/effort choices. Recheck live availability at dispatch; catalog presence is not an account entitlement guarantee.",
-    "Supervisor: Astra/high retains platform decomposition, cross-consumer invariants and final acceptance; reserve higher effort for consequential decisions instead of all routine work.",
+    "Symphony planner: Astra/high handles consequential decomposition and cross-consumer invariants before Symphony dispatch; ordinary bounded work should use deterministic planning.",
     "Mechanical: Luna/low for exact bounded transformations with deterministic comparison; conserves reasoning budget without assigning architecture or sensitive behavior.",
     "Fast: Luna/medium for small established patterns with low coupling and targeted tests; adds limited reasoning while avoiding senior allocation.",
     "Standard: Terra/medium for bounded backend/shared capability work within accepted architecture; balanced default for this backend-heavy platform.",
     "Senior: Sol/high for difficult cross-module refactors and visual/runtime review; used only when reasoning or regression burden exceeds standard scope.",
-    "Critical: Astra/xhigh resolves trust, persistence and high-blast-radius decisions first; deterministic follow-through is decomposed and down-shifted with parent verification retained.",
-    "Independent verifier: Astra/xhigh in a separate non-implementing context for V3/V4; reserve this cost for consequential proof obligations, using V0-V2 Supervisor checks where sufficient.",
+    "Critical: Astra/high resolves trust, persistence and high-blast-radius decisions first; deterministic follow-through is decomposed and down-shifted with parent verification retained.",
+    "Critiques reviewer: Astra/high in a separate non-implementing context for V3/V4; its actor and session must differ from the executor, and its PASS must bind the exact Symphony run and Git state.",
     "Frontend specialist: global Official Impeccable 4.2.2 observed at bootstrap. This is a skill, not a model or effort. Sol/high is the intended separate host when sufficient; retain stronger decision/verifier roles when required.",
     "Cost ordering is a project preference based on task fit and effort, not measured pricing/performance. Safety floors precede cost. No permanent agent reputation scores.",
     "Spark is absent from this local catalog/current delegation surface and is not mapped. No Connect V2 or PostConnect pool was read or imported.",
