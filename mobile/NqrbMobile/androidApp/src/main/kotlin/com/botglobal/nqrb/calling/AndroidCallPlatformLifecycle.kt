@@ -349,6 +349,10 @@ class NqrbOngoingCallService : Service() {
         fun stop(context: Context) {
             context.stopService(Intent(context, NqrbOngoingCallService::class.java))
         }
+
+        fun clearStoredPresentation(context: Context) {
+            context.getSharedPreferences(Preferences, Context.MODE_PRIVATE).edit().clear().apply()
+        }
     }
 }
 

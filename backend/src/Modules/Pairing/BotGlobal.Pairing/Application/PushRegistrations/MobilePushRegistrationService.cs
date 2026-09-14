@@ -151,6 +151,46 @@ internal sealed class MobilePushRegistrationService(
         await dbContext.SaveChangesAsync(
             cancellationToken);
 
+        var deviceRemainsActive = await dbContext.Devices
+            .AsNoTracking()
+            .AnyAsync(
+                device => device.Id == deviceId
+                    && device.PlatformClientId == application.ApplicationId
+                    && device.RevokedAtUtc == null,
+                cancellationToken);
+        if (!deviceRemainsActive)
+        {
+            var registrations = dbContext.PushRegistrations.Where(item =>
+                item.MobileDeviceId == deviceId
+                && item.Provider == provider
+                && item.InvalidatedAtUtc == null
+                && !dbContext.Devices.Any(device =>
+                    device.Id == item.MobileDeviceId
+                    && device.PlatformClientId == application.ApplicationId
+                    && device.RevokedAtUtc == null));
+
+            if (dbContext.Database.IsRelational())
+            {
+                await registrations.ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(item => item.InvalidatedAtUtc, now)
+                        .SetProperty(item => item.UpdatedAtUtc, now),
+                    cancellationToken);
+            }
+            else
+            {
+                foreach (var staleRegistration in await registrations.ToListAsync(cancellationToken))
+                {
+                    staleRegistration.Invalidate(now);
+                }
+
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            throw new InvalidOperationException(
+                "Authenticated mobile device became unavailable or revoked.");
+        }
+
         return new MobilePushRegistrationResult(
             deviceId,
             application.ApplicationId,

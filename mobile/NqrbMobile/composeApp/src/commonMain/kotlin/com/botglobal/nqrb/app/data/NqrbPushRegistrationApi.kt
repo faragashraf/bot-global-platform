@@ -69,24 +69,47 @@ class NqrbPushRegistrationApi(
     }
 
     override suspend fun unregister(): PushRegistrationOutcome {
-        val credential = deviceCredentialVault.restore()
-            ?: return PushRegistrationOutcome.Unregistered
         return try {
-            val response = client.post(endpoint("/api/mobile/devices/unpair")) {
-                header(HttpHeaders.Authorization, "Device ${credential.credential}")
+            var credential = deviceCredentialVault.restore()
+                ?: when (val enrollment = enrollForUnpair()) {
+                    is EnrollmentResult.Succeeded -> enrollment.credential
+                    EnrollmentResult.AuthenticationRequired -> return PushRegistrationOutcome.AuthenticationRequired
+                    EnrollmentResult.Rejected -> return PushRegistrationOutcome.Rejected
+                    EnrollmentResult.RetryableFailure -> return PushRegistrationOutcome.RetryableFailure
+                }
+            var outcome = unpair(credential)
+            if (outcome == PushRegistrationOutcome.AuthenticationRequired) {
+                credential = when (val enrollment = enrollForUnpair()) {
+                    is EnrollmentResult.Succeeded -> enrollment.credential
+                    EnrollmentResult.AuthenticationRequired -> return PushRegistrationOutcome.AuthenticationRequired
+                    EnrollmentResult.Rejected -> return PushRegistrationOutcome.Rejected
+                    EnrollmentResult.RetryableFailure -> return PushRegistrationOutcome.RetryableFailure
+                }
+                outcome = unpair(credential)
             }
-            when {
-                response.status == HttpStatusCode.NoContent -> PushRegistrationOutcome.Unregistered
-                response.status == HttpStatusCode.Unauthorized -> PushRegistrationOutcome.Unregistered
-                response.status.value in 400..499 -> PushRegistrationOutcome.Rejected
-                else -> PushRegistrationOutcome.RetryableFailure
-            }
+            if (outcome == PushRegistrationOutcome.Unregistered) deviceCredentialVault.clear()
+            outcome
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             PushRegistrationOutcome.RetryableFailure
-        } finally {
-            deviceCredentialVault.clear()
+        }
+    }
+
+    private suspend fun enrollForUnpair(): EnrollmentResult {
+        val session = sessionVault.restore() ?: return EnrollmentResult.AuthenticationRequired
+        return enroll(session.accessToken)
+    }
+
+    private suspend fun unpair(credential: MobileDeviceCredential): PushRegistrationOutcome {
+        val response = client.post(endpoint("/api/mobile/devices/unpair")) {
+            header(HttpHeaders.Authorization, "Device ${credential.credential}")
+        }
+        return when {
+            response.status == HttpStatusCode.NoContent -> PushRegistrationOutcome.Unregistered
+            response.status == HttpStatusCode.Unauthorized -> PushRegistrationOutcome.AuthenticationRequired
+            response.status.value in 400..499 -> PushRegistrationOutcome.Rejected
+            else -> PushRegistrationOutcome.RetryableFailure
         }
     }
 

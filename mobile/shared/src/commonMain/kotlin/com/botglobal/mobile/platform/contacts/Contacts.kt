@@ -62,6 +62,10 @@ class ContactsController(
 
     suspend fun refresh(): ContactsSnapshot = resolve(permissions.state(PermissionKind.Contacts))
 
+    fun clear() {
+        mutableState.value = ContactsSnapshot()
+    }
+
     private suspend fun resolve(permission: PermissionState): ContactsSnapshot = when (permission) {
         PermissionState.Granted -> load()
         PermissionState.PermanentlyDenied -> update(ContactsStatus.PermanentlyDenied)

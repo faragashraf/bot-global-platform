@@ -28,8 +28,7 @@ public sealed class MobileDeviceLifecycleService(
             await dbContext.Devices
                 .SingleOrDefaultAsync(
                     item =>
-                        item.RevokedAtUtc == null
-                        && item.CredentialHash.SequenceEqual(
+                        item.CredentialHash.SequenceEqual(
                             credentialHash),
                     cancellationToken);
 
@@ -41,16 +40,18 @@ public sealed class MobileDeviceLifecycleService(
         var now =
             timeProvider.GetUtcNow();
 
-        device.Revoke(now);
-
-        auditRecorder.Record(
-            device.Id,
-            device.PlatformClientId,
-            MobileDeviceAuditKinds.UnpairedByDevice,
-            MobileDeviceAuditActorTypes.Device,
-            null,
-            $"platform={device.Platform}",
-            now);
+        if (device.IsActive)
+        {
+            device.Revoke(now);
+            auditRecorder.Record(
+                device.Id,
+                device.PlatformClientId,
+                MobileDeviceAuditKinds.UnpairedByDevice,
+                MobileDeviceAuditActorTypes.Device,
+                null,
+                $"platform={device.Platform}",
+                now);
+        }
 
         var pushRegistrations =
             await dbContext.PushRegistrations

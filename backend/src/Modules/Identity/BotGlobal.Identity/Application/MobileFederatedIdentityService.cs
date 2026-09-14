@@ -61,6 +61,11 @@ internal sealed class MobileFederatedIdentityService(
         var membership = await dbContext.ApplicationMemberships.SingleOrDefaultAsync(
             x => x.ApplicationKey == applicationKey && x.GlobalUserId == user.Id,
             cancellationToken);
+        if (membership is { IsActive: false })
+        {
+            return MobileIdentityResult.Failure("account", "account_deletion_pending");
+        }
+
         if (membership is null)
         {
             membership = new ApplicationMembership(

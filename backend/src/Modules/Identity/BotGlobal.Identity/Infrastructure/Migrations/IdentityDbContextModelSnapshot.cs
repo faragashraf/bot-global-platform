@@ -23,6 +23,75 @@ namespace BotGlobal.Identity.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("BotGlobal.Identity.Domain.ApplicationAccountDeletionRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("AccessRevokedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ApplicationKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(80)");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("GlobalUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("LastAttemptAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastSafeErrorCode")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("MobileDeviceIdsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("NextAttemptAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ProcessorLeaseExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ProcessorLeaseId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("RequestedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("SubjectId")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MembershipId")
+                        .IsUnique();
+
+                    b.HasIndex("NextAttemptAtUtc");
+
+                    b.ToTable("ApplicationAccountDeletionRequests", "identity");
+                });
+
             modelBuilder.Entity("BotGlobal.Identity.Domain.ApplicationMembership", b =>
                 {
                     b.Property<Guid>("Id")
@@ -60,6 +129,8 @@ namespace BotGlobal.Identity.Infrastructure.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("GlobalUserId");
 
                     b.HasIndex("ApplicationKey", "GlobalUserId")
                         .IsUnique()
@@ -321,6 +392,14 @@ namespace BotGlobal.Identity.Infrastructure.Migrations
                     b.HasKey("UserId", "LoginProvider", "Name");
 
                     b.ToTable("UserTokens", "identity");
+                });
+
+            modelBuilder.Entity("BotGlobal.Identity.Domain.ApplicationMembership", b =>
+                {
+                    b.HasOne("BotGlobal.Identity.Domain.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("GlobalUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("BotGlobal.Identity.Domain.MobileApplicationSession", b =>

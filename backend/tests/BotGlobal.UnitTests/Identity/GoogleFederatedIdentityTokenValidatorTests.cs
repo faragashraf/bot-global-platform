@@ -78,6 +78,43 @@ public sealed class GoogleFederatedIdentityTokenValidatorTests
         Assert.NotEqual(result.Identity.Email, result.Identity.ProviderSubject);
     }
 
+    [Fact]
+    public async Task NqrbWebValidator_UsesOnlyTheExplicitWebAudience()
+    {
+        var verifier = new FakeVerifier(SuccessfulClaims());
+        var validator = new NqrbWebGoogleIdentityValidator(
+            Options.Create(new GoogleFederatedIdentityOptions
+            {
+                ServerClientId = "android-server.apps.googleusercontent.com",
+                NqrbWebClientId = "nqrb-web.apps.googleusercontent.com"
+            }),
+            verifier);
+
+        var result = await validator.ValidateAsync("transient-token", CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("nqrb-web.apps.googleusercontent.com", verifier.Audience);
+        Assert.NotEqual("android-server.apps.googleusercontent.com", verifier.Audience);
+    }
+
+    [Fact]
+    public async Task NqrbWebValidator_RejectsMissingWebAudienceWithoutFallingBackToMobileAudience()
+    {
+        var verifier = new FakeVerifier(SuccessfulClaims());
+        var validator = new NqrbWebGoogleIdentityValidator(
+            Options.Create(new GoogleFederatedIdentityOptions
+            {
+                ServerClientId = "android-server.apps.googleusercontent.com"
+            }),
+            verifier);
+
+        var result = await validator.ValidateAsync("transient-token", CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("google_web_configuration_missing", result.Error);
+        Assert.Equal(0, verifier.Calls);
+    }
+
     private static GoogleFederatedIdentityTokenValidator CreateValidator(
         string clientId,
         IGoogleIdTokenVerifier verifier) =>

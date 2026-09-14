@@ -51,6 +51,8 @@ class MainActivity : ComponentActivity() {
             callingDirectory = CallingDirectoryController(nqrbApplication.callingDirectoryApi),
             callActivity = nqrbApplication.callActivity,
             push = nqrbApplication.firebaseMessagingRuntime,
+            accountDeletion = nqrbApplication.accountDeletionApi,
+            localAccountDataCleaner = nqrbApplication.localAccountDataCleaner,
             permissions = permissionController,
         )
         setContent {

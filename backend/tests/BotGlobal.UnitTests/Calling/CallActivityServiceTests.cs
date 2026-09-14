@@ -149,6 +149,27 @@ public sealed class CallActivityServiceTests
         Assert.Equal("missed", recipient!.Outcome);
     }
 
+    [Fact]
+    public async Task Membership_deleted_during_call_start_cannot_reintroduce_direct_call_or_usage_identity()
+    {
+        await using var fixture = new Fixture(inactiveMembership: true);
+        var session = fixture.NewSession();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            fixture.Service.StartAsync(session, default));
+
+        Assert.DoesNotContain(
+            await fixture.Db.Participants.ToListAsync(),
+            participant => participant.MembershipId == fixture.CallerId
+                || participant.DisplayNameSnapshot == "Caller");
+        Assert.DoesNotContain(
+            await fixture.Db.UsagePeriods.ToListAsync(),
+            period => period.MembershipId == fixture.CallerId);
+        Assert.Contains(
+            await fixture.Db.Participants.ToListAsync(),
+            participant => participant.DisplayNameSnapshot == "Deleted NQRB account");
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         public readonly Guid ApplicationId = Guid.NewGuid();
@@ -159,12 +180,17 @@ public sealed class CallActivityServiceTests
         public readonly CallingDbContext Db;
         public readonly CallActivityService Service;
 
-        public Fixture()
+        public Fixture(bool inactiveMembership = false)
         {
             Clock = new MutableTimeProvider(Now);
             Db = new CallingDbContext(new DbContextOptionsBuilder<CallingDbContext>()
                 .UseInMemoryDatabase($"calling-activity-{Guid.NewGuid():N}").Options);
-            Service = new CallActivityService(Db, new Applications(ApplicationId), Clock);
+            Service = new CallActivityService(
+                Db,
+                new Applications(ApplicationId),
+                new MembershipActivityReader(inactiveMembership ? CallerId : null),
+                new CallingAccountDataEraser(Db),
+                Clock);
         }
 
         public CallSessionRegistry.Session NewSession() => new(
@@ -192,6 +218,16 @@ public sealed class CallActivityServiceTests
             Task.FromResult<PlatformClientDescriptor?>(clientKey == "nqrb"
                 ? new(applicationId, "nqrb", "NQRB", true)
                 : new(Guid.NewGuid(), clientKey, "Other", true));
+    }
+
+    private sealed class MembershipActivityReader(Guid? inactiveMembership)
+        : IApplicationMembershipActivityReader
+    {
+        public Task<bool> IsActiveAsync(
+            Guid membershipId,
+            string applicationKey,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(membershipId != inactiveMembership);
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider

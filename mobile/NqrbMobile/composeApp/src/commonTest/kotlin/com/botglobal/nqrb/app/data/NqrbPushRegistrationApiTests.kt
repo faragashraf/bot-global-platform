@@ -113,6 +113,113 @@ class NqrbPushRegistrationApiTests {
         assertEquals(null, vault.value)
     }
 
+    @Test
+    fun backendFailurePreservesCredentialForUnpairRetry() = runTest {
+        val vault = MemoryCredentialVault(MobileDeviceCredential("device", "secret"))
+        val engine = MockEngine { respond("", HttpStatusCode.InternalServerError) }
+
+        val result = api(HttpClient(engine), vault).unregister()
+
+        assertEquals(PushRegistrationOutcome.RetryableFailure, result)
+        assertNotNull(vault.value)
+    }
+
+    @Test
+    fun networkFailurePreservesCredentialForUnpairRetry() = runTest {
+        val vault = MemoryCredentialVault(MobileDeviceCredential("device", "secret"))
+        val engine = MockEngine { error("Synthetic timeout") }
+
+        val result = api(HttpClient(engine), vault).unregister()
+
+        assertEquals(PushRegistrationOutcome.RetryableFailure, result)
+        assertNotNull(vault.value)
+    }
+
+    @Test
+    fun alreadyUnpairedCredentialIsClearedAfterIdempotentBackendSuccess() = runTest {
+        val vault = MemoryCredentialVault(MobileDeviceCredential("device", "secret"))
+        val engine = MockEngine { respond("", HttpStatusCode.NoContent) }
+
+        val result = api(HttpClient(engine), vault).unregister()
+
+        assertEquals(PushRegistrationOutcome.Unregistered, result)
+        assertEquals(null, vault.value)
+    }
+
+    @Test
+    fun staleCredentialIsReenrolledThenUnpairedBeforeLocalStateIsCleared() = runTest {
+        var unpairs = 0
+        var enrollments = 0
+        val vault = MemoryCredentialVault(MobileDeviceCredential("device", "stale-secret"))
+        val engine = MockEngine { request ->
+            when (request.url.encodedPath) {
+                "/api/mobile/devices/unpair" -> {
+                    unpairs++
+                    respond("", if (unpairs == 1) HttpStatusCode.Unauthorized else HttpStatusCode.NoContent)
+                }
+                "/api/mobile/devices/enrollment" -> {
+                    enrollments++
+                    respond(
+                        """{"deviceId":"device","credential":"replacement-secret"}""",
+                        HttpStatusCode.OK,
+                        headersOf(HttpHeaders.ContentType, "application/json"),
+                    )
+                }
+                else -> error("Unexpected request path")
+            }
+        }
+
+        val result = api(HttpClient(engine), vault).unregister()
+
+        assertEquals(PushRegistrationOutcome.Unregistered, result)
+        assertEquals(1, enrollments)
+        assertEquals(2, unpairs)
+        assertEquals(null, vault.value)
+    }
+
+    @Test
+    fun missingLocalCredentialIsEnrolledAndUnpairedBeforeLogoutCompletes() = runTest {
+        val requests = mutableListOf<String>()
+        val vault = MemoryCredentialVault()
+        val engine = MockEngine { request ->
+            requests += request.url.encodedPath
+            when (request.url.encodedPath) {
+                "/api/mobile/devices/enrollment" -> respond(
+                    """{"deviceId":"device","credential":"replacement-secret"}""",
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType, "application/json"),
+                )
+                "/api/mobile/devices/unpair" -> respond("", HttpStatusCode.NoContent)
+                else -> error("Unexpected request path")
+            }
+        }
+
+        val result = api(HttpClient(engine), vault).unregister()
+
+        assertEquals(PushRegistrationOutcome.Unregistered, result)
+        assertEquals(
+            listOf("/api/mobile/devices/enrollment", "/api/mobile/devices/unpair"),
+            requests,
+        )
+        assertEquals(null, vault.value)
+    }
+
+    @Test
+    fun staleCredentialAndExpiredSessionRemainRecoverable() = runTest {
+        var requests = 0
+        val vault = MemoryCredentialVault(MobileDeviceCredential("device", "stale-secret"))
+        val engine = MockEngine {
+            requests++
+            respond("", HttpStatusCode.Unauthorized)
+        }
+
+        val result = api(HttpClient(engine), vault).unregister()
+
+        assertEquals(PushRegistrationOutcome.AuthenticationRequired, result)
+        assertEquals(2, requests)
+        assertNotNull(vault.value)
+    }
+
     private fun api(client: HttpClient, vault: MemoryCredentialVault) = NqrbPushRegistrationApi(
         platformClient = client,
         apiBaseUrl = "https://api.example.test",

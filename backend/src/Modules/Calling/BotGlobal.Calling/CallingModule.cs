@@ -28,7 +28,12 @@ public static class CallingModule
             throw new InvalidOperationException($"Connection string '{ConnectionStringName}' is required for Calling persistence.");
         services.AddDbContext<CallingDbContext>(options => options.UseSqlServer(connectionString,
             sql => sql.MigrationsHistoryTable(MigrationsHistoryTableName, DatabaseSchema)));
+        services.TryAddScoped<
+            IApplicationMembershipActivityReader,
+            UnavailableApplicationMembershipActivityReader>();
         services.AddScoped<ICallActivityService, CallActivityService>();
+        services.AddScoped<CallingAccountDataEraser>();
+        services.AddScoped<IApplicationAccountDeletionHandler, CallingAccountDeletionHandler>();
         services.AddHostedService<CallActivityRecoveryHostedService>();
         services.AddSignalR(options => options.EnableDetailedErrors = false);
         services.AddSingleton<CallSessionRegistry>();

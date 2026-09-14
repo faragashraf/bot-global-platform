@@ -66,6 +66,26 @@ class PushRegistrationControllerTests {
     }
 
     @Test
+    fun failedDeactivationPreservesStateAndRetriesBackendUnpair() = runTest {
+        val registration = RecordingRegistration(
+            unregisterOutcomes = ArrayDeque(
+                listOf(
+                    PushRegistrationOutcome.RetryableFailure,
+                    PushRegistrationOutcome.Unregistered,
+                ),
+            ),
+        )
+        val controller = PushRegistrationController(registration)
+        controller.activate()
+        controller.destinationAvailable(destination("current"))
+
+        assertEquals(PushRegistrationOutcome.RetryableFailure, controller.deactivate())
+        assertEquals(PushRegistrationOutcome.Unregistered, controller.deactivate())
+
+        assertEquals(2, registration.unregisterCalls)
+    }
+
+    @Test
     fun destinationValueIsRedactedFromDefaultDiagnostics() {
         val destination = destination("private-fid")
 
@@ -80,6 +100,7 @@ class PushRegistrationControllerTests {
 
     private class RecordingRegistration(
         private val outcomes: ArrayDeque<PushRegistrationOutcome> = ArrayDeque(),
+        private val unregisterOutcomes: ArrayDeque<PushRegistrationOutcome> = ArrayDeque(),
     ) : PushRegistration {
         val destinations = mutableListOf<PushDestination>()
         var unregisterCalls = 0
@@ -92,7 +113,7 @@ class PushRegistrationControllerTests {
 
         override suspend fun unregister(): PushRegistrationOutcome {
             unregisterCalls++
-            return PushRegistrationOutcome.Unregistered
+            return unregisterOutcomes.removeFirstOrNull() ?: PushRegistrationOutcome.Unregistered
         }
     }
 }

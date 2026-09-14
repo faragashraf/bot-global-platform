@@ -43,9 +43,9 @@ class AndroidFirebaseMessagingRuntime(
         coordinator.activate()
     }
 
-    override suspend fun deactivate() {
-        coordinator.deactivate()
-    }
+    override suspend fun deactivate() = coordinator.deactivate()
+
+    override suspend fun clearLocalState() = coordinator.clearLocalState()
 
     internal fun onRegistered(identifier: String) {
         scope.launch { coordinator.onRegistered(identifier) }

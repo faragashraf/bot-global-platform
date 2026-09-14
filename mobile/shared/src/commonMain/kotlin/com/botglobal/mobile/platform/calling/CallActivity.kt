@@ -127,6 +127,7 @@ class CallActivityController(
         mutableState.value = mutableState.value.copy(selected = runCatching { gateway.detail(callId) }.getOrNull())
     }
     fun clearDetail() { mutableState.value = mutableState.value.copy(selected = null) }
+    fun clear() { mutableState.value = CallActivitySnapshot() }
     suspend fun loadUsage() {
         mutableState.value = mutableState.value.copy(usageState = CallActivityLoadState.Loading)
         runCatching { gateway.currentUsage() }.fold(

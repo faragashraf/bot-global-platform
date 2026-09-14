@@ -4,6 +4,7 @@ using BotGlobal.Notifications.Application;
 using BotGlobal.Notifications.Application.Processing;
 using BotGlobal.Notifications.Endpoints;
 using BotGlobal.Notifications.Infrastructure.Persistence;
+using BotGlobal.Contracts.Mobile;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
@@ -57,6 +58,7 @@ public static class NotificationsModule
 
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<INotificationCampaignService, NotificationCampaignService>();
+        services.AddScoped<IApplicationAccountDeletionHandler, NotificationAccountDeletionHandler>();
         services.AddScoped<
             BotGlobal.Contracts.Notifications.INotificationDeviceLogReader,
             Application.NotificationDeviceLogService>();

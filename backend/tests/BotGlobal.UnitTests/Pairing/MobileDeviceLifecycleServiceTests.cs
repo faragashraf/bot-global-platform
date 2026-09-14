@@ -74,7 +74,7 @@ public sealed class MobileDeviceLifecycleServiceTests
     }
 
     [Fact]
-    public async Task UnpairAsync_RejectsCredentialAfterRevocation()
+    public async Task UnpairAsync_IsIdempotentAfterRevocation()
     {
         await using var db =
             CreateDatabase();
@@ -122,8 +122,11 @@ public sealed class MobileDeviceLifecycleServiceTests
             first);
 
         Assert.Equal(
-            UnpairMobileDeviceOutcome.InvalidCredential,
+            UnpairMobileDeviceOutcome.Unpaired,
             second);
+        Assert.Single(await db.DeviceAuditEntries.Where(
+            item => item.MobileDeviceId == device.Id
+                && item.Kind == MobileDeviceAuditKinds.UnpairedByDevice).ToListAsync());
     }
 
     [Fact]

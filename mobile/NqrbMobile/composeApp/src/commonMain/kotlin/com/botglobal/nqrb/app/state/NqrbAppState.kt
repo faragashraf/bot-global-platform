@@ -28,12 +28,17 @@ import com.botglobal.mobile.platform.localization.LocaleController
 import com.botglobal.mobile.platform.navigation.BackStackNavigator
 import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
 import com.botglobal.mobile.platform.notifications.UnavailablePushRegistrationLifecycle
+import com.botglobal.mobile.platform.notifications.PushRegistrationOutcome
+import com.botglobal.nqrb.app.data.NqrbAccountDeletionGateway
+import com.botglobal.nqrb.app.data.NqrbAccountDeletionOutcome
+import com.botglobal.nqrb.app.data.UnavailableNqrbAccountDeletionGateway
 import com.botglobal.mobile.platform.voice.ManagedVoiceRoomController
 import com.botglobal.mobile.platform.voice.VoiceIceConfiguration
 import com.botglobal.mobile.platform.voice.VoiceJoinResult
 import com.botglobal.mobile.platform.voice.VoiceMediaPeerFactory
 import com.botglobal.mobile.platform.voice.VoiceSignalingTransport
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,6 +60,22 @@ enum class NqrbDestination {
 
 enum class NqrbStartupState { RestoringSession, Ready }
 
+enum class NqrbAccountActionState {
+    Idle,
+    SigningOut,
+    Deleting,
+    SignOutFailed,
+    DeletionFailed,
+}
+
+fun interface NqrbLocalAccountDataCleaner {
+    suspend fun clear()
+}
+
+private object UnavailableNqrbLocalAccountDataCleaner : NqrbLocalAccountDataCleaner {
+    override suspend fun clear() = Unit
+}
+
 class NqrbAppState(
     val identity: FederatedIdentityController = FederatedIdentityController(
         UnavailableFederatedCredentialProvider,
@@ -73,6 +94,8 @@ class NqrbAppState(
     ),
     val callActivity: CallActivityController = CallActivityController(UnavailableCallActivityGateway),
     private val push: PushRegistrationLifecycle = UnavailablePushRegistrationLifecycle,
+    private val accountDeletion: NqrbAccountDeletionGateway = UnavailableNqrbAccountDeletionGateway,
+    private val localAccountDataCleaner: NqrbLocalAccountDataCleaner = UnavailableNqrbLocalAccountDataCleaner,
     private val permissions: PermissionController = UnavailablePermissionController,
     private val callActionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
@@ -82,6 +105,8 @@ class NqrbAppState(
     val startupState = mutableStartupState.asStateFlow()
     val microphoneExplanationVisible = MutableStateFlow(false)
     val microphonePermissionBlocked = MutableStateFlow(false)
+    private val mutableAccountActionState = MutableStateFlow(NqrbAccountActionState.Idle)
+    val accountActionState = mutableAccountActionState.asStateFlow()
     private var pendingMicrophoneAction = PendingMicrophoneAction.Outgoing
     private var pendingOutgoingParticipant: CallableParticipant? = null
     private val submittedUsageCalls = mutableSetOf<String>()
@@ -155,11 +180,81 @@ class NqrbAppState(
     }
 
     suspend fun logout() {
+        if (mutableAccountActionState.value in setOf(
+                NqrbAccountActionState.SigningOut,
+                NqrbAccountActionState.Deleting,
+            )
+        ) return
+        mutableAccountActionState.value = NqrbAccountActionState.SigningOut
+        val unpair = try {
+            push.deactivate()
+        } catch (cancelled: CancellationException) {
+            mutableAccountActionState.value = NqrbAccountActionState.Idle
+            throw cancelled
+        } catch (_: Exception) {
+            PushRegistrationOutcome.RetryableFailure
+        }
+        if (unpair != PushRegistrationOutcome.Unregistered) {
+            mutableAccountActionState.value = NqrbAccountActionState.SignOutFailed
+            return
+        }
         runCatching { calling.disconnectSignaling() }
-        runCatching { push.deactivate() }
         identity.logout()
+        contacts.clear()
         callingDirectory.clear()
+        callActivity.clear()
+        submittedUsageCalls.clear()
         navigation.reset(NqrbDestination.SignIn)
+        mutableAccountActionState.value = NqrbAccountActionState.Idle
+    }
+
+    suspend fun deleteAccount() {
+        if (mutableAccountActionState.value in setOf(
+                NqrbAccountActionState.SigningOut,
+                NqrbAccountActionState.Deleting,
+            )
+        ) return
+        mutableAccountActionState.value = NqrbAccountActionState.Deleting
+        val outcome = try {
+            accountDeletion.deleteCurrentAccount()
+        } catch (cancelled: CancellationException) {
+            mutableAccountActionState.value = NqrbAccountActionState.Idle
+            throw cancelled
+        } catch (_: Exception) {
+            NqrbAccountDeletionOutcome.RetryableFailure
+        }
+        when (outcome) {
+            NqrbAccountDeletionOutcome.Deleted,
+            NqrbAccountDeletionOutcome.Accepted,
+            -> completeLocalAccountDeletion()
+            NqrbAccountDeletionOutcome.AuthenticationRequired,
+            NqrbAccountDeletionOutcome.RetryableFailure,
+            NqrbAccountDeletionOutcome.Rejected,
+            -> mutableAccountActionState.value = NqrbAccountActionState.DeletionFailed
+        }
+    }
+
+    fun dismissAccountActionError() {
+        if (mutableAccountActionState.value in setOf(
+                NqrbAccountActionState.SignOutFailed,
+                NqrbAccountActionState.DeletionFailed,
+            )
+        ) {
+            mutableAccountActionState.value = NqrbAccountActionState.Idle
+        }
+    }
+
+    private suspend fun completeLocalAccountDeletion() {
+        runCatching { calling.disconnectSignaling() }
+        runCatching { push.clearLocalState() }
+        runCatching { localAccountDataCleaner.clear() }
+        identity.logout()
+        contacts.clear()
+        callingDirectory.clear()
+        callActivity.clear()
+        submittedUsageCalls.clear()
+        navigation.reset(NqrbDestination.SignIn)
+        mutableAccountActionState.value = NqrbAccountActionState.Idle
     }
 
     fun openSettings() {

@@ -106,6 +106,38 @@ public sealed class PushDestinationLifecycleTests
         Assert.Empty(await verify.DeviceAuditEntries.ToArrayAsync());
     }
 
+    [Fact]
+    public async Task Device_revoked_during_registration_cannot_leave_an_active_push_destination()
+    {
+        await using var database = await Database.CreateAsync();
+        var concurrentRevocation = new AfterSave(async () =>
+        {
+            await using var revocation = database.Context();
+            var device = await revocation.Devices.SingleAsync();
+            device.Revoke(DateTimeOffset.UtcNow);
+            await revocation.SaveChangesAsync();
+        });
+
+        await using (var registration = database.Context(concurrentRevocation))
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                Service(registration).RegisterAsync(
+                    database.Application,
+                    database.DeviceId,
+                    new RegisterMobilePushRequest("fcm", "late-route"),
+                    CancellationToken.None));
+        }
+
+        Assert.True(concurrentRevocation.Called);
+        await using var verify = database.Context();
+        Assert.Null(await new MobilePushDestinationResolver(verify).ResolveActiveAsync(
+            database.Application,
+            database.DeviceId,
+            "fcm",
+            CancellationToken.None));
+        Assert.NotNull((await verify.PushRegistrations.SingleAsync()).InvalidatedAtUtc);
+    }
+
     private static MobilePushRegistrationService Service(PairingDbContext context) =>
         new(context, new MobileDeviceAuditRecorder(context), TimeProvider.System);
 
@@ -153,6 +185,25 @@ public sealed class PushDestinationLifecycleTests
                 Called = true;
                 await action();
             }
+            return result;
+        }
+    }
+
+    private sealed class AfterSave(Func<Task> action) : SaveChangesInterceptor
+    {
+        public bool Called { get; private set; }
+
+        public override async ValueTask<int> SavedChangesAsync(
+            SaveChangesCompletedEventData eventData,
+            int result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!Called)
+            {
+                Called = true;
+                await action();
+            }
+
             return result;
         }
     }
