@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="سياسة خصوصية تطبيق NQRB / NQRB Privacy Policy">
+  <title>NQRB — سياسة الخصوصية / Privacy Policy</title>
+  <link rel="stylesheet" href="../../assets/nqrb-policy.css">
+  <script src="../../assets/nqrb-policy.js" defer></script>
+</head>
+<body>
+<main class="wrap">
+  <nav class="bar" aria-label="اختيار اللغة / Language selection">
+    <div class="brand"><div class="mark" aria-hidden="true">N</div><span>NQRB · نقرب</span></div>
+    <div class="language-switch">
+      <button type="button" data-switch="ar" aria-pressed="true">العربية</button>
+      <button type="button" data-switch="en" aria-pressed="false">English</button>
+    </div>
+  </nav>
+
+  <article class="document">
+    <header>
+      <div data-lang="ar"><h1>سياسة خصوصية نقرب</h1><p class="lead">توضح هذه السياسة كيف يعالج تطبيق NQRB البيانات لتسجيل الدخول وتشغيل المكالمات والإشعارات وإدارة الحساب.</p></div>
+      <div data-lang="en"><h1>NQRB Privacy Policy</h1><p class="lead">This policy explains how NQRB processes data for sign-in, calls, notifications, and account management.</p></div>
+      <p class="updated"><span data-lang="ar">آخر تحديث: 14 سبتمبر 2026</span><span data-lang="en">Last updated: September 14, 2026</span></p>
+    </header>
+
+    <section><div data-lang="ar"><h2>التطبيق والجهة المسؤولة</h2><p>تنطبق هذه السياسة على تطبيق NQRB ذي الحزمة <bdi>com.botglobal.nqrb</bdi>. الناشر ومتحكم البيانات هو Ashraf Farag.</p></div><div data-lang="en"><h2>Application and responsible entity</h2><p>This policy applies to NQRB, package <bdi>com.botglobal.nqrb</bdi>. The publisher and data controller is Ashraf Farag.</p></div></section>
+
+    <section><div data-lang="ar"><h2>البيانات التي يعالجها نقرب</h2><ul><li>بيانات حساب Google المستخدمة لتسجيل الدخول: الاسم والبريد الإلكتروني ومعرّف حساب Google.</li><li>معرّفات حساب نقرب والعضوية، ورموز جلسة الدخول.</li><li>معرّف تثبيت عشوائي، ومعرّف الجهاز داخل المنصة، ونظام الجهاز واسمه وإصدار التطبيق.</li><li>معرّف تسجيل Firebase/FCM اللازم لإرسال الإشعارات.</li><li>بيانات نشاط المكالمات: الأطراف وأسماء العرض وقت المكالمة، وتوقيتاتها ونتيجتها ومدتها وحجم بيانات الوسائط.</li></ul></div><div data-lang="en"><h2>Data NQRB processes</h2><ul><li>Google Account data used for sign-in: name, email address, and Google account identifier.</li><li>NQRB account and membership identifiers, and sign-in session tokens.</li><li>A random installation identifier, platform device identifier, device platform/name, and app version.</li><li>A Firebase/FCM registration identifier used for notifications.</li><li>Call activity data: participants and display-name snapshots, timing, outcome, connected duration, and media data volume.</li></ul></div></section>
+
+    <section><div data-lang="ar"><h2>جهات الاتصال</h2><p>الوصول إلى جهات اتصال Android اختياري ويُستخدم لعرض الأسماء والأرقام داخل التطبيق. تُقرأ جهات الاتصال في ذاكرة التطبيق على الجهاز، ولم يُصمم المسار الحالي لرفعها إلى خوادم Bot Global أو Firebase. يمكن استخدام نقرب دون منح هذا الإذن.</p></div><div data-lang="en"><h2>Contacts</h2><p>Android contacts access is optional and is used to show names and numbers inside the app. Contacts are read into the app's on-device memory; the current flow is not designed to upload them to Bot Global servers or Firebase. You can use NQRB without granting this permission.</p></div></section>
+
+    <section><div data-lang="ar"><h2>المكالمات والميكروفون</h2><p>يستخدم نقرب الميكروفون أثناء المكالمة الصوتية التي يبدأها المستخدم أو يقبلها. يُنقل الصوت مباشرة عبر WebRTC إلى الطرف الآخر، وقد يمر عبر خدمة TURN إذا كانت مهيأة. لا يسجل نقرب الصوت ولا يحفظ محتواه في قاعدة بيانات Bot Global وفق التنفيذ الحالي. تُحفظ بيانات نشاط المكالمة الموضحة أعلاه.</p></div><div data-lang="en"><h2>Calls and microphone</h2><p>NQRB uses the microphone during a voice call that you start or accept. Audio is sent to the other participant through WebRTC and may pass through a configured TURN relay. The current implementation does not record audio or store its content in a Bot Global database. The call activity data described above is stored.</p></div></section>
+
+    <section><div data-lang="ar"><h2>الكاميرا ورموز QR</h2><p>لا يطلب الإصدار الحالي من NQRB إذن الكاميرا، ولا يمسح رموز QR، ولا يعالج صورًا أو فيديوهات.</p></div><div data-lang="en"><h2>Camera and QR codes</h2><p>The current NQRB release does not request camera permission, scan QR codes, or process photos or videos.</p></div></section>
+
+    <section><div data-lang="ar"><h2>الإشعارات وFirebase</h2><p>يهيئ التطبيق Firebase Cloud Messaging للحصول على معرّف تسجيل وإرسال إشعارات المكالمات. يرسل التطبيق هذا المعرّف إلى خادم Bot Global مع معرّفات الجهاز. عند تسجيل الخروج بنجاح أو حذف الحساب، يُبطل الخادم تسجيل push ويمسح التطبيق حالته المحلية.</p></div><div data-lang="en"><h2>Notifications and Firebase</h2><p>The app initializes Firebase Cloud Messaging to obtain a registration identifier and deliver call notifications. NQRB sends that identifier to the Bot Global backend with device identifiers. After successful sign-out or account deletion, the backend invalidates push registration and the app clears its local state.</p></div></section>
+
+    <section><div data-lang="ar"><h2>الأغراض</h2><ul><li>إنشاء حساب نقرب وتسجيل الدخول وإدارة الجلسة.</li><li>تشغيل المكالمات وإظهار السجل وحساب استخدام بيانات المكالمات.</li><li>اقتران الجهاز وتوجيه إشعارات المكالمات.</li><li>منع استخدام الجلسات أو الأجهزة الملغاة وحماية الخدمة.</li></ul><p>لا يحتوي التطبيق على SDK للإعلانات أو التحليلات أو Crashlytics، ولا يستخدم البيانات للإعلانات أو التسويق وفق المصدر الحالي.</p></div><div data-lang="en"><h2>Purposes</h2><ul><li>Create and sign in to an NQRB account and manage its session.</li><li>Operate calls, show call history, and calculate call data usage.</li><li>Enroll the device and route call notifications.</li><li>Block revoked sessions/devices and protect the service.</li></ul><p>The current source contains no advertising, analytics, or Crashlytics SDK, and does not use data for advertising or marketing.</p></div></section>
+
+    <section><div data-lang="ar"><h2>الخدمات الخارجية</h2><ul><li>Google Sign-In لإثبات الهوية.</li><li>Google Firebase Cloud Messaging لإصدار معرّف push وتسليم الإشعارات.</li><li>خوادم Google وCloudflare STUN المهيأة افتراضيًا لمساعدة WebRTC على إنشاء اتصال؛ وقد تُستخدم خدمة TURN يحددها مشغل الخدمة.</li></ul><p>قد ترى خدمات الشبكة عناوين IP اللازمة لإنشاء الاتصال. لا يجمع كود التطبيق عنوان IP كحقل مستقل.</p></div><div data-lang="en"><h2>External services</h2><ul><li>Google Sign-In for identity verification.</li><li>Google Firebase Cloud Messaging to issue a push identifier and deliver notifications.</li><li>Google and Cloudflare STUN servers configured by default to help WebRTC establish a connection; an operator-configured TURN service may also be used.</li></ul><p>Network services may observe IP addresses required to establish connections. App code does not collect the IP address as a separate field.</p></div></section>
+
+    <section><div data-lang="ar"><h2>التخزين والحماية</h2><p>يخزن الخادم بيانات الحساب والجلسات والأجهزة وبيانات المكالمات. على Android، تُخزن رموز الجلسة وبيانات اعتماد الجهاز ومعرّف FCM مشفرة بمفاتيح Android Keystore، ويُحفظ معرّف التثبيت وoutbox محدود لتقارير استخدام المكالمات محليًا. تستخدم اتصالات الإصدار الإنتاجي HTTPS.</p></div><div data-lang="en"><h2>Storage and security</h2><p>The backend stores account, session, device, and call activity data. On Android, session tokens, the device credential, and FCM identifier are encrypted with Android Keystore-backed keys; a random installation identifier and a limited pending call-usage outbox are stored locally. Production connections use HTTPS.</p></div></section>
+
+    <section><div data-lang="ar"><h2>الاحتفاظ وحذف الحساب</h2><p>لا توجد مدة احتفاظ ثابتة معتمدة في المنتج. قبل أن يعتبر التطبيق طلب الحذف ناجحًا أو مقبولًا للمعالجة، يُلغي الخادم جلسات نقرب ويُبطل الأجهزة والإشعارات ويوقف وصول المكالمات، ثم تُحذف عضوية نقرب وبيانات الجهاز والـpush وبيانات الاستخدام وسجل المكالمات الخاص بالمستخدم. في المكالمة المشتركة، قد يبقى سجل المكالمة لدى الطرف الآخر مع استبدال هوية واسم المستخدم المحذوف بقيمة مجهولة وحذف تقرير استخدامه.</p><p>إذا كانت الهوية مستخدمة في تطبيق Bot Global آخر، تبقى الهوية العامة وGoogle login وعضوية التطبيق الآخر. وإذا لم تبق أي عضوية أخرى، تُحذف الهوية العامة وGoogle login. عند حدوث عطل مؤقت تُستأنف العملية تلقائيًا؛ ولا تُعاد أي جلسات تسجيل دخول أُلغيَت بالفعل.</p><p>يمكن بدء الحذف من داخل NQRB أو من صفحة الحذف العامة بعد التحقق من مالك الحساب باستخدام Google.</p><p><a href="../../nqrb/account-deletion/">حذف حساب NQRB</a></p></div><div data-lang="en"><h2>Retention and account deletion</h2><p>No fixed product retention schedule is currently approved. Before the app treats a deletion request as successful or accepted for processing, the backend revokes NQRB sessions, devices, and notifications and blocks calling access; it then deletes NQRB membership, device/push data, usage data, and the user's call history. For a shared call, the other participant may retain the call record with the deleted user's identity and display name replaced by an anonymous value and the deleted user's usage report removed.</p><p>If the identity is used by another Bot Global app, the global identity, Google login, and other app membership remain. If no other membership remains, the global identity and Google login are deleted. The operation resumes automatically after a temporary failure, and any sign-in sessions already revoked are not restored.</p><p>Deletion can be started inside NQRB or on the public deletion page after Google verifies the account owner.</p><p><a href="../../nqrb/account-deletion/">Delete an NQRB account</a></p></div></section>
+
+    <section><div data-lang="ar"><h2>الفئة العمرية</h2><p>نقرب مخصص للمستخدمين بعمر 13 سنة أو أكثر، وليس موجّهًا للأطفال دون 13 سنة.</p></div><div data-lang="en"><h2>Age audience</h2><p>NQRB is intended for people aged 13 and older and is not directed to children under 13.</p></div></section>
+
+    <section><div data-lang="ar"><h2>تحديثات السياسة</h2><p>سنحدّث هذه الصفحة وتاريخ «آخر تحديث» إذا تغيرت طريقة معالجة البيانات.</p></div><div data-lang="en"><h2>Policy updates</h2><p>We will update this page and its “Last updated” date if data handling changes.</p></div></section>
+
+    <section><div data-lang="ar"><h2>التواصل والمساعدة</h2><p>للاستفسارات المتعلقة بخصوصية NQRB أو دعمه، تواصل عبر <a href="mailto:farag.ashraf@icloud.com">farag.ashraf@icloud.com</a>.</p><div class="link-grid"><a href="../../nqrb/account-deletion/">حذف حساب NQRB</a><a href="../../nqrb/support/">دعم NQRB</a></div></div><div data-lang="en"><h2>Contact and help</h2><p>For NQRB privacy or support inquiries, contact <a href="mailto:farag.ashraf@icloud.com">farag.ashraf@icloud.com</a>.</p><div class="link-grid"><a href="../../nqrb/account-deletion/">Delete an NQRB account</a><a href="../../nqrb/support/">NQRB support</a></div></div></section>
+  </article>
+  <footer>© 2026 NQRB</footer>
+</main>
+</body>
+</html>
