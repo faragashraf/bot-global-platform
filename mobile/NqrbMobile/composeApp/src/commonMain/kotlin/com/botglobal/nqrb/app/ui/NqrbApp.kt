@@ -88,6 +88,7 @@ import com.botglobal.nqrb.app.state.NqrbAppState
 import com.botglobal.nqrb.app.state.NqrbDestination
 import com.botglobal.nqrb.app.state.NqrbStartupState
 import com.botglobal.nqrb.app.state.NqrbAccountActionState
+import com.botglobal.nqrb.app.state.NqrbAccountProfileState
 import com.botglobal.nqrb.app.config.NqrbPublicSite
 import kotlinx.coroutines.launch
 
@@ -421,6 +422,7 @@ private fun ProfileScreen(strings: NqrbStrings, appState: NqrbAppState) {
     val uriHandler = LocalUriHandler.current
     val colors = LocalNqrbColors.current
     val accountAction by appState.accountActionState.collectAsState()
+    val accountProfile by appState.accountProfileState.collectAsState()
     var deletionConfirmation by remember { mutableStateOf(NqrbDeletionConfirmation.Closed) }
     val operationInProgress = accountAction in setOf(
         NqrbAccountActionState.SigningOut,
@@ -432,6 +434,7 @@ private fun ProfileScreen(strings: NqrbStrings, appState: NqrbAppState) {
     ) {
         ProductHeader(strings, appState::openSettings)
         FlowHero(NqrbGlyph.Profile, strings.profileTitle, strings.profileBody)
+        AccountIdentityCard(strings, accountProfile, appState::refreshAccountProfile)
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = colors.elevatedSurface,
@@ -539,6 +542,79 @@ private fun ProfileScreen(strings: NqrbStrings, appState: NqrbAppState) {
                 ) { Text(strings.cancel) }
             },
         )
+    }
+}
+
+internal data class NqrbAccountIdentityPresentation(
+    val nameLabel: String,
+    val displayName: String,
+    val emailLabel: String,
+    val email: String,
+)
+
+internal fun accountIdentityPresentation(
+    strings: NqrbStrings,
+    state: NqrbAccountProfileState,
+): NqrbAccountIdentityPresentation? {
+    val profile = (state as? NqrbAccountProfileState.Available)?.profile ?: return null
+    return NqrbAccountIdentityPresentation(
+        nameLabel = strings.accountName,
+        displayName = profile.displayName.trim().ifEmpty { strings.unavailableAccountName },
+        emailLabel = strings.emailAddress,
+        email = profile.email.trim().ifEmpty { strings.unavailableAccountEmail },
+    )
+}
+
+@Composable
+private fun AccountIdentityCard(
+    strings: NqrbStrings,
+    state: NqrbAccountProfileState,
+    onRetry: () -> Unit,
+) {
+    if (state == NqrbAccountProfileState.Hidden) return
+    val colors = LocalNqrbColors.current
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.surface,
+        shape = RoundedCornerShape(24.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
+    ) {
+        Column(
+            Modifier.padding(NqrbSpacing.Lg),
+            verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
+        ) {
+            Text(strings.accountInformation, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+            when (state) {
+                NqrbAccountProfileState.Loading -> Text(
+                    strings.accountIdentityLoading,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textSecondary,
+                )
+                NqrbAccountProfileState.Failed -> {
+                    Text(
+                        strings.accountIdentityError,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.textSecondary,
+                    )
+                    TextButton(onClick = onRetry) { Text(strings.retry, color = colors.accent) }
+                }
+                is NqrbAccountProfileState.Available -> {
+                    val presentation = accountIdentityPresentation(strings, state) ?: return@Column
+                    AccountIdentityRow(presentation.nameLabel, presentation.displayName)
+                    AccountIdentityRow(presentation.emailLabel, presentation.email)
+                }
+                NqrbAccountProfileState.Hidden -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountIdentityRow(label: String, value: String) {
+    val colors = LocalNqrbColors.current
+    Column(verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = colors.textSecondary)
+        Text(value, style = MaterialTheme.typography.bodyLarge, color = colors.textPrimary)
     }
 }
 

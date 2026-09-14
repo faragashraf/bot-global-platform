@@ -13,6 +13,7 @@ import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.accept
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -28,7 +29,7 @@ class NqrbIdentityApi(
     platformClient: HttpClient,
     private val apiBaseUrl: String,
     private val vault: SessionVault,
-) : FederatedIdentityGateway {
+) : FederatedIdentityGateway, NqrbAccountProfileGateway {
     private val restoreMutex = Mutex()
     private val client = platformClient.config {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
@@ -92,6 +93,31 @@ class NqrbIdentityApi(
         vault.clear()
     }
 
+    override suspend fun load(): NqrbAccountProfileResult {
+        val session = vault.restore() ?: return NqrbAccountProfileResult.AuthenticationRequired
+        return try {
+            val response = client.get(endpoint("/api/mobile/nqrb/identity/me")) {
+                accept(ContentType.Application.Json)
+                bearerAuth(session.accessToken)
+            }
+            when {
+                response.status.value in 200..299 -> {
+                    val profile = response.body<AccountProfileDto>()
+                    NqrbAccountProfileResult.Available(
+                        NqrbAccountProfile(profile.displayName, profile.email),
+                    )
+                }
+                response.status == HttpStatusCode.Unauthorized -> {
+                    vault.clear()
+                    NqrbAccountProfileResult.AuthenticationRequired
+                }
+                else -> NqrbAccountProfileResult.RetryableFailure
+            }
+        } catch (_: Exception) {
+            NqrbAccountProfileResult.RetryableFailure
+        }
+    }
+
     private fun endpoint(path: String) = apiBaseUrl.trimEnd('/') + path
 
     private fun io.ktor.client.request.HttpRequestBuilder.jsonRequest() {
@@ -107,6 +133,12 @@ private data class FederatedRequest(val provider: String, val idToken: String)
 
 @Serializable
 private data class RefreshRequest(val refreshToken: String)
+
+@Serializable
+private data class AccountProfileDto(
+    val displayName: String,
+    val email: String,
+)
 
 @Serializable
 private data class IdentityDto(

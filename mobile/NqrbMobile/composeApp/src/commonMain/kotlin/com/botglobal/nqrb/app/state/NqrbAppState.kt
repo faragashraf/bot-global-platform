@@ -32,6 +32,10 @@ import com.botglobal.mobile.platform.notifications.PushRegistrationOutcome
 import com.botglobal.nqrb.app.data.NqrbAccountDeletionGateway
 import com.botglobal.nqrb.app.data.NqrbAccountDeletionOutcome
 import com.botglobal.nqrb.app.data.UnavailableNqrbAccountDeletionGateway
+import com.botglobal.nqrb.app.data.NqrbAccountProfile
+import com.botglobal.nqrb.app.data.NqrbAccountProfileGateway
+import com.botglobal.nqrb.app.data.NqrbAccountProfileResult
+import com.botglobal.nqrb.app.data.UnavailableNqrbAccountProfileGateway
 import com.botglobal.mobile.platform.voice.ManagedVoiceRoomController
 import com.botglobal.mobile.platform.voice.VoiceIceConfiguration
 import com.botglobal.mobile.platform.voice.VoiceJoinResult
@@ -68,6 +72,13 @@ enum class NqrbAccountActionState {
     DeletionFailed,
 }
 
+sealed interface NqrbAccountProfileState {
+    data object Hidden : NqrbAccountProfileState
+    data object Loading : NqrbAccountProfileState
+    data class Available(val profile: NqrbAccountProfile) : NqrbAccountProfileState
+    data object Failed : NqrbAccountProfileState
+}
+
 fun interface NqrbLocalAccountDataCleaner {
     suspend fun clear()
 }
@@ -95,6 +106,7 @@ class NqrbAppState(
     val callActivity: CallActivityController = CallActivityController(UnavailableCallActivityGateway),
     private val push: PushRegistrationLifecycle = UnavailablePushRegistrationLifecycle,
     private val accountDeletion: NqrbAccountDeletionGateway = UnavailableNqrbAccountDeletionGateway,
+    private val accountProfile: NqrbAccountProfileGateway = UnavailableNqrbAccountProfileGateway,
     private val localAccountDataCleaner: NqrbLocalAccountDataCleaner = UnavailableNqrbLocalAccountDataCleaner,
     private val permissions: PermissionController = UnavailablePermissionController,
     private val callActionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
@@ -107,6 +119,8 @@ class NqrbAppState(
     val microphonePermissionBlocked = MutableStateFlow(false)
     private val mutableAccountActionState = MutableStateFlow(NqrbAccountActionState.Idle)
     val accountActionState = mutableAccountActionState.asStateFlow()
+    private val mutableAccountProfileState = MutableStateFlow<NqrbAccountProfileState>(NqrbAccountProfileState.Hidden)
+    val accountProfileState = mutableAccountProfileState.asStateFlow()
     private var pendingMicrophoneAction = PendingMicrophoneAction.Outgoing
     private var pendingOutgoingParticipant: CallableParticipant? = null
     private val submittedUsageCalls = mutableSetOf<String>()
@@ -134,7 +148,7 @@ class NqrbAppState(
             identity.restore()
             val authenticated = identity.state.value as? FederatedAuthenticationState.SignedIn
             navigation.reset(
-                if (authenticated != null) {
+                if (authenticated != null && loadAccountProfile()) {
                     runCatching { push.activate() }
                     runCatching { calling.connectSignaling() }
                     refreshCallingDirectory()
@@ -154,6 +168,7 @@ class NqrbAppState(
         identity.signIn(FederatedIdentityProvider.Google)
         val authenticated = identity.state.value as? FederatedAuthenticationState.SignedIn
         if (authenticated != null) {
+            if (!loadAccountProfile()) return
             runCatching { push.activate() }
             runCatching { calling.connectSignaling() }
             refreshCallingDirectory()
@@ -200,6 +215,7 @@ class NqrbAppState(
         }
         runCatching { calling.disconnectSignaling() }
         identity.logout()
+        mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
         contacts.clear()
         callingDirectory.clear()
         callActivity.clear()
@@ -249,6 +265,7 @@ class NqrbAppState(
         runCatching { push.clearLocalState() }
         runCatching { localAccountDataCleaner.clear() }
         identity.logout()
+        mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
         contacts.clear()
         callingDirectory.clear()
         callActivity.clear()
@@ -268,7 +285,37 @@ class NqrbAppState(
         navigation.selectTopLevel(destination)
         if (destination == NqrbDestination.Home) refreshCallingDirectory()
         if (destination == NqrbDestination.History) callActionScope.launch { callActivity.loadHistory() }
+        if (destination == NqrbDestination.Profile) refreshAccountProfile()
         return true
+    }
+
+    fun refreshAccountProfile() {
+        if (identity.state.value !is FederatedAuthenticationState.SignedIn) {
+            mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
+            return
+        }
+        mutableAccountProfileState.value = NqrbAccountProfileState.Loading
+        callActionScope.launch { loadAccountProfile() }
+    }
+
+    private suspend fun loadAccountProfile(): Boolean {
+        mutableAccountProfileState.value = NqrbAccountProfileState.Loading
+        return when (val result = accountProfile.load()) {
+            is NqrbAccountProfileResult.Available -> {
+                mutableAccountProfileState.value = NqrbAccountProfileState.Available(result.profile)
+                true
+            }
+            NqrbAccountProfileResult.AuthenticationRequired -> {
+                mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
+                identity.logout()
+                navigation.reset(NqrbDestination.SignIn)
+                false
+            }
+            NqrbAccountProfileResult.RetryableFailure -> {
+                mutableAccountProfileState.value = NqrbAccountProfileState.Failed
+                true
+            }
+        }
     }
 
     fun canUseHome(): Boolean = identity.state.value is FederatedAuthenticationState.SignedIn

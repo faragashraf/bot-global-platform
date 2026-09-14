@@ -26,6 +26,10 @@ public sealed record MobileIdentityResponse(
     bool IsGuest,
     string ApplicationKey);
 
+public sealed record MobileIdentityProfileResponse(
+    string DisplayName,
+    string Email);
+
 public sealed record MobileIdentityResult(
     MobileSessionResponse? Session,
     IReadOnlyDictionary<string, string[]> Errors)

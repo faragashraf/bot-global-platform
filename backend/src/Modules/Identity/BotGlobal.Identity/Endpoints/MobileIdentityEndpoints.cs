@@ -32,15 +32,13 @@ internal static class MobileIdentityEndpoints
             return session is null ? Results.Unauthorized() : Results.Ok(session);
         }).AllowAnonymous();
 
-        group.MapGet("/me", (ClaimsPrincipal principal) =>
+        group.MapGet("/me", async (
+            ClaimsPrincipal principal,
+            IMobileIdentityProfileReader profiles,
+            CancellationToken cancellationToken) =>
         {
-            var membershipId = RequireMembershipId(principal);
-            return Results.Ok(new MobileIdentityResponse(
-                membershipId,
-                principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
-                principal.Identity?.Name ?? string.Empty,
-                false,
-                applicationKey));
+            var profile = await profiles.ReadAsync(RequireIdentity(principal), cancellationToken);
+            return profile is null ? Results.Unauthorized() : Results.Ok(profile);
         }).RequireAuthorization(ApplicationIdentityPolicies.For(applicationKey));
 
         group.MapPost("/logout", async (

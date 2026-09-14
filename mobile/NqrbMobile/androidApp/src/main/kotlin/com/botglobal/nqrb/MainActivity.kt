@@ -52,6 +52,7 @@ class MainActivity : ComponentActivity() {
             callActivity = nqrbApplication.callActivity,
             push = nqrbApplication.firebaseMessagingRuntime,
             accountDeletion = nqrbApplication.accountDeletionApi,
+            accountProfile = nqrbApplication.identityApi,
             localAccountDataCleaner = nqrbApplication.localAccountDataCleaner,
             permissions = permissionController,
         )
