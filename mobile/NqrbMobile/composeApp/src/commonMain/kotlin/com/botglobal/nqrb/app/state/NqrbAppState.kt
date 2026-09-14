@@ -205,7 +205,7 @@ class NqrbAppState(
                 NqrbAccountActionState.Deleting,
             )
         ) return
-        invalidateAccountProfileRequests(hideProfile = false)
+        val profileInvalidation = invalidateAccountProfileRequests(hideProfile = false)
         mutableAccountActionState.value = NqrbAccountActionState.SigningOut
         val unpair = try {
             push.deactivate()
@@ -216,6 +216,7 @@ class NqrbAppState(
             PushRegistrationOutcome.RetryableFailure
         }
         if (unpair != PushRegistrationOutcome.Unregistered) {
+            markInvalidatedLoadingProfileAsFailed(profileInvalidation)
             mutableAccountActionState.value = NqrbAccountActionState.SignOutFailed
             return
         }
@@ -236,7 +237,7 @@ class NqrbAppState(
                 NqrbAccountActionState.Deleting,
             )
         ) return
-        invalidateAccountProfileRequests(hideProfile = false)
+        val profileInvalidation = invalidateAccountProfileRequests(hideProfile = false)
         mutableAccountActionState.value = NqrbAccountActionState.Deleting
         val outcome = try {
             accountDeletion.deleteCurrentAccount()
@@ -253,7 +254,10 @@ class NqrbAppState(
             NqrbAccountDeletionOutcome.AuthenticationRequired,
             NqrbAccountDeletionOutcome.RetryableFailure,
             NqrbAccountDeletionOutcome.Rejected,
-            -> mutableAccountActionState.value = NqrbAccountActionState.DeletionFailed
+            -> {
+                markInvalidatedLoadingProfileAsFailed(profileInvalidation)
+                mutableAccountActionState.value = NqrbAccountActionState.DeletionFailed
+            }
         }
     }
 
@@ -339,11 +343,27 @@ class NqrbAppState(
         }
     }
 
-    private suspend fun invalidateAccountProfileRequests(hideProfile: Boolean) {
+    private suspend fun invalidateAccountProfileRequests(hideProfile: Boolean): AccountProfileInvalidation =
         accountProfileLifecycleMutex.withLock {
-            accountProfileRequestGeneration++
+            val invalidation = AccountProfileInvalidation(
+                generation = ++accountProfileRequestGeneration,
+                session = (identity.state.value as? FederatedAuthenticationState.SignedIn)?.session,
+                wasLoading = mutableAccountProfileState.value == NqrbAccountProfileState.Loading,
+            )
             if (hideProfile) {
                 mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
+            }
+            invalidation
+        }
+
+    private suspend fun markInvalidatedLoadingProfileAsFailed(invalidation: AccountProfileInvalidation) {
+        accountProfileLifecycleMutex.withLock {
+            val currentSession = (identity.state.value as? FederatedAuthenticationState.SignedIn)?.session
+            if (invalidation.wasLoading &&
+                invalidation.generation == accountProfileRequestGeneration &&
+                invalidation.session == currentSession
+            ) {
+                mutableAccountProfileState.value = NqrbAccountProfileState.Failed
             }
         }
     }
@@ -487,4 +507,10 @@ class NqrbAppState(
 private data class AccountProfileRequest(
     val generation: Long,
     val session: MobileSession,
+)
+
+private data class AccountProfileInvalidation(
+    val generation: Long,
+    val session: MobileSession?,
+    val wasLoading: Boolean,
 )

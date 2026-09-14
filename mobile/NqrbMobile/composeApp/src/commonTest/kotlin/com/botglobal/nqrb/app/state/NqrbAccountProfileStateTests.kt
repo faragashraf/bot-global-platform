@@ -12,6 +12,9 @@ import com.botglobal.mobile.platform.identity.FederatedIdentityProvider
 import com.botglobal.mobile.platform.identity.FederatedSignInResult
 import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
+import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
+import com.botglobal.mobile.platform.notifications.PushRegistrationOutcome
+import com.botglobal.mobile.platform.notifications.UnavailablePushRegistrationLifecycle
 import com.botglobal.nqrb.app.data.NqrbAccountDeletionGateway
 import com.botglobal.nqrb.app.data.NqrbAccountDeletionOutcome
 import com.botglobal.nqrb.app.data.NqrbAccountProfile
@@ -117,6 +120,60 @@ class NqrbAccountProfileStateTests {
     }
 
     @Test
+    fun recoverableLogoutFailureMovesInvalidatedLoadingProfileToRetryableFailure() = runTest {
+        val profiles = DeferredProfileGateway()
+        val state = state(
+            SwitchingIdentityGateway(session("current")),
+            profiles,
+            push = RetryableFailurePush,
+        )
+        state.startup()
+        state.selectTopLevel(NqrbDestination.Profile)
+        runCurrent()
+        val invalidatedRequest = profiles.requests.single()
+
+        state.logout()
+
+        assertIs<FederatedAuthenticationState.SignedIn>(state.identity.state.value)
+        assertIs<NqrbAccountProfileState.Failed>(state.accountProfileState.value)
+        assertEquals(NqrbAccountActionState.SignOutFailed, state.accountActionState.value)
+        invalidatedRequest.result.complete(available("Late Person"))
+        runCurrent()
+        assertIs<NqrbAccountProfileState.Failed>(state.accountProfileState.value)
+
+        state.refreshAccountProfile()
+        runCurrent()
+        profiles.requests.last().result.complete(available("Current Person"))
+        runCurrent()
+        assertEquals("Current Person", availableProfile(state).displayName)
+    }
+
+    @Test
+    fun recoverableDeletionFailureMovesInvalidatedLoadingProfileToRetryableFailure() = runTest {
+        val profiles = DeferredProfileGateway()
+        val state = state(SwitchingIdentityGateway(session("current")), profiles)
+        state.startup()
+        state.selectTopLevel(NqrbDestination.Profile)
+        runCurrent()
+        val invalidatedRequest = profiles.requests.single()
+
+        state.deleteAccount()
+
+        assertIs<FederatedAuthenticationState.SignedIn>(state.identity.state.value)
+        assertIs<NqrbAccountProfileState.Failed>(state.accountProfileState.value)
+        assertEquals(NqrbAccountActionState.DeletionFailed, state.accountActionState.value)
+        invalidatedRequest.result.complete(available("Late Person"))
+        runCurrent()
+        assertIs<NqrbAccountProfileState.Failed>(state.accountProfileState.value)
+
+        state.refreshAccountProfile()
+        runCurrent()
+        profiles.requests.last().result.complete(available("Current Person"))
+        runCurrent()
+        assertEquals("Current Person", availableProfile(state).displayName)
+    }
+
+    @Test
     fun successfulNewSignInInvalidatesOldProfileWorkBeforeAnotherLoad() = runTest {
         val second = session("second")
         val profiles = DeferredProfileGateway()
@@ -208,10 +265,12 @@ class NqrbAccountProfileStateTests {
         deletion: NqrbAccountDeletionGateway = NqrbAccountDeletionGateway {
             NqrbAccountDeletionOutcome.RetryableFailure
         },
+        push: PushRegistrationLifecycle = UnavailablePushRegistrationLifecycle,
     ) = NqrbAppState(
         identity = FederatedIdentityController(FixedCredentials, identityGateway),
         accountProfile = profiles,
         accountDeletion = deletion,
+        push = push,
         callActionScope = backgroundScope,
     )
 
@@ -251,6 +310,12 @@ class NqrbAccountProfileStateTests {
             FederatedCredentialResult.Acquired(
                 FederatedCredential(provider, FederatedCredentialType.IdToken, "transient-test-token"),
             )
+    }
+
+    private object RetryableFailurePush : PushRegistrationLifecycle {
+        override suspend fun activate() = Unit
+        override suspend fun deactivate() = PushRegistrationOutcome.RetryableFailure
+        override suspend fun clearLocalState() = Unit
     }
 
     private fun signedInSession(state: NqrbAppState) =
