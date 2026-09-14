@@ -9,6 +9,8 @@ public interface IMobileNotificationConnectionRegistry
     void Disconnected(Guid deviceId);
 
     bool IsConnected(Guid deviceId);
+
+    void Forget(IReadOnlyCollection<Guid> deviceIds);
 }
 
 internal sealed class MobileNotificationConnectionRegistry
@@ -16,9 +18,15 @@ internal sealed class MobileNotificationConnectionRegistry
 {
     private readonly ConcurrentDictionary<Guid, int> _connections =
         new();
+    private readonly ConcurrentDictionary<Guid, byte> _blockedDevices = new();
 
     public void Connected(Guid deviceId)
     {
+        if (_blockedDevices.ContainsKey(deviceId))
+        {
+            return;
+        }
+
         _connections.AddOrUpdate(
             deviceId,
             1,
@@ -54,8 +62,18 @@ internal sealed class MobileNotificationConnectionRegistry
     }
 
     public bool IsConnected(Guid deviceId) =>
-        _connections.TryGetValue(
+        !_blockedDevices.ContainsKey(deviceId)
+        && _connections.TryGetValue(
             deviceId,
             out var count)
         && count > 0;
+
+    public void Forget(IReadOnlyCollection<Guid> deviceIds)
+    {
+        foreach (var deviceId in deviceIds)
+        {
+            _blockedDevices.TryAdd(deviceId, 0);
+            _connections.TryRemove(deviceId, out _);
+        }
+    }
 }

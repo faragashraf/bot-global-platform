@@ -64,6 +64,16 @@ public sealed class CallParticipantRecord
     public DateTimeOffset? AnsweredAtUtc { get; private set; }
     public void MarkAnswered(DateTimeOffset at) { AnsweredAtUtc ??= at; JoinedAtUtc ??= at; }
     public void MarkJoined(DateTimeOffset at) => JoinedAtUtc ??= at;
+    public CallParticipantRecord CreateAnonymized(Guid anonymousMembershipId)
+    {
+        if (anonymousMembershipId == Guid.Empty)
+            throw new ArgumentException("Anonymous membership id is required.", nameof(anonymousMembershipId));
+        return new CallParticipantRecord(CallId, anonymousMembershipId, Role, "Deleted NQRB account")
+        {
+            JoinedAtUtc = JoinedAtUtc,
+            AnsweredAtUtc = AnsweredAtUtc
+        };
+    }
 }
 
 public sealed class CallUsageReport

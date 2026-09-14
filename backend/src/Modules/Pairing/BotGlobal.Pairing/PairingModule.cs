@@ -59,6 +59,9 @@ public static class PairingModule
                             DatabaseSchema)));
 
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddScoped<
+            IApplicationMembershipActivityReader,
+            UnavailableApplicationMembershipActivityReader>();
         services.AddSingleton<IPairingTokenService, PairingTokenService>();
         services.AddScoped<IPairingChallengeService, PairingChallengeService>();
         services.AddScoped<
@@ -70,6 +73,8 @@ public static class PairingModule
             PairingMobileBroadcastAudienceReader>();
 
         services.AddScoped<IMobileDeviceLifecycleService, MobileDeviceLifecycleService>();
+        services.AddScoped<IApplicationAccountDeletionHandler, PairingAccountAccessRevocationHandler>();
+        services.AddScoped<IApplicationAccountDeletionHandler, PairingAccountDeletionHandler>();
         services.AddScoped<IMobileDeviceEnrollmentService, MobileDeviceEnrollmentService>();
         services.AddScoped<IMobileProfileSnapshotService, MobileProfileSnapshotService>();
         services.AddSingleton<IMobileDeviceCredentialService, MobileDeviceCredentialService>();

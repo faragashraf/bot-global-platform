@@ -43,6 +43,9 @@ import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
+import com.botglobal.mobile.platform.notifications.PushRegistrationOutcome
+import com.botglobal.nqrb.app.data.NqrbAccountDeletionGateway
+import com.botglobal.nqrb.app.data.NqrbAccountDeletionOutcome
 import com.botglobal.mobile.platform.voice.VoiceRoomController
 import com.botglobal.mobile.platform.voice.VoiceRoomSnapshot
 import com.botglobal.mobile.platform.voice.VoiceRoomState
@@ -222,6 +225,87 @@ class NqrbAppStateTests {
         assertEquals(NqrbDestination.SignIn, state.navigation.current)
         assertFalse(state.navigation.navigateBack())
         assertEquals(1, push.deactivations)
+    }
+
+    @Test
+    fun failedUnpairPreservesAuthenticatedStateAndAllowsRetry() = runTest {
+        val push = RecordingPushLifecycle(PushRegistrationOutcome.RetryableFailure)
+        val state = state(restored = session(), push = push)
+        state.startup()
+
+        state.logout()
+
+        assertTrue(state.identity.state.value is FederatedAuthenticationState.SignedIn)
+        assertEquals(NqrbDestination.Home, state.navigation.current)
+        assertEquals(NqrbAccountActionState.SignOutFailed, state.accountActionState.value)
+        assertEquals(1, push.deactivations)
+    }
+
+    @Test
+    fun acceptedDeletionClearsLocalStateAndReturnsToSignedOutFlow() = runTest {
+        val push = RecordingPushLifecycle()
+        val cleaner = RecordingLocalCleaner()
+        val state = state(
+            restored = session(),
+            push = push,
+            accountDeletion = NqrbAccountDeletionGateway { NqrbAccountDeletionOutcome.Accepted },
+            localCleaner = cleaner,
+        )
+        state.startup()
+
+        state.deleteAccount()
+
+        assertEquals(FederatedAuthenticationState.SignedOut, state.identity.state.value)
+        assertEquals(NqrbDestination.SignIn, state.navigation.current)
+        assertEquals(1, cleaner.clears)
+        assertEquals(1, push.localClears)
+        assertEquals(NqrbAccountActionState.Idle, state.accountActionState.value)
+    }
+
+    @Test
+    fun failedDeletionPreservesRecoverableAuthenticatedState() = runTest {
+        val push = RecordingPushLifecycle()
+        val cleaner = RecordingLocalCleaner()
+        val state = state(
+            restored = session(),
+            push = push,
+            accountDeletion = NqrbAccountDeletionGateway { NqrbAccountDeletionOutcome.RetryableFailure },
+            localCleaner = cleaner,
+        )
+        state.startup()
+
+        state.deleteAccount()
+
+        assertTrue(state.identity.state.value is FederatedAuthenticationState.SignedIn)
+        assertEquals(NqrbDestination.Home, state.navigation.current)
+        assertEquals(0, cleaner.clears)
+        assertEquals(0, push.localClears)
+        assertEquals(NqrbAccountActionState.DeletionFailed, state.accountActionState.value)
+    }
+
+    @Test
+    fun deletionSubmissionIsSingleFlight() = runTest {
+        val response = CompletableDeferred<NqrbAccountDeletionOutcome>()
+        var calls = 0
+        val state = state(
+            restored = session(),
+            accountDeletion = NqrbAccountDeletionGateway {
+                calls++
+                response.await()
+            },
+        )
+        state.startup()
+
+        backgroundScope.launch { state.deleteAccount() }
+        runCurrent()
+        backgroundScope.launch { state.deleteAccount() }
+        runCurrent()
+
+        assertEquals(1, calls)
+        assertEquals(NqrbAccountActionState.Deleting, state.accountActionState.value)
+        response.complete(NqrbAccountDeletionOutcome.RetryableFailure)
+        runCurrent()
+        assertEquals(NqrbAccountActionState.DeletionFailed, state.accountActionState.value)
     }
 
     @Test
@@ -457,6 +541,10 @@ class NqrbAppStateTests {
         signIn: FederatedSignInResult = FederatedSignInResult.Rejected,
         permission: PermissionState = PermissionState.Unknown,
         push: PushRegistrationLifecycle = RecordingPushLifecycle(),
+        accountDeletion: NqrbAccountDeletionGateway = NqrbAccountDeletionGateway {
+            NqrbAccountDeletionOutcome.RetryableFailure
+        },
+        localCleaner: NqrbLocalAccountDataCleaner = RecordingLocalCleaner(),
     ) = NqrbAppState(
         identity = FederatedIdentityController(
             credentials = FixedCredentials,
@@ -464,6 +552,8 @@ class NqrbAppStateTests {
         ),
         contacts = ContactsController(FixedPermission(permission), EmptyContacts),
         push = push,
+        accountDeletion = accountDeletion,
+        localAccountDataCleaner = localCleaner,
     )
 
     private object FixedCredentials : FederatedCredentialProvider {
@@ -510,16 +600,29 @@ class NqrbAppStateTests {
         override suspend fun readLocalContacts() = emptyList<com.botglobal.mobile.platform.contacts.DeviceContact>()
     }
 
-    private class RecordingPushLifecycle : PushRegistrationLifecycle {
+    private class RecordingPushLifecycle(
+        private val deactivationOutcome: PushRegistrationOutcome = PushRegistrationOutcome.Unregistered,
+    ) : PushRegistrationLifecycle {
         var activations = 0
         var deactivations = 0
+        var localClears = 0
         override suspend fun activate() { activations++ }
-        override suspend fun deactivate() { deactivations++ }
+        override suspend fun deactivate(): PushRegistrationOutcome {
+            deactivations++
+            return deactivationOutcome
+        }
+        override suspend fun clearLocalState() { localClears++ }
     }
 
     private object ThrowingPushLifecycle : PushRegistrationLifecycle {
         override suspend fun activate() = error("Synthetic push registration failure")
         override suspend fun deactivate() = error("Synthetic push invalidation failure")
+        override suspend fun clearLocalState() = Unit
+    }
+
+    private class RecordingLocalCleaner : NqrbLocalAccountDataCleaner {
+        var clears = 0
+        override suspend fun clear() { clears++ }
     }
 
     private class RecordingDirectory(

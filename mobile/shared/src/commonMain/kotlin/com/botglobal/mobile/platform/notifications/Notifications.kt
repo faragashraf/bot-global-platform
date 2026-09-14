@@ -282,12 +282,14 @@ class InMemoryMobileDeviceCredentialVault(
 
 interface PushRegistrationLifecycle {
     suspend fun activate()
-    suspend fun deactivate()
+    suspend fun deactivate(): PushRegistrationOutcome
+    suspend fun clearLocalState()
 }
 
 object UnavailablePushRegistrationLifecycle : PushRegistrationLifecycle {
     override suspend fun activate() = Unit
-    override suspend fun deactivate() = Unit
+    override suspend fun deactivate() = PushRegistrationOutcome.Unregistered
+    override suspend fun clearLocalState() = Unit
 }
 
 data class PushMessage(
@@ -316,10 +318,12 @@ class PushRegistrationController(
     private var active = false
     private var availableDestination: PushDestination? = null
     private var registeredDestination: PushDestination? = null
+    private var deactivationCompleted = false
 
     override suspend fun activate() {
         mutex.withLock {
             active = true
+            deactivationCompleted = false
             registerAvailableDestination()
         }
     }
@@ -338,16 +342,27 @@ class PushRegistrationController(
         }
     }
 
-    override suspend fun deactivate() {
-        mutex.withLock {
-            val wasActive = active
-            active = false
-            availableDestination = null
-            registeredDestination = null
-            if (wasActive) {
-                registration.unregister()
-            }
+    override suspend fun deactivate(): PushRegistrationOutcome = mutex.withLock {
+        if (deactivationCompleted) return@withLock PushRegistrationOutcome.Unregistered
+        val result = registration.unregister()
+        if (result == PushRegistrationOutcome.Unregistered) {
+            clearLocalStateLocked()
+            deactivationCompleted = true
         }
+        result
+    }
+
+    override suspend fun clearLocalState() {
+        mutex.withLock {
+            clearLocalStateLocked()
+            deactivationCompleted = true
+        }
+    }
+
+    private fun clearLocalStateLocked() {
+        active = false
+        availableDestination = null
+        registeredDestination = null
     }
 
     private suspend fun registerAvailableDestination() {

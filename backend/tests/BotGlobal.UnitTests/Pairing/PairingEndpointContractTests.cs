@@ -289,6 +289,7 @@ public sealed class PairingEndpointContractTests
         : IMobileDeviceEnrollmentService
     {
         public Task<EnrolledMobileDeviceResponse> EnrollAsync(
+            Guid membershipId,
             string applicationKey,
             string externalSubjectId,
             EnrollMobileDeviceRequest request,

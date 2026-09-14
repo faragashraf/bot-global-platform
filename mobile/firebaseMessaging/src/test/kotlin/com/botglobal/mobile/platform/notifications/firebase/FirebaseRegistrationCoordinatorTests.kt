@@ -64,6 +64,25 @@ class FirebaseRegistrationCoordinatorTests {
         assertNull(store.value)
     }
 
+    @Test
+    fun failedBackendDeactivationPreservesFirebaseStateForRetry() = runTest {
+        val registration = RecordingRegistration(PushRegistrationOutcome.RetryableFailure)
+        val store = MemoryStore("persisted-fid")
+        val client = RecordingClient()
+        val coordinator = FirebaseRegistrationCoordinator(
+            PushRegistrationController(registration),
+            store,
+            client,
+        )
+        coordinator.activate()
+
+        val outcome = coordinator.deactivate()
+
+        assertEquals(PushRegistrationOutcome.RetryableFailure, outcome)
+        assertEquals(0, client.unregisterCalls)
+        assertEquals("persisted-fid", store.value)
+    }
+
     private class MemoryStore(var value: String? = null) : FirebaseDestinationStore {
         override fun read() = value
         override fun write(identifier: String) { value = identifier }
@@ -77,7 +96,9 @@ class FirebaseRegistrationCoordinatorTests {
         override suspend fun unregister() { unregisterCalls++ }
     }
 
-    private class RecordingRegistration : PushRegistration {
+    private class RecordingRegistration(
+        private val unregisterOutcome: PushRegistrationOutcome = PushRegistrationOutcome.Unregistered,
+    ) : PushRegistration {
         val identifiers = mutableListOf<String>()
         var unregisterCalls = 0
         override suspend fun register(destination: PushDestination): PushRegistrationOutcome {
@@ -87,7 +108,7 @@ class FirebaseRegistrationCoordinatorTests {
 
         override suspend fun unregister(): PushRegistrationOutcome {
             unregisterCalls++
-            return PushRegistrationOutcome.Unregistered
+            return unregisterOutcome
         }
     }
 }

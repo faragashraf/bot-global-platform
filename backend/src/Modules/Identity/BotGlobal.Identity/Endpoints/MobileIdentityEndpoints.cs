@@ -4,6 +4,7 @@ using BotGlobal.Identity.Application;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace BotGlobal.Identity.Endpoints;
 
@@ -56,6 +57,33 @@ internal static class MobileIdentityEndpoints
 
             return Results.NoContent();
         }).RequireAuthorization(ApplicationIdentityPolicies.For(applicationKey));
+
+        endpoints.MapNqrbAccountDeletionEndpoint();
+
+        return endpoints;
+    }
+
+    internal static IEndpointRouteBuilder MapNqrbAccountDeletionEndpoint(
+        this IEndpointRouteBuilder endpoints)
+    {
+        const string applicationKey = BotGlobalApplications.Nqrb;
+        endpoints.MapDelete("/api/mobile/nqrb/account", async (
+            ClaimsPrincipal principal,
+            IApplicationAccountDeletionService deletion,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await deletion.DeleteAsync(
+                RequireIdentity(principal),
+                cancellationToken);
+            return result switch
+            {
+                ApplicationAccountDeletionOutcome.Completed => Results.NoContent(),
+                ApplicationAccountDeletionOutcome.Accepted => Results.Accepted(),
+                _ => Results.StatusCode(StatusCodes.Status503ServiceUnavailable)
+            };
+        })
+            .RequireAuthorization(ApplicationIdentityPolicies.For(applicationKey))
+            .RequireRateLimiting(IdentityModule.MobileAccountDeletionRateLimitPolicy);
 
         return endpoints;
     }
@@ -174,4 +202,24 @@ internal static class MobileIdentityEndpoints
             out var membershipId)
                 ? membershipId
                 : throw new InvalidOperationException("Authenticated application membership is unavailable.");
+
+    private static ApplicationIdentityDescriptor RequireIdentity(ClaimsPrincipal principal)
+    {
+        var membershipId = RequireMembershipId(principal);
+        if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.Sid), out var globalUserId))
+        {
+            throw new InvalidOperationException("Authenticated global user identity is unavailable.");
+        }
+
+        return new ApplicationIdentityDescriptor(
+            membershipId,
+            globalUserId,
+            principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
+            principal.FindFirstValue(ApplicationIdentityDefaults.ApplicationKeyClaim) ?? string.Empty,
+            principal.Identity?.Name ?? string.Empty,
+            string.Equals(
+                principal.FindFirstValue(ApplicationIdentityDefaults.GuestClaim),
+                "true",
+                StringComparison.OrdinalIgnoreCase));
+    }
 }

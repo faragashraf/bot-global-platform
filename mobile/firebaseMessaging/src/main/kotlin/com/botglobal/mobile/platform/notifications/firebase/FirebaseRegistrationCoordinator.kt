@@ -4,6 +4,7 @@ import com.botglobal.mobile.platform.notifications.OpaquePushDestinationId
 import com.botglobal.mobile.platform.notifications.PushDestination
 import com.botglobal.mobile.platform.notifications.PushRegistrationController
 import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
+import com.botglobal.mobile.platform.notifications.PushRegistrationOutcome
 
 internal interface FirebaseDestinationStore {
     fun read(): String?
@@ -29,14 +30,17 @@ internal class FirebaseRegistrationCoordinator(
         client.register()
     }
 
-    override suspend fun deactivate() {
-        controller.deactivate()
-        try {
-            client.unregister()
-        } finally {
-            store.clear()
-            controller.destinationUnavailable()
+    override suspend fun deactivate(): PushRegistrationOutcome {
+        val outcome = controller.deactivate()
+        if (outcome == PushRegistrationOutcome.Unregistered) {
+            clearFirebaseLocalState()
         }
+        return outcome
+    }
+
+    override suspend fun clearLocalState() {
+        controller.clearLocalState()
+        clearFirebaseLocalState()
     }
 
     suspend fun onRegistered(identifier: String) {
@@ -46,6 +50,12 @@ internal class FirebaseRegistrationCoordinator(
     }
 
     suspend fun onUnregistered() {
+        store.clear()
+        controller.destinationUnavailable()
+    }
+
+    private suspend fun clearFirebaseLocalState() {
+        runCatching { client.unregister() }
         store.clear()
         controller.destinationUnavailable()
     }

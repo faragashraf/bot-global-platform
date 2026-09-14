@@ -1,3 +1,4 @@
+using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Notifications;
 using BotGlobal.Pairing.Contracts;
 using BotGlobal.Pairing.Domain;
@@ -20,6 +21,7 @@ public sealed record EnrolledMobileDeviceResponse(
 public interface IMobileDeviceEnrollmentService
 {
     Task<EnrolledMobileDeviceResponse> EnrollAsync(
+        Guid membershipId,
         string applicationKey,
         string externalSubjectId,
         EnrollMobileDeviceRequest request,
@@ -31,15 +33,22 @@ internal sealed class MobileDeviceEnrollmentService(
     IPlatformClientApplicationResolver applications,
     IMobileDeviceCredentialService credentials,
     MobileDeviceAuditRecorder auditRecorder,
+    IApplicationMembershipActivityReader membershipActivity,
     TimeProvider timeProvider)
     : IMobileDeviceEnrollmentService
 {
     public async Task<EnrolledMobileDeviceResponse> EnrollAsync(
+        Guid membershipId,
         string applicationKey,
         string externalSubjectId,
         EnrollMobileDeviceRequest request,
         CancellationToken cancellationToken)
     {
+        if (membershipId == Guid.Empty)
+        {
+            throw new MobileDeviceEnrollmentApplicationException();
+        }
+
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationKey);
         ArgumentException.ThrowIfNullOrWhiteSpace(externalSubjectId);
         ArgumentNullException.ThrowIfNull(request);
@@ -119,6 +128,18 @@ internal sealed class MobileDeviceEnrollmentService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        if (!await membershipActivity.IsActiveAsync(
+                membershipId,
+                applicationKey,
+                subject,
+                cancellationToken))
+        {
+            dbContext.Devices.Remove(device);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            throw new MobileDeviceEnrollmentApplicationException();
+        }
+
         return new EnrolledMobileDeviceResponse(
             device.Id,
             issuedCredential.PlainText);

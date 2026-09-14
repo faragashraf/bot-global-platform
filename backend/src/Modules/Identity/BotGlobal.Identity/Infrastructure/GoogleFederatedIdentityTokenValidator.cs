@@ -8,6 +8,7 @@ public sealed class GoogleFederatedIdentityOptions
 {
     public const string SectionName = "Identity:Federated:Google";
     public string ServerClientId { get; set; } = string.Empty;
+    public string NqrbWebClientId { get; set; } = string.Empty;
 }
 
 internal interface IGoogleIdTokenVerifier
@@ -88,6 +89,12 @@ internal sealed class GoogleFederatedIdentityTokenValidator(
         }
 
         var verified = await google.VerifyAsync(idToken, audience, cancellationToken);
+        return ToFederatedIdentity(verified);
+    }
+
+    internal static FederatedIdentityValidationResult ToFederatedIdentity(
+        GoogleTokenVerificationResult verified)
+    {
         if (verified.Claims is not { } claims)
         {
             return FederatedIdentityValidationResult.Failure(verified.Error ?? "invalid_google_token");
@@ -109,5 +116,36 @@ internal sealed class GoogleFederatedIdentityTokenValidator(
                 claims.Subject.Trim(),
                 claims.Email.Trim(),
                 displayName));
+    }
+}
+
+internal interface INqrbWebGoogleIdentityValidator
+{
+    Task<FederatedIdentityValidationResult> ValidateAsync(
+        string idToken,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class NqrbWebGoogleIdentityValidator(
+    IOptions<GoogleFederatedIdentityOptions> options,
+    IGoogleIdTokenVerifier google) : INqrbWebGoogleIdentityValidator
+{
+    public async Task<FederatedIdentityValidationResult> ValidateAsync(
+        string idToken,
+        CancellationToken cancellationToken)
+    {
+        var audience = options.Value.NqrbWebClientId.Trim();
+        if (audience.Length == 0)
+        {
+            return FederatedIdentityValidationResult.Failure("google_web_configuration_missing");
+        }
+
+        if (string.IsNullOrWhiteSpace(idToken))
+        {
+            return FederatedIdentityValidationResult.Failure("invalid_google_token");
+        }
+
+        var verified = await google.VerifyAsync(idToken, audience, cancellationToken);
+        return GoogleFederatedIdentityTokenValidator.ToFederatedIdentity(verified);
     }
 }

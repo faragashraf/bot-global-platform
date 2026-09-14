@@ -2,6 +2,7 @@ using BotGlobal.Calling.Domain;
 using BotGlobal.Calling.Infrastructure;
 using BotGlobal.Calling.Realtime;
 using BotGlobal.Contracts.Notifications;
+using BotGlobal.Contracts.Mobile;
 using Microsoft.EntityFrameworkCore;
 
 namespace BotGlobal.Calling.Application;
@@ -9,6 +10,8 @@ namespace BotGlobal.Calling.Application;
 internal sealed class CallActivityService(
     CallingDbContext db,
     IPlatformClientApplicationResolver applications,
+    IApplicationMembershipActivityReader membershipActivity,
+    CallingAccountDataEraser accountDataEraser,
     TimeProvider clock) : ICallActivityService
 {
     private const long MaximumBytes = 10L * 1024 * 1024 * 1024 * 1024;
@@ -16,7 +19,11 @@ internal sealed class CallActivityService(
 
     public async Task StartAsync(CallSessionRegistry.Session session, CancellationToken cancellationToken)
     {
-        if (await db.Calls.AnyAsync(x => x.Id == session.CallId, cancellationToken)) return;
+        if (await db.Calls.AnyAsync(x => x.Id == session.CallId, cancellationToken))
+        {
+            await EnsureParticipantsRemainActiveAsync(session, cancellationToken);
+            return;
+        }
         var application = await RequireApplicationAsync(session.ApplicationKey, cancellationToken);
         var call = new CallRecord(session.CallId, application.PlatformClientId, session.ApplicationKey, session.CreatedAtUtc);
         call.Participants.Add(new CallParticipantRecord(call.Id, session.CallerMembershipId, CallParticipantRole.Initiator, session.CallerDisplayName));
@@ -25,6 +32,7 @@ internal sealed class CallActivityService(
         await db.SaveChangesAsync(cancellationToken);
         await RequireCurrentPeriodAsync(application.PlatformClientId, session.CallerMembershipId, cancellationToken);
         await RequireCurrentPeriodAsync(application.PlatformClientId, session.CalleeMembershipId, cancellationToken);
+        await EnsureParticipantsRemainActiveAsync(session, cancellationToken);
     }
 
     public async Task AnswerAsync(CallSessionRegistry.Session session, DateTimeOffset at, CancellationToken cancellationToken)
@@ -111,6 +119,7 @@ internal sealed class CallActivityService(
         var existing = call.UsageReports.SingleOrDefault(x => x.MembershipId == membershipId);
         if (existing is not null)
         {
+            await EnsureMembershipRemainsActiveAsync(applicationKey, membershipId, cancellationToken);
             var identical = existing.BytesSent == usage.BytesSent && existing.BytesReceived == usage.BytesReceived && existing.ConnectedDurationSeconds == usage.ConnectedDurationSeconds;
             return identical ? new(true, true, false, null) : new(false, true, true, "call_usage_already_finalized");
         }
@@ -121,6 +130,7 @@ internal sealed class CallActivityService(
         try
         {
             await db.SaveChangesAsync(cancellationToken);
+            await EnsureMembershipRemainsActiveAsync(applicationKey, membershipId, cancellationToken);
             return new(true, false, false, null);
         }
         catch (DbUpdateException)
@@ -131,6 +141,7 @@ internal sealed class CallActivityService(
             if (accepted is null) throw;
             var identical = accepted.BytesSent == usage.BytesSent && accepted.BytesReceived == usage.BytesReceived &&
                 accepted.ConnectedDurationSeconds == usage.ConnectedDurationSeconds;
+            await EnsureMembershipRemainsActiveAsync(applicationKey, membershipId, cancellationToken);
             return identical ? new(true, true, false, null) : new(false, true, true, "call_usage_already_finalized");
         }
     }
@@ -144,6 +155,7 @@ internal sealed class CallActivityService(
     {
         var application = await RequireApplicationAsync(applicationKey, cancellationToken);
         var period = await RequireCurrentPeriodAsync(application.PlatformClientId, membershipId, cancellationToken);
+        await EnsureMembershipRemainsActiveAsync(applicationKey, membershipId, cancellationToken);
         TimeZoneInfo zone;
         try { zone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId); }
         catch (TimeZoneNotFoundException) { throw new ArgumentException("usage_timezone_invalid"); }
@@ -152,6 +164,7 @@ internal sealed class CallActivityService(
         if (utc <= clock.GetUtcNow()) throw new ArgumentException("usage_reset_must_be_future");
         period.Schedule(local, timeZoneId, utc);
         await db.SaveChangesAsync(cancellationToken);
+        await EnsureMembershipRemainsActiveAsync(applicationKey, membershipId, cancellationToken);
         return await ProjectPeriodAsync(period, cancellationToken);
     }
 
@@ -165,7 +178,60 @@ internal sealed class CallActivityService(
             period = new UsageCounterPeriod(application.PlatformClientId, membershipId, now, reset.Value);
             db.UsagePeriods.Add(period); await db.SaveChangesAsync(cancellationToken);
         }
+        await EnsureMembershipRemainsActiveAsync(applicationKey, membershipId, cancellationToken);
         return await ProjectPeriodAsync(period, cancellationToken);
+    }
+
+    private async Task EnsureParticipantsRemainActiveAsync(
+        CallSessionRegistry.Session session,
+        CancellationToken cancellationToken)
+    {
+        var callerActive = await membershipActivity.IsActiveAsync(
+            session.CallerMembershipId,
+            session.ApplicationKey,
+            cancellationToken);
+        var calleeActive = await membershipActivity.IsActiveAsync(
+            session.CalleeMembershipId,
+            session.ApplicationKey,
+            cancellationToken);
+        if (callerActive && calleeActive)
+        {
+            return;
+        }
+
+        if (!callerActive)
+        {
+            await accountDataEraser.DeleteAsync(
+                session.ApplicationKey,
+                session.CallerMembershipId,
+                cancellationToken);
+        }
+        if (!calleeActive)
+        {
+            await accountDataEraser.DeleteAsync(
+                session.ApplicationKey,
+                session.CalleeMembershipId,
+                cancellationToken);
+        }
+
+        throw new InvalidOperationException("calling_membership_unavailable");
+    }
+
+    private async Task EnsureMembershipRemainsActiveAsync(
+        string applicationKey,
+        Guid membershipId,
+        CancellationToken cancellationToken)
+    {
+        if (await membershipActivity.IsActiveAsync(
+                membershipId,
+                applicationKey,
+                cancellationToken))
+        {
+            return;
+        }
+
+        await accountDataEraser.DeleteAsync(applicationKey, membershipId, cancellationToken);
+        throw new InvalidOperationException("calling_membership_unavailable");
     }
 
     private async Task<UsageCounterPeriod> RequireCurrentPeriodAsync(Guid applicationId, Guid membershipId, CancellationToken cancellationToken)

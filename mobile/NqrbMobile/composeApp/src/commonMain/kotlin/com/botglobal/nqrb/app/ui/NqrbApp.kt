@@ -24,7 +24,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -51,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
@@ -84,7 +87,19 @@ import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.nqrb.app.state.NqrbAppState
 import com.botglobal.nqrb.app.state.NqrbDestination
 import com.botglobal.nqrb.app.state.NqrbStartupState
+import com.botglobal.nqrb.app.state.NqrbAccountActionState
+import com.botglobal.nqrb.app.config.NqrbPublicSite
 import kotlinx.coroutines.launch
+
+internal enum class NqrbDeletionConfirmation { Closed, Explanation, Final }
+
+internal data class NqrbPublicLink(val label: String, val url: String)
+
+internal fun nqrbPublicLinks(strings: NqrbStrings): List<NqrbPublicLink> = listOf(
+    NqrbPublicLink(strings.privacyPolicy, NqrbPublicSite.PrivacyPolicyUrl),
+    NqrbPublicLink(strings.accountDeletionHelp, NqrbPublicSite.AccountDeletionUrl),
+    NqrbPublicLink(strings.support, NqrbPublicSite.SupportUrl),
+)
 
 @Composable
 fun NqrbApp(
@@ -403,19 +418,127 @@ private fun ContactCard(contact: DeviceContact) {
 @Composable
 private fun ProfileScreen(strings: NqrbStrings, appState: NqrbAppState) {
     val scope = rememberCoroutineScope()
+    val uriHandler = LocalUriHandler.current
     val colors = LocalNqrbColors.current
+    val accountAction by appState.accountActionState.collectAsState()
+    var deletionConfirmation by remember { mutableStateOf(NqrbDeletionConfirmation.Closed) }
+    val operationInProgress = accountAction in setOf(
+        NqrbAccountActionState.SigningOut,
+        NqrbAccountActionState.Deleting,
+    )
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
         verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Lg),
     ) {
         ProductHeader(strings, appState::openSettings)
         FlowHero(NqrbGlyph.Profile, strings.profileTitle, strings.profileBody)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = colors.elevatedSurface,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Column(
+                Modifier.padding(NqrbSpacing.Md),
+                verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
+            ) {
+                Text(strings.deleteAccount, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                Text(strings.deleteAccountSummary, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+                TextButton(
+                    enabled = !operationInProgress,
+                    onClick = { deletionConfirmation = NqrbDeletionConfirmation.Explanation },
+                ) {
+                    Text(strings.deleteAccount, color = colors.destructive)
+                }
+                TextButton(
+                    enabled = !operationInProgress,
+                    onClick = { uriHandler.openUri(NqrbPublicSite.AccountDeletionUrl) },
+                ) {
+                    Text(strings.accountDeletionHelp, color = colors.textSecondary)
+                }
+            }
+        }
+        when (accountAction) {
+            NqrbAccountActionState.Deleting -> Text(
+                strings.accountDeletionInProgress,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textSecondary,
+            )
+            NqrbAccountActionState.DeletionFailed,
+            NqrbAccountActionState.SignOutFailed,
+            -> {
+                Text(
+                    if (accountAction == NqrbAccountActionState.DeletionFailed) {
+                        strings.accountDeletionFailed
+                    } else strings.signOutFailed,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.destructive,
+                )
+                TextButton(onClick = appState::dismissAccountActionError) {
+                    Text(strings.cancel, color = colors.textSecondary)
+                }
+            }
+            else -> Unit
+        }
         TextButton(
             modifier = Modifier.fillMaxWidth(),
+            enabled = !operationInProgress,
             onClick = { scope.launch { appState.logout() } },
         ) {
             Text(strings.logout, color = colors.destructive)
         }
+    }
+
+    if (deletionConfirmation == NqrbDeletionConfirmation.Explanation) {
+        AlertDialog(
+            onDismissRequest = { deletionConfirmation = NqrbDeletionConfirmation.Closed },
+            title = { Text(strings.deleteAccountFirstTitle) },
+            text = { Text(strings.deleteAccountFirstBody) },
+            confirmButton = {
+                TextButton(onClick = {
+                    deletionConfirmation = NqrbDeletionConfirmation.Final
+                }) { Text(strings.continueToDelete, color = colors.destructive) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletionConfirmation = NqrbDeletionConfirmation.Closed }) { Text(strings.cancel) }
+            },
+        )
+    }
+    if (deletionConfirmation == NqrbDeletionConfirmation.Final) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!operationInProgress) deletionConfirmation = NqrbDeletionConfirmation.Closed
+            },
+            title = { Text(strings.deleteAccountFinalTitle) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md)) {
+                    Text(strings.deleteAccountFinalBody)
+                    if (accountAction == NqrbAccountActionState.Deleting) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(NqrbSpacing.Sm))
+                            Text(strings.accountDeletionInProgress, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !operationInProgress,
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.destructive),
+                    onClick = {
+                        if (deletionConfirmation == NqrbDeletionConfirmation.Final) {
+                            scope.launch { appState.deleteAccount() }
+                        }
+                    },
+                ) { Text(strings.confirmDeleteAccount) }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !operationInProgress,
+                    onClick = { deletionConfirmation = NqrbDeletionConfirmation.Closed },
+                ) { Text(strings.cancel) }
+            },
+        )
     }
 }
 
@@ -808,6 +931,7 @@ private fun SettingsScreen(
     activity: CallActivitySnapshot,
 ) {
     val colors = LocalNqrbColors.current
+    val uriHandler = LocalUriHandler.current
     val locale by appState.locale.state.collectAsState()
     val appearance by appState.appearance.state.collectAsState()
     var confirmingUsageReset by remember { mutableStateOf(false) }
@@ -846,6 +970,16 @@ private fun SettingsScreen(
                 selectedDescription = strings.selected,
                 onSelect = appState.appearance::select,
             )
+        }
+        SettingsGroup(strings.privacyAndSupport, NqrbGlyph.Link, strings.privacyAndSupport) {
+            nqrbPublicLinks(strings).forEach { link ->
+                TextButton(
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    onClick = { uriHandler.openUri(link.url) },
+                ) {
+                    Text(link.label)
+                }
+            }
         }
         SettingsGroup(strings.dataUsage, NqrbGlyph.History, strings.dataUsage) {
             when (activity.usageState) {

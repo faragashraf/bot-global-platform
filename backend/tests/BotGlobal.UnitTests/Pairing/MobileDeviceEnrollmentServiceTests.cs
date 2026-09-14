@@ -1,3 +1,4 @@
+using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Notifications;
 using BotGlobal.Pairing.Application;
 using BotGlobal.Pairing.Application.MobileDevices;
@@ -24,6 +25,7 @@ public sealed class MobileDeviceEnrollmentServiceTests
         var service = CreateService(db, applications);
 
         var response = await service.EnrollAsync(
+            Guid.NewGuid(),
             "nqrb",
             "user:server-authoritative",
             Request("installation-1"),
@@ -47,11 +49,13 @@ public sealed class MobileDeviceEnrollmentServiceTests
         var service = CreateService(db, applications);
 
         var first = await service.EnrollAsync(
+            Guid.NewGuid(),
             "nqrb",
             "subject-one",
             Request("same-installation"),
             CancellationToken.None);
         var second = await service.EnrollAsync(
+            Guid.NewGuid(),
             "nqrb",
             "subject-two",
             Request("same-installation") with { DeviceName = "Updated device" },
@@ -76,8 +80,8 @@ public sealed class MobileDeviceEnrollmentServiceTests
             new PlatformClientDescriptor(appB, "family-games", "Lamma", true));
         var service = CreateService(db, resolver);
 
-        await service.EnrollAsync("nqrb", "subject", Request("same"), CancellationToken.None);
-        await service.EnrollAsync("family-games", "subject", Request("same"), CancellationToken.None);
+        await service.EnrollAsync(Guid.NewGuid(), "nqrb", "subject", Request("same"), CancellationToken.None);
+        await service.EnrollAsync(Guid.NewGuid(), "family-games", "subject", Request("same"), CancellationToken.None);
 
         Assert.Equal(2, await db.Devices.CountAsync());
         Assert.Contains(await db.Devices.ToArrayAsync(), item => item.PlatformClientId == appA);
@@ -92,12 +96,35 @@ public sealed class MobileDeviceEnrollmentServiceTests
 
         await Assert.ThrowsAsync<MobileDeviceEnrollmentApplicationException>(
             () => service.EnrollAsync(
+                Guid.NewGuid(),
                 "client-supplied-unknown",
                 "subject",
                 Request("installation"),
                 CancellationToken.None));
 
         Assert.Empty(db.Devices);
+    }
+
+    [Fact]
+    public async Task Membership_deactivated_during_enrollment_removes_new_device_and_credential_state()
+    {
+        var applicationId = Guid.NewGuid();
+        await using var db = CreateContext();
+        var service = CreateService(
+            db,
+            new ApplicationResolver(new PlatformClientDescriptor(applicationId, "nqrb", "NQRB", true)),
+            new MembershipActivityReader(false));
+
+        await Assert.ThrowsAsync<MobileDeviceEnrollmentApplicationException>(() =>
+            service.EnrollAsync(
+                Guid.NewGuid(),
+                "nqrb",
+                "deleted-subject",
+                Request("late-installation"),
+                CancellationToken.None));
+
+        Assert.Empty(await db.Devices.ToListAsync());
+        Assert.Empty(await db.DeviceAuditEntries.ToListAsync());
     }
 
     [Fact]
@@ -123,12 +150,14 @@ public sealed class MobileDeviceEnrollmentServiceTests
 
     private static MobileDeviceEnrollmentService CreateService(
         PairingDbContext db,
-        IPlatformClientApplicationResolver applications) =>
+        IPlatformClientApplicationResolver applications,
+        IApplicationMembershipActivityReader? membershipActivity = null) =>
         new(
             db,
             applications,
             new MobileDeviceCredentialService(),
             new MobileDeviceAuditRecorder(db),
+            membershipActivity ?? new MembershipActivityReader(true),
             new FixedTimeProvider());
 
     private static PairingDbContext CreateContext()
@@ -162,6 +191,15 @@ public sealed class MobileDeviceEnrollmentServiceTests
             CancellationToken cancellationToken) =>
             Task.FromResult(
                 descriptors.SingleOrDefault(item => item.ClientKey == clientKey));
+    }
+
+    private sealed class MembershipActivityReader(bool isActive)
+        : IApplicationMembershipActivityReader
+    {
+        public Task<bool> IsActiveAsync(
+            Guid membershipId,
+            string applicationKey,
+            CancellationToken cancellationToken) => Task.FromResult(isActive);
     }
 
     private sealed class FixedTimeProvider : TimeProvider

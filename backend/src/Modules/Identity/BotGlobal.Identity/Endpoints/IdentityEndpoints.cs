@@ -35,6 +35,7 @@ public static class IdentityEndpoints
 
         endpoints.MapFamilyGamesMobileIdentityEndpoints();
         endpoints.MapNqrbMobileIdentityEndpoints();
+        endpoints.MapPublicNqrbAccountDeletionEndpoints();
 
         return endpoints;
     }

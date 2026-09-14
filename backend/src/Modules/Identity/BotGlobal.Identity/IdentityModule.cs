@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using System.Threading.RateLimiting;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Calling;
 using BotGlobal.Contracts.Notifications;
@@ -12,6 +14,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +24,9 @@ namespace BotGlobal.Identity;
 
 public static class IdentityModule
 {
+    public const string MobileAccountDeletionRateLimitPolicy = "nqrb-mobile-account-deletion";
+    public const string PublicNqrbAccountDeletionRateLimitPolicy = "nqrb-public-account-deletion";
+
     public static IServiceCollection AddIdentityModule(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -74,8 +80,40 @@ public static class IdentityModule
             configuration.GetSection(GoogleFederatedIdentityOptions.SectionName));
         services.AddSingleton<IGoogleIdTokenVerifier, GoogleIdTokenVerifier>();
         services.AddScoped<IFederatedIdentityTokenValidator, GoogleFederatedIdentityTokenValidator>();
+        services.AddScoped<INqrbWebGoogleIdentityValidator, NqrbWebGoogleIdentityValidator>();
         services.AddScoped<IMobileFederatedIdentityService, MobileFederatedIdentityService>();
         services.AddScoped<ICallingParticipantDirectory, CallingParticipantDirectory>();
+        services.AddScoped<IApplicationAccountDeletionService, ApplicationAccountDeletionService>();
+        services.AddScoped<IPublicNqrbAccountDeletionService, PublicNqrbAccountDeletionService>();
+        services.AddScoped<IApplicationMembershipActivityReader, ApplicationMembershipActivityReader>();
+        services.AddScoped<ApplicationAccountDeletionProcessor>();
+        services.AddHostedService<ApplicationAccountDeletionBackgroundService>();
+
+        services.AddRateLimiter(options =>
+        {
+            options.AddPolicy(
+                MobileAccountDeletionRateLimitPolicy,
+                context => RateLimitPartition.GetFixedWindowLimiter(
+                    context.User.FindFirstValue(ApplicationIdentityDefaults.MembershipIdClaim)
+                        ?? context.Connection.RemoteIpAddress?.ToString()
+                        ?? "unknown",
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 3,
+                        Window = TimeSpan.FromMinutes(10),
+                        QueueLimit = 0
+                    }));
+            options.AddPolicy(
+                PublicNqrbAccountDeletionRateLimitPolicy,
+                context => RateLimitPartition.GetFixedWindowLimiter(
+                    context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 5,
+                        Window = TimeSpan.FromMinutes(15),
+                        QueueLimit = 0
+                    }));
+        });
 
         services.ConfigureApplicationCookie(
             options =>

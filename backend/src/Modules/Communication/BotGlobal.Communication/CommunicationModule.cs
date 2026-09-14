@@ -119,6 +119,7 @@ public static class CommunicationModule
         services.AddSingleton<
             IMobileNotificationConnectionRegistry,
             MobileNotificationConnectionRegistry>();
+        services.AddScoped<IApplicationAccountDeletionHandler, CommunicationAccountDeletionHandler>();
 
         services.AddScoped<
             SignalRMobileNotificationDelivery>();

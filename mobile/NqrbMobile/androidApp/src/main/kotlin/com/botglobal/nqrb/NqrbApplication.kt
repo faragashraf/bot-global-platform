@@ -15,7 +15,10 @@ import com.botglobal.nqrb.calling.NqrbCallRuntime
 import com.botglobal.nqrb.calling.NqrbPushMessageHandler
 import com.botglobal.nqrb.calling.AndroidPendingCallUsageStore
 import com.botglobal.nqrb.app.data.NqrbCallActivityApi
+import com.botglobal.nqrb.app.data.NqrbAccountDeletionApi
+import com.botglobal.nqrb.app.state.NqrbLocalAccountDataCleaner
 import com.botglobal.mobile.platform.calling.CallActivityController
+import com.botglobal.nqrb.calling.NqrbOngoingCallService
 
 class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
     lateinit var callRuntime: NqrbCallRuntime
@@ -28,6 +31,10 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
         private set
     lateinit var callActivity: CallActivityController
         private set
+    lateinit var accountDeletionApi: NqrbAccountDeletionApi
+        private set
+    lateinit var localAccountDataCleaner: NqrbLocalAccountDataCleaner
+        private set
     override lateinit var firebaseMessagingRuntime: AndroidFirebaseMessagingRuntime
         private set
 
@@ -35,20 +42,27 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
         super.onCreate()
         sessionVault = AndroidSecureSessionVault(this, "nqrb")
         identityApi = NqrbIdentityApi(createNqrbHttpClient(), BuildConfig.API_BASE_URL, sessionVault)
+        accountDeletionApi = NqrbAccountDeletionApi(
+            createNqrbHttpClient(),
+            BuildConfig.API_BASE_URL,
+            sessionVault,
+        )
         callingDirectoryApi = NqrbCallingDirectoryApi(
             createNqrbHttpClient(),
             BuildConfig.API_BASE_URL,
             sessionVault,
         )
+        val pendingCallUsageStore = AndroidPendingCallUsageStore(this)
         callActivity = CallActivityController(
             NqrbCallActivityApi(createNqrbHttpClient(), BuildConfig.API_BASE_URL, sessionVault),
-            AndroidPendingCallUsageStore(this),
+            pendingCallUsageStore,
         )
+        val deviceCredentialVault = AndroidSecureMobileDeviceCredentialVault(this, "nqrb")
         val pushRegistration = NqrbPushRegistrationApi(
             platformClient = createNqrbHttpClient(),
             apiBaseUrl = BuildConfig.API_BASE_URL,
             sessionVault = sessionVault,
-            deviceCredentialVault = AndroidSecureMobileDeviceCredentialVault(this, "nqrb"),
+            deviceCredentialVault = deviceCredentialVault,
             installation = AndroidPushDeviceInstallation(this, BuildConfig.VERSION_NAME).value,
         )
         callRuntime = NqrbCallRuntime(
@@ -62,5 +76,11 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
             registrationController = PushRegistrationController(pushRegistration),
             messageHandler = NqrbPushMessageHandler(callRuntime),
         )
+        localAccountDataCleaner = NqrbLocalAccountDataCleaner {
+            runCatching { sessionVault.clear() }
+            runCatching { deviceCredentialVault.clear() }
+            runCatching { pendingCallUsageStore.clearAll() }
+            NqrbOngoingCallService.clearStoredPresentation(this)
+        }
     }
 }

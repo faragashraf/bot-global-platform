@@ -31,4 +31,10 @@ class AndroidPendingCallUsageStore(context: Context) : PendingCallUsageStore {
     override suspend fun remove(callId: String) {
         preferences.edit().remove(callId).commit()
     }
+
+    suspend fun clearAll() {
+        check(preferences.edit().clear().commit()) {
+            "Pending call usage could not be cleared."
+        }
+    }
 }

@@ -8,13 +8,19 @@ public sealed class CallSessionRegistry
 {
     private readonly ConcurrentDictionary<string, ConnectedParticipant> connections = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, Session> sessions = [];
+    private readonly HashSet<(string ApplicationKey, Guid MembershipId)> blockedMemberships = [];
     private readonly object gate = new();
 
     public ConnectedParticipant Connected(string connectionId, ApplicationIdentityDescriptor identity)
     {
-        var participant = new ConnectedParticipant(connectionId, identity.MembershipId, identity.ApplicationKey, identity.SubjectId, identity.DisplayName);
-        connections[connectionId] = participant;
-        return participant;
+        lock (gate)
+        {
+            if (blockedMemberships.Contains((identity.ApplicationKey, identity.MembershipId)))
+                throw Error("account_deleted");
+            var participant = new ConnectedParticipant(connectionId, identity.MembershipId, identity.ApplicationKey, identity.SubjectId, identity.DisplayName);
+            connections[connectionId] = participant;
+            return participant;
+        }
     }
 
     public Started Start(string connectionId, CallingParticipantDescriptor callee, DateTimeOffset now, TimeSpan lifetime)
@@ -125,6 +131,33 @@ public sealed class CallSessionRegistry
         lock (gate) return connections.Values.Any(x =>
             x.MembershipId == membershipId &&
             string.Equals(x.ApplicationKey, applicationKey, StringComparison.Ordinal));
+    }
+    public IReadOnlyList<Transition> BlockMembership(Guid membershipId, string applicationKey)
+    {
+        lock (gate)
+        {
+            blockedMemberships.Add((applicationKey, membershipId));
+            foreach (var connectionId in connections.Values
+                         .Where(item => item.MembershipId == membershipId && item.ApplicationKey == applicationKey)
+                         .Select(item => item.ConnectionId)
+                         .ToArray())
+                connections.TryRemove(connectionId, out _);
+
+            var transitions = new List<Transition>();
+            foreach (var session in sessions.Values.Where(item => item.IsLive
+                         && item.ApplicationKey == applicationKey
+                         && item.HasParticipant(membershipId)))
+            {
+                session.Status = CallStatus.Ended;
+                session.TerminationReason = "account_deleted";
+                var peerId = membershipId == session.CallerMembershipId
+                    ? session.CalleeMembershipId
+                    : session.CallerMembershipId;
+                transitions.Add(new Transition(session, true, ConnectionsFor(peerId, applicationKey)));
+                session.ClearParticipants();
+            }
+            return transitions;
+        }
     }
     private IReadOnlyList<Session> ExpireLocked(DateTimeOffset now)
     {

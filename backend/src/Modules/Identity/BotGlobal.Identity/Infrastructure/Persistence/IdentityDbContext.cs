@@ -16,6 +16,8 @@ public sealed class IdentityDbContext(
 
     public DbSet<MobileApplicationSession> MobileApplicationSessions => Set<MobileApplicationSession>();
 
+    public DbSet<ApplicationAccountDeletionRequest> AccountDeletionRequests => Set<ApplicationAccountDeletionRequest>();
+
     protected override void OnModelCreating(
         ModelBuilder builder)
     {
@@ -62,5 +64,6 @@ public sealed class IdentityDbContext(
 
         builder.ApplyConfiguration(new ApplicationMembershipConfiguration());
         builder.ApplyConfiguration(new MobileApplicationSessionConfiguration());
+        builder.ApplyConfiguration(new ApplicationAccountDeletionRequestConfiguration());
     }
 }

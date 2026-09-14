@@ -70,9 +70,12 @@ public static class PairingEndpoints
                         ApplicationIdentityDefaults.ApplicationKeyClaim);
                     var subject = principal.FindFirstValue(
                         ClaimTypes.NameIdentifier);
+                    var rawMembershipId = principal.FindFirstValue(
+                        ApplicationIdentityDefaults.MembershipIdClaim);
 
                     if (string.IsNullOrWhiteSpace(applicationKey)
-                        || string.IsNullOrWhiteSpace(subject))
+                        || string.IsNullOrWhiteSpace(subject)
+                        || !Guid.TryParse(rawMembershipId, out var membershipId))
                     {
                         return Results.Unauthorized();
                     }
@@ -81,6 +84,7 @@ public static class PairingEndpoints
                     {
                         return Results.Ok(
                             await service.EnrollAsync(
+                                membershipId,
                                 applicationKey,
                                 subject,
                                 request,
