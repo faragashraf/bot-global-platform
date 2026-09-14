@@ -22,6 +22,7 @@ import com.botglobal.mobile.platform.device.PermissionState
 import com.botglobal.mobile.platform.identity.FederatedAuthenticationState
 import com.botglobal.mobile.platform.identity.FederatedIdentityController
 import com.botglobal.mobile.platform.identity.FederatedIdentityProvider
+import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.identity.UnavailableFederatedCredentialProvider
 import com.botglobal.mobile.platform.identity.UnavailableFederatedIdentityGateway
 import com.botglobal.mobile.platform.localization.LocaleController
@@ -121,6 +122,8 @@ class NqrbAppState(
     val accountActionState = mutableAccountActionState.asStateFlow()
     private val mutableAccountProfileState = MutableStateFlow<NqrbAccountProfileState>(NqrbAccountProfileState.Hidden)
     val accountProfileState = mutableAccountProfileState.asStateFlow()
+    private val accountProfileLifecycleMutex = Mutex()
+    private var accountProfileRequestGeneration = 0L
     private var pendingMicrophoneAction = PendingMicrophoneAction.Outgoing
     private var pendingOutgoingParticipant: CallableParticipant? = null
     private val submittedUsageCalls = mutableSetOf<String>()
@@ -145,10 +148,11 @@ class NqrbAppState(
         if (startupCompleted) return@withLock
         mutableStartupState.value = NqrbStartupState.RestoringSession
         try {
+            invalidateAccountProfileRequests(hideProfile = true)
             identity.restore()
             val authenticated = identity.state.value as? FederatedAuthenticationState.SignedIn
             navigation.reset(
-                if (authenticated != null && loadAccountProfile()) {
+                if (authenticated != null) {
                     runCatching { push.activate() }
                     runCatching { calling.connectSignaling() }
                     refreshCallingDirectory()
@@ -165,10 +169,11 @@ class NqrbAppState(
     }
 
     suspend fun signInWithGoogle() {
+        invalidateAccountProfileRequests(hideProfile = true)
         identity.signIn(FederatedIdentityProvider.Google)
         val authenticated = identity.state.value as? FederatedAuthenticationState.SignedIn
         if (authenticated != null) {
-            if (!loadAccountProfile()) return
+            invalidateAccountProfileRequests(hideProfile = true)
             runCatching { push.activate() }
             runCatching { calling.connectSignaling() }
             refreshCallingDirectory()
@@ -200,6 +205,7 @@ class NqrbAppState(
                 NqrbAccountActionState.Deleting,
             )
         ) return
+        invalidateAccountProfileRequests(hideProfile = false)
         mutableAccountActionState.value = NqrbAccountActionState.SigningOut
         val unpair = try {
             push.deactivate()
@@ -230,6 +236,7 @@ class NqrbAppState(
                 NqrbAccountActionState.Deleting,
             )
         ) return
+        invalidateAccountProfileRequests(hideProfile = false)
         mutableAccountActionState.value = NqrbAccountActionState.Deleting
         val outcome = try {
             accountDeletion.deleteCurrentAccount()
@@ -290,30 +297,53 @@ class NqrbAppState(
     }
 
     fun refreshAccountProfile() {
-        if (identity.state.value !is FederatedAuthenticationState.SignedIn) {
-            mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
-            return
-        }
-        mutableAccountProfileState.value = NqrbAccountProfileState.Loading
-        callActionScope.launch { loadAccountProfile() }
+        callActionScope.launch { loadAccountProfileForCurrentSession() }
     }
 
-    private suspend fun loadAccountProfile(): Boolean {
-        mutableAccountProfileState.value = NqrbAccountProfileState.Loading
-        return when (val result = accountProfile.load()) {
-            is NqrbAccountProfileResult.Available -> {
-                mutableAccountProfileState.value = NqrbAccountProfileState.Available(result.profile)
-                true
-            }
-            NqrbAccountProfileResult.AuthenticationRequired -> {
+    private suspend fun loadAccountProfileForCurrentSession() {
+        val request = accountProfileLifecycleMutex.withLock {
+            val authenticated = identity.state.value as? FederatedAuthenticationState.SignedIn
+            if (authenticated == null) {
+                accountProfileRequestGeneration++
                 mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
-                identity.logout()
-                navigation.reset(NqrbDestination.SignIn)
-                false
+                null
+            } else {
+                AccountProfileRequest(
+                    generation = ++accountProfileRequestGeneration,
+                    session = authenticated.session,
+                ).also {
+                    mutableAccountProfileState.value = NqrbAccountProfileState.Loading
+                }
             }
-            NqrbAccountProfileResult.RetryableFailure -> {
-                mutableAccountProfileState.value = NqrbAccountProfileState.Failed
-                true
+        } ?: return
+
+        val result = accountProfile.load(request.session)
+        accountProfileLifecycleMutex.withLock {
+            val currentSession = (identity.state.value as? FederatedAuthenticationState.SignedIn)?.session
+            if (request.generation != accountProfileRequestGeneration || currentSession != request.session) {
+                return
+            }
+
+            when (result) {
+                is NqrbAccountProfileResult.Available ->
+                    mutableAccountProfileState.value = NqrbAccountProfileState.Available(result.profile)
+                NqrbAccountProfileResult.AuthenticationRequired -> {
+                    accountProfileRequestGeneration++
+                    mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
+                    identity.logout()
+                    navigation.reset(NqrbDestination.SignIn)
+                }
+                NqrbAccountProfileResult.RetryableFailure ->
+                    mutableAccountProfileState.value = NqrbAccountProfileState.Failed
+            }
+        }
+    }
+
+    private suspend fun invalidateAccountProfileRequests(hideProfile: Boolean) {
+        accountProfileLifecycleMutex.withLock {
+            accountProfileRequestGeneration++
+            if (hideProfile) {
+                mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
             }
         }
     }
@@ -453,3 +483,8 @@ class NqrbAppState(
 
     private enum class PendingMicrophoneAction { Outgoing, Incoming }
 }
+
+private data class AccountProfileRequest(
+    val generation: Long,
+    val session: MobileSession,
+)

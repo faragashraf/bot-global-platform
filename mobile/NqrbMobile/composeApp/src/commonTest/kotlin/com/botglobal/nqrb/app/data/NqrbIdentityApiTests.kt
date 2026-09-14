@@ -8,19 +8,21 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNull
 
 class NqrbIdentityApiTests {
     @Test
     fun authenticatedProfileUsesCanonicalBackendNameAndEmail() = runTest {
         val vault = RecordingSessionVault(session())
         val engine = MockEngine { request ->
+            assertEquals(HttpMethod.Get, request.method)
+            assertEquals("/api/mobile/nqrb/identity/profile", request.url.encodedPath)
             assertEquals("Bearer test-access", request.headers[HttpHeaders.Authorization])
             respond(
                 """{"displayName":"Canonical Person","email":"person@example.test"}""",
@@ -29,7 +31,7 @@ class NqrbIdentityApiTests {
             )
         }
 
-        val result = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault).load()
+        val result = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault).load(session())
 
         val available = assertIs<NqrbAccountProfileResult.Available>(result)
         assertEquals("Canonical Person", available.profile.displayName)
@@ -37,14 +39,39 @@ class NqrbIdentityApiTests {
     }
 
     @Test
-    fun rejectedSessionClearsStoredSessionAndReturnsAuthenticationRequired() = runTest {
-        val vault = RecordingSessionVault(session())
+    fun rejectedOlderProfileSessionDoesNotClearNewerStoredSession() = runTest {
+        val newerSession = session("newer")
+        val vault = RecordingSessionVault(newerSession)
         val engine = MockEngine { respond("", HttpStatusCode.Unauthorized) }
 
-        val result = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault).load()
+        val result = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault).load(session("older"))
 
         assertIs<NqrbAccountProfileResult.AuthenticationRequired>(result)
-        assertNull(vault.value)
+        assertEquals(newerSession, vault.value)
+    }
+
+    @Test
+    fun retryableServerFailurePreservesStoredSession() = runTest {
+        val currentSession = session()
+        val vault = RecordingSessionVault(currentSession)
+        val engine = MockEngine { respond("", HttpStatusCode.InternalServerError) }
+
+        val result = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault).load(currentSession)
+
+        assertIs<NqrbAccountProfileResult.RetryableFailure>(result)
+        assertEquals(currentSession, vault.value)
+    }
+
+    @Test
+    fun networkFailurePreservesStoredSession() = runTest {
+        val currentSession = session()
+        val vault = RecordingSessionVault(currentSession)
+        val engine = MockEngine { error("Synthetic network failure") }
+
+        val result = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault).load(currentSession)
+
+        assertIs<NqrbAccountProfileResult.RetryableFailure>(result)
+        assertEquals(currentSession, vault.value)
     }
 
     private class RecordingSessionVault(var value: MobileSession?) : SessionVault {
@@ -53,11 +80,11 @@ class NqrbIdentityApiTests {
         override suspend fun clear() { value = null }
     }
 
-    private fun session() = MobileSession(
-        "test-access",
+    private fun session(marker: String = "test") = MobileSession(
+        "$marker-access",
         "2099-01-01T00:00:00Z",
-        "session-refresh",
+        "$marker-refresh",
         "2099-02-01T00:00:00Z",
-        ApplicationIdentity("membership-id", "subject-id", "Snapshot", IdentityKind.Registered, "nqrb"),
+        ApplicationIdentity("$marker-membership-id", "$marker-subject-id", "Snapshot", IdentityKind.Registered, "nqrb"),
     )
 }

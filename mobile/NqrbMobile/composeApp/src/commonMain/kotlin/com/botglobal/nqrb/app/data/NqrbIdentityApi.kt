@@ -93,10 +93,9 @@ class NqrbIdentityApi(
         vault.clear()
     }
 
-    override suspend fun load(): NqrbAccountProfileResult {
-        val session = vault.restore() ?: return NqrbAccountProfileResult.AuthenticationRequired
+    override suspend fun load(session: MobileSession): NqrbAccountProfileResult {
         return try {
-            val response = client.get(endpoint("/api/mobile/nqrb/identity/me")) {
+            val response = client.get(endpoint("/api/mobile/nqrb/identity/profile")) {
                 accept(ContentType.Application.Json)
                 bearerAuth(session.accessToken)
             }
@@ -107,10 +106,8 @@ class NqrbIdentityApi(
                         NqrbAccountProfile(profile.displayName, profile.email),
                     )
                 }
-                response.status == HttpStatusCode.Unauthorized -> {
-                    vault.clear()
+                response.status == HttpStatusCode.Unauthorized ->
                     NqrbAccountProfileResult.AuthenticationRequired
-                }
                 else -> NqrbAccountProfileResult.RetryableFailure
             }
         } catch (_: Exception) {
