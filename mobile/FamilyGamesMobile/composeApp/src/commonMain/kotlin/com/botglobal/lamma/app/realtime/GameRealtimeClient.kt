@@ -61,4 +61,4 @@ enum class RealtimeConnectSource(val logValue: String) {
     ManualRetry("manualRetry"),
 }
 
-expect fun createGameRealtimeClient(environment: FamilyGamesEnvironment): GameRealtimeClient
+expect fun createGameRealtimeClient(environment: FamilyGamesEnvironment, diagnosticsEnabled: Boolean = false): GameRealtimeClient

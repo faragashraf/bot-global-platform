@@ -252,6 +252,10 @@ internal class ManagedGameRealtimeClient(
         val sessionId = activeSessionId ?: return
         val provider = tokenProvider ?: return
         if (!isCurrentGeneration(expectedGeneration)) return
+        // A failed disposal is an outstanding ownership obligation, not a
+        // transport slot that a later reconnect may overwrite. Retry it before
+        // constructing any replacement; failure leaves the exact target owned.
+        disposeActiveTransportLocked()
         val configuration = GameRealtimeTransportConfiguration(
             sessionId = sessionId,
             accessToken = provider,
@@ -274,8 +278,10 @@ internal class ManagedGameRealtimeClient(
                 transport.dispose()
             }
         } catch (error: Throwable) {
-            if (activeTransport === active) activeTransport = null
-            transport.dispose()
+            val cleanupError = runCatching {
+                if (activeTransport === active) disposeActiveTransportLocked() else transport.dispose()
+            }.exceptionOrNull()
+            if (cleanupError != null) error.addSuppressed(cleanupError)
             throw error
         }
     }
@@ -346,15 +352,24 @@ internal class ManagedGameRealtimeClient(
                             )
                             return@withLock
                         }
-                        val closedTransport = activeTransport
-                        activeTransport = null
                         mutableState.value = RealtimeConnectionState.Reconnecting
                         logger.log(
                             "transport reconnecting generation=${configuration.generation} " +
                                 "instance=${configuration.instance} state=${mutableState.value}",
                         )
-                        scheduleReconnectLocked(configuration.generation)
-                        closedTransport?.transport?.dispose()
+                        try {
+                            disposeActiveTransportLocked()
+                            scheduleReconnectLocked(configuration.generation)
+                        } catch (_: Throwable) {
+                            // Callback failures have no caller to receive them. Retain the
+                            // exact transport and suppress reconnect until an explicit
+                            // lifecycle operation retries its disposal.
+                            mutableState.value = RealtimeConnectionState.Failed
+                            logger.log(
+                                "transport disposal failed generation=${configuration.generation} " +
+                                    "instance=${configuration.instance} state=${mutableState.value}",
+                            )
+                        }
                     }
                 }
             }
@@ -363,6 +378,7 @@ internal class ManagedGameRealtimeClient(
     private fun scheduleReconnectLocked(expectedGeneration: Long) {
         if (
             !isCurrentGeneration(expectedGeneration) ||
+            activeTransport != null ||
             reconnectJob?.isActive == true ||
             networkState == NetworkAvailabilityState.Unavailable
         ) return
@@ -374,14 +390,13 @@ internal class ManagedGameRealtimeClient(
         reconnectJob?.cancel()
         reconnectJob = null
         val interrupted = activeTransport
-        activeTransport = null
         mutableState.value = RealtimeConnectionState.Reconnecting
         logger.log(
             "realtime recovery requested source=networkUnavailable " +
                 "generation=$generation state=${mutableState.value}",
         )
         if (interrupted != null) {
-            interrupted.transport.dispose()
+            disposeActiveTransportLocked()
             logger.log(
                 "transport disposed generation=${interrupted.configuration.generation} " +
                     "instance=${interrupted.configuration.instance} reason=networkUnavailable " +
@@ -439,9 +454,9 @@ internal class ManagedGameRealtimeClient(
     }
 
     private suspend fun disposeActiveTransportLocked() {
-        val current = activeTransport
-        activeTransport = null
-        current?.transport?.dispose()
+        val current = activeTransport ?: return
+        current.transport.dispose()
+        if (activeTransport === current) activeTransport = null
     }
 
     private fun requireTransport(roomId: String): GameRealtimeTransport {

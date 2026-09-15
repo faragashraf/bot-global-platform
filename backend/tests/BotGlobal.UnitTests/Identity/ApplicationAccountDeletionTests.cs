@@ -57,6 +57,36 @@ public sealed class ApplicationAccountDeletionTests
     }
 
     [Fact]
+    public void Family_games_endpoint_is_authenticated_rate_limited_and_accepts_no_target_identifier()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddRouting();
+        builder.Services.AddAuthorizationBuilder().AddPolicy(
+            ApplicationIdentityPolicies.For(BotGlobalApplications.FamilyGames),
+            policy => policy.RequireAuthenticatedUser());
+        builder.Services.AddRateLimiter(options => options.AddFixedWindowLimiter(
+            IdentityModule.MobileAccountDeletionRateLimitPolicy,
+            limiter =>
+            {
+                limiter.PermitLimit = 1;
+                limiter.Window = TimeSpan.FromMinutes(1);
+            }));
+        builder.Services.AddSingleton<IApplicationAccountDeletionService, UnusedDeletionService>();
+        using var app = builder.Build();
+        app.MapFamilyGamesAccountDeletionEndpoint();
+
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Single(item => item.RoutePattern.RawText == "/api/mobile/family-games/account");
+        Assert.Equal(HttpMethods.Delete, endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Single());
+        Assert.NotNull(endpoint.Metadata.GetMetadata<IAuthorizeData>());
+        Assert.Equal(
+            IdentityModule.MobileAccountDeletionRateLimitPolicy,
+            endpoint.Metadata.GetMetadata<EnableRateLimitingAttribute>()!.PolicyName);
+        Assert.DoesNotContain("{", endpoint.RoutePattern.RawText);
+    }
+
+    [Fact]
     public async Task Unauthenticated_account_deletion_is_rejected()
     {
         var builder = WebApplication.CreateBuilder();

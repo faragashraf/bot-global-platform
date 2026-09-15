@@ -114,6 +114,10 @@ namespace BotGlobal.Games.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("BotGlobal.Games.Domain.Sessions.GameSession", b =>
                 {
+                    b.Property<long>("AggregateVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
@@ -268,6 +272,23 @@ namespace BotGlobal.Games.Infrastructure.Persistence.Migrations
                     b.HasKey("SessionId");
 
                     b.ToTable("XoSessionStates", "games");
+                });
+
+            modelBuilder.Entity("BotGlobal.Games.Infrastructure.Persistence.GamesMembershipDeletionFence", b =>
+                {
+                    b.Property<string>("ApplicationKey")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("EstablishedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("ApplicationKey", "MembershipId");
+
+                    b.ToTable("MembershipDeletionFences", "games");
                 });
 
             modelBuilder.Entity("BotGlobal.Games.Domain.Invitations.GameInvitation", b =>

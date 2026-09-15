@@ -19,4 +19,4 @@ private class DesktopRealtimeBoundary : GameRealtimeClient {
     override suspend fun rejoin() = Unit
 }
 
-actual fun createGameRealtimeClient(environment: FamilyGamesEnvironment): GameRealtimeClient = DesktopRealtimeBoundary()
+actual fun createGameRealtimeClient(environment: FamilyGamesEnvironment, diagnosticsEnabled: Boolean): GameRealtimeClient = DesktopRealtimeBoundary()

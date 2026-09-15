@@ -72,6 +72,16 @@ public sealed class GamesHub(
             var snapshot = RequireSuccess(result);
             markedConnected = true;
             await Groups.AddToGroupAsync(Context.ConnectionId, GroupName(sessionId), Context.ConnectionAborted);
+            // A deletion may have revoked the registry while RejoinAsync awaited persistence.
+            if (connections.IsRevoked(identity.MembershipId, sessionId))
+            {
+                await RejectRevokedRejoinRouteAsync(
+                    connections,
+                    Groups,
+                    identity.MembershipId,
+                    Context.ConnectionId,
+                    sessionId);
+            }
             await Clients.Caller.SendAsync("GameStateUpdated", snapshot, Context.ConnectionAborted);
             return snapshot;
         }
@@ -98,6 +108,19 @@ public sealed class GamesHub(
 
     public async Task<GameSessionSnapshot> AcceptRematch(Guid sessionId) =>
         RequireSuccess(await sessions.AcceptRematchAsync(RequireIdentity(), sessionId, Context.ConnectionAborted));
+
+    internal static async Task RejectRevokedRejoinRouteAsync(
+        GameConnectionRegistry connections,
+        IGroupManager groups,
+        Guid membershipId,
+        string connectionId,
+        Guid sessionId)
+    {
+        var route = connections.RecordLateRevokedPresence(membershipId, connectionId, sessionId);
+        await groups.RemoveFromGroupAsync(connectionId, GroupName(sessionId), CancellationToken.None);
+        connections.CompleteRevokedPresence(route);
+        throw new HubException("The game membership or session has been revoked.");
+    }
 
     public async Task<VoiceConsentResult> RequestVoice(VoiceConsentRequest request)
     {
@@ -269,6 +292,9 @@ public sealed class GamesHub(
         {
             throw new HubException("Authenticated application membership is unavailable.");
         }
+
+        if (connections.IsRevoked(membershipId))
+            throw new HubException("The game membership has been revoked.");
 
         return new ApplicationIdentityDescriptor(
             membershipId,

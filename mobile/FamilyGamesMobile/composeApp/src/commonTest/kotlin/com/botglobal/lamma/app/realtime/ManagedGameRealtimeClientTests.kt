@@ -12,12 +12,14 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -153,6 +155,57 @@ class ManagedGameRealtimeClientTests {
     }
 
     @Test
+    fun failed_stop_retains_and_retries_exact_transport_without_reconnect() = runTest {
+        val factory = RecordingTransportFactory()
+        val client = client(factory)
+        client.start(SessionId, RealtimeConnectSource.AppStart) { "access" }
+        val failedTarget = factory.transports.single()
+        failedTarget.disposeFailuresRemaining = 1
+
+        assertFailsWith<IllegalStateException> { client.stop() }
+        failedTarget.close()
+        advanceUntilIdle()
+
+        assertEquals(1, failedTarget.disposeCalls)
+        assertEquals(1, factory.transports.size)
+        assertFalse(failedTarget.disposed)
+
+        client.stop()
+
+        assertEquals(2, failedTarget.disposeCalls)
+        assertTrue(failedTarget.disposed)
+        assertEquals(1, factory.transports.size)
+        assertEquals(RealtimeConnectionState.Disconnected, client.connectionState.value)
+    }
+
+    @Test
+    fun reconnect_failure_with_failed_disposal_retains_target_until_next_retry_disposes_it() = runTest {
+        val factory = RecordingTransportFactory(blockReconnect = true)
+        val client = client(factory, listOf(0L, 1_000L))
+        client.start(SessionId, RealtimeConnectSource.AppStart) { "access" }
+
+        factory.transports.single().close()
+        runCurrent()
+        val failedTarget = factory.transports.last()
+        failedTarget.connectFailuresRemaining = 1
+        failedTarget.disposeFailuresRemaining = 1
+        factory.releaseReconnect.complete(Unit)
+        runCurrent()
+
+        assertEquals(2, factory.transports.size)
+        assertEquals(1, failedTarget.disposeCalls)
+        assertFalse(failedTarget.disposed)
+
+        advanceTimeBy(1_000L)
+        runCurrent()
+
+        assertEquals(2, failedTarget.disposeCalls)
+        assertTrue(failedTarget.disposed)
+        assertEquals(3, factory.transports.size)
+        assertEquals(RealtimeConnectionState.Connected, client.connectionState.value)
+    }
+
+    @Test
     fun network_unavailable_enters_reconnecting_without_creating_a_transport() = runTest {
         val factory = RecordingTransportFactory()
         val client = client(factory)
@@ -248,11 +301,14 @@ class ManagedGameRealtimeClientTests {
         assertEquals(1, factory.distinctGenerations())
     }
 
-    private fun kotlinx.coroutines.test.TestScope.client(factory: RecordingTransportFactory) =
+    private fun kotlinx.coroutines.test.TestScope.client(
+        factory: RecordingTransportFactory,
+        reconnectBackoffMillis: List<Long> = listOf(0L),
+    ) =
         ManagedGameRealtimeClient(
             ownerScope = this,
             transportFactory = factory,
-            reconnectBackoffMillis = listOf(0L),
+            reconnectBackoffMillis = reconnectBackoffMillis,
         )
 
     private class RecordingTransportFactory(
@@ -284,18 +340,30 @@ class ManagedGameRealtimeClientTests {
     ) : GameRealtimeTransport {
         var connectGate: CompletableDeferred<Unit>? = null
         var connectCalls = 0
+        var connectFailuresRemaining = 0
         var disposed = false
+        var disposeCalls = 0
+        var disposeFailuresRemaining = 0
         var subscriptionsActive = true
         val registrationCount = 1
 
         override suspend fun connectAndRejoin() {
             connectCalls++
             connectGate?.await()
+            if (connectFailuresRemaining > 0) {
+                connectFailuresRemaining--
+                error("connect_failed")
+            }
         }
 
         override suspend fun rejoin() = Unit
 
         override suspend fun dispose() {
+            disposeCalls++
+            if (disposeFailuresRemaining > 0) {
+                disposeFailuresRemaining--
+                error("dispose_failed")
+            }
             disposed = true
             subscriptionsActive = false
         }

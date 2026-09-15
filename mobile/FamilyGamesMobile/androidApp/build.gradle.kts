@@ -48,6 +48,14 @@ val uploadSigningConfigured = uploadSigningValues.all { it != null }
 if (uploadSigningValues.any { it != null } && !uploadSigningConfigured) {
     throw GradleException("Upload signing is partially configured. Provide all four Lamma upload signing values.")
 }
+// LAMMA uses password/guest identity only. Shared federated identity remains
+// available to its other consumers; do not merge its unused Android components here.
+configurations.configureEach {
+    exclude(group = "androidx.credentials", module = "credentials")
+    exclude(group = "androidx.credentials", module = "credentials-play-services-auth")
+    exclude(group = "com.google.android.libraries.identity.googleid", module = "googleid")
+}
+
 dependencies {
     implementation(projects.familyGamesMobile.composeApp)
     implementation(libs.androidx.activity.compose)

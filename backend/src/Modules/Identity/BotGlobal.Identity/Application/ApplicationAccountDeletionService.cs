@@ -200,7 +200,7 @@ internal sealed class ApplicationAccountDeletionProcessor(
         catch (Exception error)
         {
             logger.LogWarning(
-                "NQRB account deletion step failed and will be retried. ErrorType={ErrorType}",
+                "Application account deletion step failed and will be retried. ErrorType={ErrorType}",
                 error.GetType().Name);
             dbContext.ChangeTracker.Clear();
             var persisted = await dbContext.AccountDeletionRequests.SingleOrDefaultAsync(

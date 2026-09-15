@@ -1,3 +1,5 @@
+using BotGlobal.Contracts.Mobile;
+using BotGlobal.Games.Application;
 using BotGlobal.Games.Application.Entitlements;
 using BotGlobal.Games.Application.Invitations;
 using BotGlobal.Games.Application.Sessions;
@@ -49,12 +51,17 @@ public static class GamesModule
                 "Family Games invitation deep links require the familygames or HTTPS scheme.")
             .ValidateOnStart();
         services.AddSingleton<ApplicationVersionPolicyReader>();
-        services.AddScoped<IGameSessionService, GameSessionService>();
+        services.AddScoped<IApplicationAccountDeletionHandler, GamesAccountDeletionHandler>();
+        services.AddSingleton<GamesMembershipFenceLock>();
+        services.AddScoped<IGamesMembershipWriteFence, GamesMembershipWriteFence>();
+        services.AddScoped<GameSessionService>();
+        services.AddScoped<IGameSessionService>(provider => provider.GetRequiredService<GameSessionService>());
         services.AddScoped<IGameInvitationService, GameInvitationService>();
         services.AddScoped<IGameEntitlementAuthorizer, FreeGameEntitlementAuthorizer>();
         services.AddScoped<IGameNotificationPublisher, DeferredGameNotificationPublisher>();
         services.AddScoped<IGameRealtimeNotifier, GameRealtimeNotifier>();
         services.AddSingleton<GameConnectionRegistry>();
+        services.AddHostedService<RevokedGamePresenceCleanupService>();
         services.AddSingleton<VoiceConnectionRegistry>();
         services.AddSingleton<VoiceConsentRegistry>();
         services.TryAddSingleton(TimeProvider.System);

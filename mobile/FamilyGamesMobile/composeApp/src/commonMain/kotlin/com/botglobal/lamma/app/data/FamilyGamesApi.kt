@@ -25,12 +25,16 @@ import kotlinx.serialization.json.jsonPrimitive
 import com.botglobal.mobile.platform.update.AppVersionPolicy
 import io.ktor.client.request.parameter
 
+enum class AccountDeletionAcceptance { Completed, Pending }
+
 interface FamilyGamesGateway {
     suspend fun versionPolicy(currentVersion: String, platform: String): AppVersionPolicy
     suspend fun restore(): MobileSession?
     suspend fun continueAsGuest(displayName: String): MobileSession
     suspend fun login(userNameOrEmail: String, password: String): MobileSession
     suspend fun register(request: RegistrationRequest): MobileSession
+    suspend fun deleteAccount(): AccountDeletionAcceptance
+    suspend fun clearLocalSession()
     suspend fun logout()
     suspend fun activeSession(): GameSessionSnapshot?
     suspend fun createSession(rulesetKey: String): GameSessionSnapshot
@@ -83,7 +87,20 @@ class FamilyGamesApi(
 
     override suspend fun logout() {
         runCatching { authorizedPost("/api/mobile/family-games/identity/logout") }
-        vault.clear()
+        clearLocalSession()
+    }
+
+    override suspend fun clearLocalSession() = vault.clear()
+
+    override suspend fun deleteAccount(): AccountDeletionAcceptance {
+        val response = withRefresh { access ->
+            client.delete(environment.endpoint("/api/mobile/family-games/account")) { authorize(access) }
+        }
+        return when (response.status) {
+            HttpStatusCode.NoContent -> AccountDeletionAcceptance.Completed
+            HttpStatusCode.Accepted -> AccountDeletionAcceptance.Pending
+            else -> throw response.toApiException()
+        }
     }
 
     override suspend fun activeSession(): GameSessionSnapshot? =

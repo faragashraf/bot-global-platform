@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Family and controller silhouette within the adaptive icon safe area. -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M31,33a7,7 0,1 0,14,0a7,7 0,1 0,-14,0M63,33a7,7 0,1 0,14,0a7,7 0,1 0,-14,0M48,41a6,6 0,1 0,12,0a6,6 0,1 0,-12,0" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M28,53C28,44 46,44 46,53L46,57L28,57ZM62,53C62,44 80,44 80,53L80,57L62,57ZM43,57C43,48 65,48 65,57L65,61L43,61Z" />
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+        android:pathData="M36,56L72,56C77,56 79,60 80,65L83,77C84,84 77,87 73,82L66,75L42,75L35,82C31,87 24,84 25,77L28,65C29,60 31,56 36,56ZM36,61L40,61L40,65L44,65L44,69L40,69L40,73L36,73L36,69L32,69L32,65L36,65ZM68,62a3,3 0,1 0,0.01,0ZM74,68a3,3 0,1 0,0.01,0" />
+</vector>

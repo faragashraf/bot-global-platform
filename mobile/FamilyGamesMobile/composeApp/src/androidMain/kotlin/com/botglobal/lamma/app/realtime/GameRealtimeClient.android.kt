@@ -26,6 +26,7 @@ private class SignalRGameRealtimeTransport(
     environment: FamilyGamesEnvironment,
     private val configuration: GameRealtimeTransportConfiguration,
     private val listener: GameRealtimeTransportListener,
+    private val diagnosticsEnabled: Boolean,
 ) : GameRealtimeTransport {
     private val subscriptions = mutableListOf<Subscription>()
     private val hub: HubConnection = HubConnectionBuilder
@@ -82,7 +83,7 @@ private class SignalRGameRealtimeTransport(
             .blockingGet()
             .let {
                 voiceTopology = VoiceTopology(it.participantId, it.connectionId, it.peerParticipantId, it.peerConnectionId)
-                Log.i(VoiceLogTag, "voice topology localMembership=${it.participantId} localConnection=${it.connectionId} -> remoteMembership=${it.peerParticipantId ?: "pending"} remoteConnection=${it.peerConnectionId ?: "pending"} initiator=${it.isInitiator}")
+                if (diagnosticsEnabled) Log.i(VoiceLogTag, "voice topology localMembership=${it.participantId} localConnection=${it.connectionId} -> remoteMembership=${it.peerParticipantId ?: "pending"} remoteConnection=${it.peerConnectionId ?: "pending"} initiator=${it.isInitiator}")
                 VoiceJoinResult(
                     roomId = it.sessionId,
                     generation = it.generation,
@@ -146,7 +147,7 @@ private class SignalRGameRealtimeTransport(
 
     private suspend fun invokeVoice(method: String, vararg arguments: Any?) = withContext(Dispatchers.IO) {
         voiceTopology?.let {
-            Log.i(VoiceLogTag, "voice signal send type=$method localMembership=${it.localMembershipId} localConnection=${it.localConnectionId} -> remoteMembership=${it.remoteMembershipId ?: "pending"} remoteConnection=${it.remoteConnectionId ?: "pending"}")
+            if (diagnosticsEnabled) Log.i(VoiceLogTag, "voice signal send type=$method localMembership=${it.localMembershipId} localConnection=${it.localConnectionId} -> remoteMembership=${it.remoteMembershipId ?: "pending"} remoteConnection=${it.remoteConnectionId ?: "pending"}")
         }
         hub.invoke(method, *arguments)
             .timeout(OperationTimeoutSeconds, TimeUnit.SECONDS)
@@ -156,12 +157,10 @@ private class SignalRGameRealtimeTransport(
     override suspend fun dispose() {
         subscriptions.forEach(Subscription::unsubscribe)
         subscriptions.clear()
-        runCatching {
-            withContext(Dispatchers.IO) {
-                hub.stop()
-                    .timeout(OperationTimeoutSeconds, TimeUnit.SECONDS)
-                    .blockingAwait()
-            }
+        withContext(Dispatchers.IO) {
+            hub.stop()
+                .timeout(OperationTimeoutSeconds, TimeUnit.SECONDS)
+                .blockingAwait()
         }
     }
 
@@ -202,11 +201,11 @@ private class SignalRGameRealtimeTransport(
     }
 
     private fun logReceived(type: String, value: VoiceEventIdentity) {
-        Log.i(VoiceLogTag, "voice signal receive type=$type senderMembership=${value.participantId} senderConnection=${value.participantConnectionId} -> localConnection=${value.receiverConnectionId}")
+        if (diagnosticsEnabled) Log.i(VoiceLogTag, "voice signal receive type=$type senderMembership=${value.participantId} senderConnection=${value.participantConnectionId} -> localConnection=${value.receiverConnectionId}")
     }
 
     private fun logConsent(type: String, value: VoiceConsentEventDto) {
-        Log.i(VoiceLogTag, "voice consent type=$type requesterMembership=${value.requesterMembershipId} requesterConnection=${value.requesterConnectionId} -> recipientMembership=${value.recipientMembershipId} recipientConnection=${value.recipientConnectionId} request=${value.requestId} match=${value.matchNumber}")
+        if (diagnosticsEnabled) Log.i(VoiceLogTag, "voice consent type=$type requesterMembership=${value.requesterMembershipId} requesterConnection=${value.requesterConnectionId} -> recipientMembership=${value.recipientMembershipId} recipientConnection=${value.recipientConnectionId} request=${value.requestId} match=${value.matchNumber}")
     }
 
     private companion object {
@@ -318,17 +317,17 @@ private data class VoiceMuteEventDto(
 
 private object AndroidGameRealtimeClients {
     private val lock = Any()
-    private val clients = mutableMapOf<String, GameRealtimeClient>()
+    private val clients = mutableMapOf<Pair<String, Boolean>, GameRealtimeClient>()
 
-    fun get(environment: FamilyGamesEnvironment): GameRealtimeClient = synchronized(lock) {
-        clients.getOrPut(environment.gamesHubUrl) {
+    fun get(environment: FamilyGamesEnvironment, diagnosticsEnabled: Boolean): GameRealtimeClient = synchronized(lock) {
+        clients.getOrPut(environment.gamesHubUrl to diagnosticsEnabled) {
             val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
             ManagedGameRealtimeClient(
                 ownerScope = ownerScope,
                 transportFactory = GameRealtimeTransportFactory { configuration, listener ->
-                    SignalRGameRealtimeTransport(environment, configuration, listener)
+                    SignalRGameRealtimeTransport(environment, configuration, listener, diagnosticsEnabled)
                 },
-                logger = RealtimeLifecycleLogger { message -> Log.i(LogTag, message) },
+                logger = RealtimeLifecycleLogger { message -> if (diagnosticsEnabled) Log.i(LogTag, message) },
             )
         }
     }
@@ -336,5 +335,5 @@ private object AndroidGameRealtimeClients {
     private const val LogTag = "LammaRealtime"
 }
 
-actual fun createGameRealtimeClient(environment: FamilyGamesEnvironment): GameRealtimeClient =
-    AndroidGameRealtimeClients.get(environment)
+actual fun createGameRealtimeClient(environment: FamilyGamesEnvironment, diagnosticsEnabled: Boolean): GameRealtimeClient =
+    AndroidGameRealtimeClients.get(environment, diagnosticsEnabled)

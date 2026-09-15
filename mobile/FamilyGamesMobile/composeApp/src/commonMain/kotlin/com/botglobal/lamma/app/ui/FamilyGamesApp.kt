@@ -37,6 +37,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.window.DialogProperties
+import com.botglobal.lamma.app.state.AccountDeletionConfirmation
+import com.botglobal.lamma.app.data.AccountDeletionAcceptance
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -125,6 +128,7 @@ fun FamilyGamesApp(
     networkAvailability: NetworkAvailability = UnavailableNetworkAvailability,
     languagePreferences: ApplicationLanguagePreferences = UnavailableApplicationLanguagePreferences,
     voiceMediaFactory: VoiceMediaPeerFactory? = null,
+    diagnosticsEnabled: Boolean = false,
     invitationQr: @Composable (String, String, Modifier) -> Unit = { _, description, modifier ->
         Box(
             modifier
@@ -149,11 +153,12 @@ fun FamilyGamesApp(
         networkAvailability,
         languagePreferences,
         voiceMediaFactory,
+        diagnosticsEnabled,
     ) {
         val gateway = FamilyGamesApi(createPlatformHttpClient(), environment, sessionVault)
         FamilyGamesCoordinator(
             gateway,
-            createGameRealtimeClient(environment),
+            createGameRealtimeClient(environment, diagnosticsEnabled),
             haptics,
             scope,
             appVersion,
@@ -217,7 +222,10 @@ fun FamilyGamesApp(
                     ) {
                         ErrorBanner(text.error(state.errorCode))
                     }
-                    if (state.busy) LoadingOverlay(text.loading)
+                    if (state.busy && state.accountDeletionConfirmation == null) LoadingOverlay(text.loading)
+                    if (state.accountDeletionConfirmation != null) {
+                        AccountDeletionDialog(text, state, coordinator)
+                    }
                     state.invitation?.let { invitation ->
                         InvitationSurface(
                             text = text,
@@ -275,6 +283,11 @@ private fun WelcomeScreen(
 ) {
     var displayName by remember { mutableStateOf("") }
     Page {
+        state.accountDeletionAcceptance?.let { acceptance ->
+            Text(if (acceptance == AccountDeletionAcceptance.Pending) text.deletionPending else text.deletionCompleted,
+                modifier = Modifier.fillMaxWidth().padding(vertical = FamilyGamesSpacing.Md))
+        }
+
         TopLanguage(text, coordinator)
         Spacer(Modifier.weight(1f))
         TemporaryLogo()
@@ -403,10 +416,56 @@ private fun HomeScreen(
             }
         }
         Spacer(Modifier.weight(1f))
-        TextButton(onClick = coordinator::logout, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+        if (state.mobileSession?.identity?.kind == com.botglobal.mobile.platform.identity.IdentityKind.Registered) {
+            TextButton(onClick = coordinator::beginAccountDeletion, enabled = !state.busy,
+                modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text(text.deleteAccount, color = MaterialTheme.colorScheme.error)
+            }
+        }
+        TextButton(onClick = coordinator::logout, enabled = !state.busy,
+            modifier = Modifier.align(Alignment.CenterHorizontally)) {
             Text(text.logout, color = FamilyGamesColors.Muted)
         }
     }
+}
+
+@Composable
+private fun AccountDeletionDialog(
+    text: FamilyGamesStrings,
+    state: FamilyGamesUiState,
+    coordinator: FamilyGamesCoordinator,
+) {
+    val final = state.accountDeletionConfirmation == AccountDeletionConfirmation.Final
+    AlertDialog(
+        onDismissRequest = {},
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+        title = { Text(if (final) text.deletionFinalTitle else text.deleteAccount) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(if (final) text.deletionFinalExplanation else text.deletionExplanation)
+                if (state.accountDeletionFailed) {
+                    Spacer(Modifier.height(FamilyGamesSpacing.Md))
+                    Text(if (state.accountDeletionAcceptance == null) text.deletionRetry else text.deletionCleanupRetry,
+                        color = MaterialTheme.colorScheme.error)
+                }
+                if (state.busy) Text(text.loading)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !state.busy, onClick = {
+                if (final) coordinator.deleteAccount() else coordinator.confirmAccountDeletionExplanation()
+            }) {
+                Text(if (final) {
+                    if (state.accountDeletionFailed) text.retry else text.deletePermanently
+                } else text.continueLabel,
+                    color = if (final) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+            }
+        },
+        dismissButton = {
+            TextButton(enabled = !state.busy && state.accountDeletionAcceptance == null,
+                onClick = coordinator::cancelAccountDeletion) { Text(text.cancel) }
+        },
+    )
 }
 
 @Composable
@@ -713,7 +772,7 @@ private fun GameplayScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, 
     val local = game.players.firstOrNull { it.membershipId == membershipId }
     val opponent = game.players.firstOrNull { it.membershipId != membershipId }
     val isLocalTurn = game.activePlayerMembershipId == membershipId
-    Page(scroll = false) {
+    Page {
         PageHeader(text.xoTitle, text.exit, coordinator::exitGame)
         Spacer(Modifier.height(FamilyGamesSpacing.Md))
         ConnectionPill(

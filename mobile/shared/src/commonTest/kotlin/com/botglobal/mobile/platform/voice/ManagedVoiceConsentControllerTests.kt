@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ManagedVoiceConsentControllerTests {
@@ -131,6 +132,29 @@ class ManagedVoiceConsentControllerTests {
         assertEquals("request-10", controller.snapshot.value.requestId)
     }
 
+    @Test
+    fun account_deletion_end_retains_failure_and_retries_original_request() = runTest {
+        val signaling = FakeConsentSignaling()
+        val controller = ManagedVoiceConsentController(backgroundScope, signaling)
+        controller.bind("room", 1)
+        signaling.events.emit(VoiceConsentSignal.Accepted(
+            "room", 1, "request", "member-a", "connection-a", "member-b", "connection-b",
+            "2099-01-01T00:00:00Z",
+        ))
+        runCurrent()
+        signaling.failEnd = true
+
+        assertFailsWith<IllegalStateException> { controller.endForAccountDeletion() }
+        assertEquals(VoiceConsentState.Accepted, controller.snapshot.value.state)
+
+        signaling.failEnd = false
+        controller.endForAccountDeletion()
+        controller.endForAccountDeletion()
+
+        assertEquals(2, signaling.ends)
+        assertEquals(VoiceConsentState.Ended, controller.snapshot.value.state)
+    }
+
     private fun signalRequested(match: Int = 1) = VoiceConsentSignal.Requested(
         "room", match, "request", "member-a", "connection-a", "member-b", "connection-b", "2099-01-01T00:00:00Z",
     )
@@ -140,6 +164,8 @@ class ManagedVoiceConsentControllerTests {
         override val consentSignals = events
         var requests = 0
         var accepts = 0
+        var ends = 0
+        var failEnd = false
         var authoritative = VoiceConsentAuthoritativeState(
             false, "room", 1, "", "", "", "", VoiceConsentState.Idle,
         )
@@ -152,6 +178,9 @@ class ManagedVoiceConsentControllerTests {
         override suspend fun declineVoice(roomId: String, matchNumber: Int, requestId: String) = Unit
         override suspend fun cancelVoiceRequest(roomId: String, matchNumber: Int, requestId: String) = Unit
         override suspend fun voiceUnavailable(roomId: String, matchNumber: Int, requestId: String, reason: String) = Unit
-        override suspend fun endVoice(roomId: String, matchNumber: Int, requestId: String) = Unit
+        override suspend fun endVoice(roomId: String, matchNumber: Int, requestId: String) {
+            ends++
+            if (failEnd) error("end_failed")
+        }
     }
 }

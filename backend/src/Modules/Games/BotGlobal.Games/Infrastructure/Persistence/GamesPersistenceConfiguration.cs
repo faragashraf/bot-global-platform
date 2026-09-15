@@ -6,6 +6,16 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace BotGlobal.Games.Infrastructure.Persistence;
 
+internal sealed class GamesMembershipDeletionFenceConfiguration : IEntityTypeConfiguration<GamesMembershipDeletionFence>
+{
+    public void Configure(EntityTypeBuilder<GamesMembershipDeletionFence> builder)
+    {
+        builder.ToTable("MembershipDeletionFences");
+        builder.HasKey(x => new { x.ApplicationKey, x.MembershipId });
+        builder.Property(x => x.ApplicationKey).HasMaxLength(80).IsRequired();
+    }
+}
+
 internal sealed class GameInvitationConfiguration : IEntityTypeConfiguration<GameInvitation>
 {
     public void Configure(EntityTypeBuilder<GameInvitation> builder)
@@ -35,6 +45,7 @@ internal sealed class GameSessionConfiguration : IEntityTypeConfiguration<GameSe
         builder.Property(x => x.RulesetKey).HasMaxLength(80).IsRequired();
         builder.Property(x => x.RequiredEntitlement).HasMaxLength(120);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(24);
+        builder.Property(x => x.AggregateVersion).IsConcurrencyToken();
         builder.HasIndex(x => new { x.ApplicationKey, x.JoinCode }).IsUnique();
         builder.HasIndex(x => new { x.ApplicationKey, x.LastActivityAtUtc });
         builder.HasMany(x => x.Players)

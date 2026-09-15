@@ -15,6 +15,7 @@ public sealed class GamesDbContext(DbContextOptions<GamesDbContext> options) : D
     public DbSet<GamePlayer> Players => Set<GamePlayer>();
     public DbSet<XoSessionState> XoStates => Set<XoSessionState>();
     public DbSet<XoMove> XoMoves => Set<XoMove>();
+    internal DbSet<GamesMembershipDeletionFence> MembershipDeletionFences => Set<GamesMembershipDeletionFence>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

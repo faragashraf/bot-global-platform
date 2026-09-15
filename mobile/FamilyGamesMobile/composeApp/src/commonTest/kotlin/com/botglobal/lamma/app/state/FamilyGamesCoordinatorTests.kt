@@ -1,5 +1,7 @@
 package com.botglobal.lamma.app.state
 
+import com.botglobal.lamma.app.data.AccountDeletionAcceptance
+
 import com.botglobal.lamma.app.data.FamilyGamesGateway
 import com.botglobal.lamma.app.data.GameSessionSnapshot
 import com.botglobal.lamma.app.data.MoveRequest
@@ -1094,6 +1096,267 @@ class FamilyGamesCoordinatorTests {
         coordinator.dispose()
     }
 
+    @Test
+    fun registered_deletion_requires_both_confirmations_and_acceptance_clears_session_once() = runTest {
+        for (acceptance in AccountDeletionAcceptance.entries) {
+            val completion = CompletableDeferred<AccountDeletionAcceptance>()
+            val registered = mobileSession.copy(identity = mobileSession.identity.copy(kind = IdentityKind.Registered))
+            val gateway = FakeGateway(restored = registered, deletionBehavior = { completion.await() })
+            val realtime = FakeRealtime()
+            val coordinator = FamilyGamesCoordinator(gateway, realtime, SilentHaptics, this)
+            coordinator.startup()
+            advanceUntilIdle()
+            coordinator.deleteAccount()
+            advanceUntilIdle()
+            assertEquals(0, gateway.deletionCalls)
+            coordinator.beginAccountDeletion()
+            coordinator.deleteAccount()
+            advanceUntilIdle()
+            assertEquals(0, gateway.deletionCalls)
+            coordinator.confirmAccountDeletionExplanation()
+            coordinator.deleteAccount()
+            coordinator.deleteAccount()
+            runCurrent()
+            assertEquals(1, gateway.deletionCalls)
+            coordinator.cancelAccountDeletion()
+            assertEquals(AccountDeletionConfirmation.Final, coordinator.state.value.accountDeletionConfirmation)
+            assertEquals(0, gateway.clearCalls)
+            completion.complete(acceptance)
+            advanceUntilIdle()
+            assertEquals(1, gateway.clearCalls)
+            assertEquals(1, realtime.stopCalls)
+            assertEquals(AppScreen.Welcome, coordinator.state.value.screen)
+            assertEquals(null, coordinator.state.value.mobileSession)
+            assertEquals(acceptance, coordinator.state.value.accountDeletionAcceptance)
+            coordinator.dispose()
+        }
+    }
+
+    @Test
+    fun failed_deletion_preserves_session_and_can_retry() = runTest {
+        val registered = mobileSession.copy(identity = mobileSession.identity.copy(kind = IdentityKind.Registered))
+        var failing = true
+        val gateway = FakeGateway(restored = registered, deletionBehavior = {
+            if (failing) throw ApiException("request_failed", 503, "Retry")
+            AccountDeletionAcceptance.Completed
+        })
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(gateway, realtime, SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+        coordinator.beginAccountDeletion()
+        coordinator.confirmAccountDeletionExplanation()
+        coordinator.deleteAccount()
+        advanceUntilIdle()
+        assertEquals(registered, coordinator.state.value.mobileSession)
+        assertEquals(true, coordinator.state.value.accountDeletionFailed)
+        assertEquals(0, gateway.clearCalls)
+        assertEquals(0, realtime.stopCalls)
+        failing = false
+        coordinator.deleteAccount()
+        advanceUntilIdle()
+        assertEquals(2, gateway.deletionCalls)
+        assertEquals(AppScreen.Welcome, coordinator.state.value.screen)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun guest_cannot_enter_or_submit_account_deletion() = runTest {
+        val gateway = FakeGateway(restored = mobileSession)
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+        coordinator.beginAccountDeletion()
+        coordinator.confirmAccountDeletionExplanation()
+        coordinator.deleteAccount()
+        advanceUntilIdle()
+        assertEquals(null, coordinator.state.value.accountDeletionConfirmation)
+        assertEquals(0, gateway.deletionCalls)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun accepted_deletion_retries_local_cleanup_without_resubmitting_and_new_login_resets_acceptance() = runTest {
+        val registered = mobileSession.copy(identity = mobileSession.identity.copy(kind = IdentityKind.Registered))
+        var failCleanup = true
+        val gateway = FakeGateway(restored = registered, clearBehavior = {
+            if (failCleanup) error("local_cleanup_failed")
+        })
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+        coordinator.beginAccountDeletion()
+        coordinator.confirmAccountDeletionExplanation()
+        coordinator.deleteAccount()
+        advanceUntilIdle()
+        assertEquals(true, coordinator.state.value.accountDeletionFailed)
+        assertEquals(AccountDeletionAcceptance.Completed, coordinator.state.value.accountDeletionAcceptance)
+        failCleanup = false
+        coordinator.deleteAccount()
+        advanceUntilIdle()
+        assertEquals(1, gateway.deletionCalls)
+        assertEquals(AppScreen.Welcome, coordinator.state.value.screen)
+        coordinator.signIn("test", "password")
+        advanceUntilIdle()
+        assertEquals(null, coordinator.state.value.accountDeletionAcceptance)
+        assertEquals(null, coordinator.state.value.accountDeletionCleanup)
+        coordinator.beginAccountDeletion()
+        coordinator.confirmAccountDeletionExplanation()
+        coordinator.deleteAccount()
+        advanceUntilIdle()
+        assertEquals(2, gateway.deletionCalls)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun accepted_deletion_retains_voice_failure_and_retries_only_voice() = runTest {
+        val registered = mobileSession.copy(identity = mobileSession.identity.copy(kind = IdentityKind.Registered))
+        val teardown = RecordingDeletionTeardown(failVoice = true)
+        val gateway = FakeGateway(restored = registered)
+        val coordinator = FamilyGamesCoordinator(
+            gateway, FakeRealtime(), SilentHaptics, this, accountDeletionTeardown = teardown,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+        coordinator.beginAccountDeletion()
+        coordinator.confirmAccountDeletionExplanation()
+        coordinator.deleteAccount()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionCleanupStepState.Failed, coordinator.state.value.accountDeletionCleanup?.voiceLeave)
+        assertEquals(AccountDeletionCleanupStepState.Completed, coordinator.state.value.accountDeletionCleanup?.consentEnd)
+        assertEquals(AccountDeletionCleanupStepState.Completed, coordinator.state.value.accountDeletionCleanup?.realtimeStop)
+        assertEquals(AccountDeletionCleanupStepState.Completed, coordinator.state.value.accountDeletionCleanup?.credentialsClear)
+        assertEquals(AppScreen.Home, coordinator.state.value.screen)
+        assertEquals(null, coordinator.state.value.mobileSession)
+        assertEquals(1, gateway.deletionCalls)
+
+        teardown.failVoice = false
+        coordinator.deleteAccount()
+        advanceUntilIdle()
+
+        assertEquals(2, teardown.voiceCalls)
+        assertEquals(1, teardown.consentCalls)
+        assertEquals(1, teardown.realtimeCalls)
+        assertEquals(1, teardown.credentialsCalls)
+        assertEquals(1, gateway.deletionCalls)
+        assertEquals(AppScreen.Welcome, coordinator.state.value.screen)
+        assertEquals(true, coordinator.state.value.accountDeletionCleanup?.completed)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun accepted_deletion_retains_consent_failure_and_converges_without_resubmission() = runTest {
+        val registered = mobileSession.copy(identity = mobileSession.identity.copy(kind = IdentityKind.Registered))
+        val teardown = RecordingDeletionTeardown(failConsent = true)
+        val gateway = FakeGateway(restored = registered)
+        val coordinator = FamilyGamesCoordinator(
+            gateway, FakeRealtime(), SilentHaptics, this, accountDeletionTeardown = teardown,
+        )
+        coordinator.startup(); advanceUntilIdle()
+        coordinator.beginAccountDeletion(); coordinator.confirmAccountDeletionExplanation(); coordinator.deleteAccount()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionCleanupStepState.Failed, coordinator.state.value.accountDeletionCleanup?.consentEnd)
+        assertEquals(AppScreen.Home, coordinator.state.value.screen)
+        teardown.failConsent = false
+        coordinator.deleteAccount(); advanceUntilIdle()
+
+        assertEquals(1, teardown.voiceCalls)
+        assertEquals(2, teardown.consentCalls)
+        assertEquals(1, teardown.realtimeCalls)
+        assertEquals(1, teardown.credentialsCalls)
+        assertEquals(1, gateway.deletionCalls)
+        assertEquals(AppScreen.Welcome, coordinator.state.value.screen)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun accepted_deletion_retains_realtime_failure_and_converges_without_resubmission() = runTest {
+        val registered = mobileSession.copy(identity = mobileSession.identity.copy(kind = IdentityKind.Registered))
+        val teardown = RecordingDeletionTeardown(failRealtime = true)
+        val gateway = FakeGateway(restored = registered)
+        val coordinator = FamilyGamesCoordinator(
+            gateway, FakeRealtime(), SilentHaptics, this, accountDeletionTeardown = teardown,
+        )
+        coordinator.startup(); advanceUntilIdle()
+        coordinator.beginAccountDeletion(); coordinator.confirmAccountDeletionExplanation(); coordinator.deleteAccount()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionCleanupStepState.Failed, coordinator.state.value.accountDeletionCleanup?.realtimeStop)
+        assertEquals(AppScreen.Home, coordinator.state.value.screen)
+        teardown.failRealtime = false
+        coordinator.deleteAccount(); advanceUntilIdle()
+
+        assertEquals(1, teardown.voiceCalls)
+        assertEquals(1, teardown.consentCalls)
+        assertEquals(2, teardown.realtimeCalls)
+        assertEquals(1, teardown.credentialsCalls)
+        assertEquals(1, gateway.deletionCalls)
+        assertEquals(AppScreen.Welcome, coordinator.state.value.screen)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun accepted_deletion_keeps_mixed_partial_progress_and_retries_only_failed_steps() = runTest {
+        val registered = mobileSession.copy(identity = mobileSession.identity.copy(kind = IdentityKind.Registered))
+        val teardown = RecordingDeletionTeardown(failVoice = true, failRealtime = true)
+        val gateway = FakeGateway(restored = registered)
+        val coordinator = FamilyGamesCoordinator(
+            gateway, FakeRealtime(), SilentHaptics, this, accountDeletionTeardown = teardown,
+        )
+        coordinator.startup(); advanceUntilIdle()
+        coordinator.beginAccountDeletion(); coordinator.confirmAccountDeletionExplanation(); coordinator.deleteAccount()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionCleanupStepState.Failed, coordinator.state.value.accountDeletionCleanup?.voiceLeave)
+        assertEquals(AccountDeletionCleanupStepState.Completed, coordinator.state.value.accountDeletionCleanup?.consentEnd)
+        assertEquals(AccountDeletionCleanupStepState.Failed, coordinator.state.value.accountDeletionCleanup?.realtimeStop)
+        assertEquals(AccountDeletionCleanupStepState.Completed, coordinator.state.value.accountDeletionCleanup?.credentialsClear)
+        teardown.failVoice = false
+        teardown.failRealtime = false
+        coordinator.deleteAccount(); advanceUntilIdle()
+
+        assertEquals(2, teardown.voiceCalls)
+        assertEquals(1, teardown.consentCalls)
+        assertEquals(2, teardown.realtimeCalls)
+        assertEquals(1, teardown.credentialsCalls)
+        assertEquals(1, gateway.deletionCalls)
+        assertEquals(AppScreen.Welcome, coordinator.state.value.screen)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun credential_cleanup_failure_preserves_session_until_retry_and_new_login_resets_cleanup_state() = runTest {
+        val registered = mobileSession.copy(identity = mobileSession.identity.copy(kind = IdentityKind.Registered))
+        val teardown = RecordingDeletionTeardown(failCredentials = true)
+        val gateway = FakeGateway(restored = registered)
+        val coordinator = FamilyGamesCoordinator(
+            gateway, FakeRealtime(), SilentHaptics, this, accountDeletionTeardown = teardown,
+        )
+        coordinator.startup(); advanceUntilIdle()
+        coordinator.beginAccountDeletion(); coordinator.confirmAccountDeletionExplanation(); coordinator.deleteAccount()
+        advanceUntilIdle()
+
+        assertEquals(AccountDeletionCleanupStepState.Failed, coordinator.state.value.accountDeletionCleanup?.credentialsClear)
+        assertEquals(registered, coordinator.state.value.mobileSession)
+        assertEquals(AppScreen.Home, coordinator.state.value.screen)
+        teardown.failCredentials = false
+        coordinator.deleteAccount(); advanceUntilIdle()
+
+        assertEquals(1, teardown.voiceCalls)
+        assertEquals(1, teardown.consentCalls)
+        assertEquals(1, teardown.realtimeCalls)
+        assertEquals(2, teardown.credentialsCalls)
+        assertEquals(1, gateway.deletionCalls)
+        assertEquals(AppScreen.Welcome, coordinator.state.value.screen)
+        coordinator.signIn("test", "password"); advanceUntilIdle()
+        assertEquals(null, coordinator.state.value.accountDeletionAcceptance)
+        assertEquals(null, coordinator.state.value.accountDeletionCleanup)
+        assertEquals(1, teardown.resetCalls)
+        coordinator.dispose()
+    }
+
     private class FakeGateway(
         private val restored: MobileSession? = null,
         private val active: GameSessionSnapshot? = null,
@@ -1103,7 +1366,13 @@ class FamilyGamesCoordinatorTests {
         private val rejoinBehavior: (suspend (Int) -> GameSessionSnapshot)? = null,
         private val moveError: ApiException? = null,
         private val resolvedInvitation: GameSessionSnapshot? = null,
+        private val deletionBehavior: suspend () -> AccountDeletionAcceptance = { AccountDeletionAcceptance.Completed },
+        private val clearBehavior: suspend () -> Unit = {},
     ) : FamilyGamesGateway {
+        var deletionCalls = 0
+        var clearCalls = 0
+        override suspend fun deleteAccount(): AccountDeletionAcceptance { deletionCalls++; return deletionBehavior() }
+        override suspend fun clearLocalSession() { clearCalls++; clearBehavior() }
         var lastMove: MoveRequest? = null
         var rejoinCalls: Int = 0
         var guestCalls: Int = 0
@@ -1115,7 +1384,7 @@ class FamilyGamesCoordinatorTests {
             guestCalls++
             return mobileSession
         }
-        override suspend fun login(userNameOrEmail: String, password: String) = mobileSession
+        override suspend fun login(userNameOrEmail: String, password: String) = restored ?: mobileSession
         override suspend fun register(request: RegistrationRequest) = mobileSession
         override suspend fun logout() = Unit
         override suspend fun activeSession() = active
@@ -1159,6 +1428,7 @@ class FamilyGamesCoordinatorTests {
         override val connectionState: StateFlow<RealtimeConnectionState> = mutableConnection
         override val events: Flow<GameRealtimeEvent> = mutableEvents
         override val consentSignals: Flow<VoiceConsentSignal> = mutableConsent
+        var stopCalls = 0
         var voiceRequests = 0
         var startedSession: String? = null
         var startCalls: Int = 0
@@ -1180,7 +1450,7 @@ class FamilyGamesCoordinatorTests {
                 mutableConnection.value = RealtimeConnectionState.Connected
             }
         }
-        override suspend fun stop() = Unit
+        override suspend fun stop() { stopCalls++ }
         override suspend fun rejoin() { rejoinCalls++ }
         override suspend fun onNetworkAvailabilityChanged(snapshot: NetworkAvailabilitySnapshot) {
             val current = snapshot.observerGeneration > networkObserverGeneration ||
@@ -1218,6 +1488,43 @@ class FamilyGamesCoordinatorTests {
         override suspend fun join(roomId: String, generation: Long) = VoiceJoinResult(
             roomId, generation, membershipId, true, false, "connection-a", "member-2", "connection-b",
         )
+    }
+
+    private class RecordingDeletionTeardown(
+        var failVoice: Boolean = false,
+        var failConsent: Boolean = false,
+        var failRealtime: Boolean = false,
+        var failCredentials: Boolean = false,
+    ) : FamilyGamesAccountDeletionTeardown {
+        var voiceCalls = 0
+        var consentCalls = 0
+        var realtimeCalls = 0
+        var credentialsCalls = 0
+        var resetCalls = 0
+
+        override suspend fun leaveVoice() {
+            voiceCalls++
+            if (failVoice) error("voice_leave_failed")
+        }
+
+        override suspend fun endVoiceConsent() {
+            consentCalls++
+            if (failConsent) error("consent_end_failed")
+        }
+
+        override suspend fun stopRealtime() {
+            realtimeCalls++
+            if (failRealtime) error("realtime_stop_failed")
+        }
+
+        override suspend fun clearLocalCredentials() {
+            credentialsCalls++
+            if (failCredentials) error("credential_cleanup_failed")
+        }
+
+        override fun reset() {
+            resetCalls++
+        }
     }
 
     private class FakeNetworkAvailability : NetworkAvailability {

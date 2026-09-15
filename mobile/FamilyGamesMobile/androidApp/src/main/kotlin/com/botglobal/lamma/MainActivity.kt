@@ -154,6 +154,7 @@ class MainActivity : FragmentActivity() {
             if (BuildConfig.VOICE_ICE_POLICY == "relay") VoiceIcePolicy.Relay else VoiceIcePolicy.All,
             mediaIdPrefix = "lamma",
             logTag = "LammaVoice",
+            diagnosticsEnabled = BuildConfig.DEBUG,
         )
         setContent {
             FamilyGamesApp(
@@ -175,6 +176,7 @@ class MainActivity : FragmentActivity() {
                 networkAvailability = networkAvailability,
                 languagePreferences = languagePreferences,
                 voiceMediaFactory = voiceMedia,
+                diagnosticsEnabled = BuildConfig.DEBUG,
                 invitationQr = { content, description, modifier ->
                     AndroidInvitationQr(content, description, modifier)
                 },

@@ -43,7 +43,6 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
-            implementation(libs.androidx.biometric)
             implementation(libs.ktor.client.okhttp)
             implementation("com.microsoft.signalr:signalr:7.0.0")
         }
@@ -58,6 +57,7 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.ktor.client.mock)
         }
     }
 }

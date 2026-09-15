@@ -29,9 +29,23 @@ internal sealed class GameSessionService(
     IGameRealtimeNotifier realtime,
     IGameNotificationPublisher notifications,
     TimeProvider timeProvider,
-    ILogger<GameSessionService> logger) : IGameSessionService
+    ILogger<GameSessionService> logger,
+    IGamesMembershipWriteFence? membershipWriteFence = null) : IGameSessionService
 {
-    public async Task<GameCommandResult<GameSessionSnapshot>> CreateAsync(
+    private readonly IGamesMembershipWriteFence _membershipWriteFence = membershipWriteFence ??
+        new GamesMembershipWriteFence(dbContext, new GamesMembershipFenceLock());
+
+    public Task<GameCommandResult<GameSessionSnapshot>> CreateAsync(
+        ApplicationIdentityDescriptor identity,
+        CreateGameSessionRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteMembershipWriteAsync(
+            BotGlobalApplications.FamilyGames,
+            identity.MembershipId,
+            () => CreateCoreAsync(identity, request, cancellationToken),
+            cancellationToken);
+
+    private async Task<GameCommandResult<GameSessionSnapshot>> CreateCoreAsync(
         ApplicationIdentityDescriptor identity,
         CreateGameSessionRequest request,
         CancellationToken cancellationToken)
@@ -78,7 +92,17 @@ internal sealed class GameSessionService(
         return GameCommandResult<GameSessionSnapshot>.Success(snapshot, 201);
     }
 
-    public async Task<GameCommandResult<GameSessionSnapshot>> JoinAsync(
+    public Task<GameCommandResult<GameSessionSnapshot>> JoinAsync(
+        ApplicationIdentityDescriptor identity,
+        JoinGameSessionRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteMembershipWriteAsync(
+            identity.ApplicationKey,
+            identity.MembershipId,
+            () => JoinWithinMembershipWriteAsync(identity, request, cancellationToken),
+            cancellationToken);
+
+    internal async Task<GameCommandResult<GameSessionSnapshot>> JoinWithinMembershipWriteAsync(
         ApplicationIdentityDescriptor identity,
         JoinGameSessionRequest request,
         CancellationToken cancellationToken)
@@ -154,7 +178,17 @@ internal sealed class GameSessionService(
         return GameCommandResult<GameSessionSnapshot>.Success(snapshot);
     }
 
-    public async Task<GameCommandResult<GameSessionSnapshot>> ReadyAsync(
+    public Task<GameCommandResult<GameSessionSnapshot>> ReadyAsync(
+        ApplicationIdentityDescriptor identity,
+        Guid sessionId,
+        CancellationToken cancellationToken) =>
+        ExecuteMembershipWriteAsync(
+            identity.ApplicationKey,
+            identity.MembershipId,
+            () => ReadyCoreAsync(identity, sessionId, cancellationToken),
+            cancellationToken);
+
+    private async Task<GameCommandResult<GameSessionSnapshot>> ReadyCoreAsync(
         ApplicationIdentityDescriptor identity,
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -219,7 +253,17 @@ internal sealed class GameSessionService(
             : Fail("active_session_not_found", "No active game session exists for this membership.", 404);
     }
 
-    public async Task<GameCommandResult<GameSessionSnapshot>> MoveAsync(
+    public Task<GameCommandResult<GameSessionSnapshot>> MoveAsync(
+        ApplicationIdentityDescriptor identity,
+        XoMoveRequest request,
+        CancellationToken cancellationToken) =>
+        ExecuteMembershipWriteAsync(
+            identity.ApplicationKey,
+            identity.MembershipId,
+            () => MoveCoreAsync(identity, request, cancellationToken),
+            cancellationToken);
+
+    private async Task<GameCommandResult<GameSessionSnapshot>> MoveCoreAsync(
         ApplicationIdentityDescriptor identity,
         XoMoveRequest request,
         CancellationToken cancellationToken)
@@ -321,7 +365,17 @@ internal sealed class GameSessionService(
         return GameCommandResult<GameSessionSnapshot>.Success(snapshot);
     }
 
-    public async Task<GameCommandResult<GameSessionSnapshot>> RejoinAsync(
+    public Task<GameCommandResult<GameSessionSnapshot>> RejoinAsync(
+        ApplicationIdentityDescriptor identity,
+        Guid sessionId,
+        CancellationToken cancellationToken) =>
+        ExecuteMembershipWriteAsync(
+            identity.ApplicationKey,
+            identity.MembershipId,
+            () => RejoinCoreAsync(identity, sessionId, cancellationToken),
+            cancellationToken);
+
+    private async Task<GameCommandResult<GameSessionSnapshot>> RejoinCoreAsync(
         ApplicationIdentityDescriptor identity,
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -335,7 +389,17 @@ internal sealed class GameSessionService(
         return result;
     }
 
-    public async Task<GameCommandResult<GameSessionSnapshot>> SetDisconnectedAsync(
+    public Task<GameCommandResult<GameSessionSnapshot>> SetDisconnectedAsync(
+        Guid membershipId,
+        Guid sessionId,
+        CancellationToken cancellationToken) =>
+        ExecuteMembershipWriteAsync(
+            BotGlobalApplications.FamilyGames,
+            membershipId,
+            () => SetDisconnectedCoreAsync(membershipId, sessionId, cancellationToken),
+            cancellationToken);
+
+    private async Task<GameCommandResult<GameSessionSnapshot>> SetDisconnectedCoreAsync(
         Guid membershipId,
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -358,7 +422,17 @@ internal sealed class GameSessionService(
         return GameCommandResult<GameSessionSnapshot>.Success(snapshot);
     }
 
-    public async Task<GameCommandResult<GameSessionSnapshot>> RequestRematchAsync(
+    public Task<GameCommandResult<GameSessionSnapshot>> RequestRematchAsync(
+        ApplicationIdentityDescriptor identity,
+        Guid sessionId,
+        CancellationToken cancellationToken) =>
+        ExecuteMembershipWriteAsync(
+            identity.ApplicationKey,
+            identity.MembershipId,
+            () => RequestRematchCoreAsync(identity, sessionId, cancellationToken),
+            cancellationToken);
+
+    private async Task<GameCommandResult<GameSessionSnapshot>> RequestRematchCoreAsync(
         ApplicationIdentityDescriptor identity,
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -389,7 +463,17 @@ internal sealed class GameSessionService(
         }
     }
 
-    public async Task<GameCommandResult<GameSessionSnapshot>> AcceptRematchAsync(
+    public Task<GameCommandResult<GameSessionSnapshot>> AcceptRematchAsync(
+        ApplicationIdentityDescriptor identity,
+        Guid sessionId,
+        CancellationToken cancellationToken) =>
+        ExecuteMembershipWriteAsync(
+            identity.ApplicationKey,
+            identity.MembershipId,
+            () => AcceptRematchCoreAsync(identity, sessionId, cancellationToken),
+            cancellationToken);
+
+    private async Task<GameCommandResult<GameSessionSnapshot>> AcceptRematchCoreAsync(
         ApplicationIdentityDescriptor identity,
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -582,4 +666,16 @@ internal sealed class GameSessionService(
 
     private static GameCommandResult<GameSessionSnapshot> Fail(string code, string message, int statusCode) =>
         GameCommandResult<GameSessionSnapshot>.Failure(code, message, statusCode);
+
+    private Task<GameCommandResult<GameSessionSnapshot>> ExecuteMembershipWriteAsync(
+        string applicationKey,
+        Guid membershipId,
+        Func<Task<GameCommandResult<GameSessionSnapshot>>> operation,
+        CancellationToken cancellationToken) =>
+        _membershipWriteFence.ExecuteAsync(
+            applicationKey,
+            membershipId,
+            operation,
+            () => Fail("account_deleted", "The game membership has been deleted.", 410),
+            cancellationToken);
 }

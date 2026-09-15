@@ -90,6 +90,8 @@ interface VoiceRoomController {
     val snapshot: StateFlow<VoiceRoomSnapshot>
     suspend fun join(roomId: String)
     suspend fun leave()
+    suspend fun leaveForAccountDeletion() = leave()
+    fun resetAccountDeletionCleanup() = Unit
     suspend fun setMuted(muted: Boolean)
     suspend fun signalingInterrupted()
     suspend fun signalingRecovered()
@@ -114,6 +116,7 @@ class ManagedVoiceRoomController(
     private var localConnectionId: String? = null
     private var peerParticipantId: String? = null
     private var peerConnectionId: String? = null
+    private var pendingAccountDeletionLeave: Pair<String, Long>? = null
 
     init { scope.launch { signaling.signals.collect(::onSignal) } }
 
@@ -151,6 +154,20 @@ class ManagedVoiceRoomController(
         disposeCurrent(notifyServer = true)
         generation++
         mutableSnapshot.value = VoiceRoomSnapshot(generation = generation)
+    }
+
+    override suspend fun leaveForAccountDeletion() {
+        val pending = pendingAccountDeletionLeave ?: roomId?.let { it to generation }
+        pendingAccountDeletionLeave = pending
+        disposeCurrent(notifyServer = false)
+        pending?.let { (room, roomGeneration) -> signaling.leave(room, roomGeneration) }
+        pendingAccountDeletionLeave = null
+        generation++
+        mutableSnapshot.value = VoiceRoomSnapshot(generation = generation)
+    }
+
+    override fun resetAccountDeletionCleanup() {
+        pendingAccountDeletionLeave = null
     }
 
     override suspend fun setMuted(muted: Boolean) {

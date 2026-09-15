@@ -14,13 +14,28 @@ namespace BotGlobal.Games.Application.Invitations;
 
 internal sealed class GameInvitationService(
     GamesDbContext dbContext,
-    IGameSessionService sessions,
+    GameSessionService sessions,
     IGameEntitlementAuthorizer entitlements,
     TimeProvider timeProvider,
     IOptions<GameInvitationOptions> options,
-    ILogger<GameInvitationService> logger) : IGameInvitationService
+    ILogger<GameInvitationService> logger,
+    IGamesMembershipWriteFence? membershipWriteFence = null) : IGameInvitationService
 {
-    public async Task<GameCommandResult<GameInvitationSnapshot>> CreateAsync(
+    private readonly IGamesMembershipWriteFence _membershipWriteFence = membershipWriteFence ??
+        new GamesMembershipWriteFence(dbContext, new GamesMembershipFenceLock());
+
+    public Task<GameCommandResult<GameInvitationSnapshot>> CreateAsync(
+        ApplicationIdentityDescriptor identity,
+        Guid sessionId,
+        CancellationToken cancellationToken) =>
+        _membershipWriteFence.ExecuteAsync(
+            identity.ApplicationKey,
+            identity.MembershipId,
+            () => CreateCoreAsync(identity, sessionId, cancellationToken),
+            () => Fail<GameInvitationSnapshot>("account_deleted", "The game membership has been deleted.", 410),
+            cancellationToken);
+
+    private async Task<GameCommandResult<GameInvitationSnapshot>> CreateCoreAsync(
         ApplicationIdentityDescriptor identity,
         Guid sessionId,
         CancellationToken cancellationToken)
@@ -96,7 +111,7 @@ internal sealed class GameInvitationService(
             201);
     }
 
-    public async Task<GameCommandResult<ResolvedGameInvitation>> ResolveAsync(
+    public Task<GameCommandResult<ResolvedGameInvitation>> ResolveAsync(
         ApplicationIdentityDescriptor identity,
         ResolveGameInvitationRequest request,
         CancellationToken cancellationToken)
@@ -104,8 +119,23 @@ internal sealed class GameInvitationService(
         var token = request.Token?.Trim();
         if (string.IsNullOrWhiteSpace(token) || token.Length > 256)
         {
-            return Fail<ResolvedGameInvitation>("invitation_invalid", "The invitation is invalid.", 400);
+            return Task.FromResult(
+                Fail<ResolvedGameInvitation>("invitation_invalid", "The invitation is invalid.", 400));
         }
+
+        return _membershipWriteFence.ExecuteAsync(
+            identity.ApplicationKey,
+            identity.MembershipId,
+            () => ResolveWithinMembershipWriteAsync(identity, token, cancellationToken),
+            () => Fail<ResolvedGameInvitation>("account_deleted", "The game membership has been deleted.", 410),
+            cancellationToken);
+    }
+
+    private async Task<GameCommandResult<ResolvedGameInvitation>> ResolveWithinMembershipWriteAsync(
+        ApplicationIdentityDescriptor identity,
+        string token,
+        CancellationToken cancellationToken)
+    {
 
         var invitation = await dbContext.Invitations
             .SingleOrDefaultAsync(x => x.TokenHash == Hash(token), cancellationToken);
@@ -165,7 +195,9 @@ internal sealed class GameInvitationService(
             return Fail<ResolvedGameInvitation>("entitlement_required", "The game mode is not available to this membership.", 403);
         }
 
-        var joined = await sessions.JoinAsync(
+        // Resolution already owns the membership fence and transaction. Re-entering
+        // public JoinAsync would deadlock the process gate and nest the same DbContext.
+        var joined = await sessions.JoinWithinMembershipWriteAsync(
             identity,
             new JoinGameSessionRequest(session.JoinCode),
             cancellationToken);

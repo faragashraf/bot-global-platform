@@ -103,8 +103,11 @@ class ManagedVoiceConsentController(
     private val signaling: VoiceConsentSignalingTransport,
     private val logger: (String) -> Unit = {},
 ) {
+    private data class PendingAccountDeletionEnd(val roomId: String, val matchNumber: Int, val requestId: String)
+
     private val mutableSnapshot = MutableStateFlow(VoiceConsentSnapshot())
     val snapshot: StateFlow<VoiceConsentSnapshot> = mutableSnapshot.asStateFlow()
+    private var pendingAccountDeletionEnd: PendingAccountDeletionEnd? = null
 
     init {
         // Subscribe synchronously so a realtime event delivered immediately after
@@ -201,6 +204,25 @@ class ManagedVoiceConsentController(
             runCatching { signaling.endVoice(current.roomId, current.matchNumber, current.requestId) }
         }
         mutableSnapshot.value = current.copy(state = VoiceConsentState.Ended)
+    }
+
+    suspend fun endForAccountDeletion() {
+        val current = mutableSnapshot.value
+        val pending = pendingAccountDeletionEnd ?: if (
+            current.state in setOf(VoiceConsentState.Accepted, VoiceConsentState.Joining,
+                VoiceConsentState.Connected, VoiceConsentState.Muted, VoiceConsentState.Reconnecting) &&
+            current.roomId != null && current.matchNumber != null && current.requestId != null
+        ) {
+            PendingAccountDeletionEnd(current.roomId, current.matchNumber, current.requestId)
+        } else null
+        pendingAccountDeletionEnd = pending
+        pending?.let { signaling.endVoice(it.roomId, it.matchNumber, it.requestId) }
+        pendingAccountDeletionEnd = null
+        mutableSnapshot.value = current.copy(state = VoiceConsentState.Ended)
+    }
+
+    fun resetAccountDeletionCleanup() {
+        pendingAccountDeletionEnd = null
     }
 
     private suspend fun act(required: VoiceConsentState, completed: VoiceConsentState, operation: suspend (String, Int, String) -> Unit) {

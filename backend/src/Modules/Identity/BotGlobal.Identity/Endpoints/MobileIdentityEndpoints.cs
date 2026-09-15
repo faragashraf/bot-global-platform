@@ -171,6 +171,39 @@ internal static class MobileIdentityEndpoints
             return Results.NoContent();
         }).RequireAuthorization(ApplicationIdentityPolicies.For(applicationKey));
 
+        endpoints.MapFamilyGamesAccountDeletionEndpoint();
+
+        return endpoints;
+    }
+
+    internal static IEndpointRouteBuilder MapFamilyGamesAccountDeletionEndpoint(
+        this IEndpointRouteBuilder endpoints)
+    {
+        const string applicationKey = BotGlobalApplications.FamilyGames;
+        endpoints.MapDelete("/api/mobile/family-games/account", async (
+            ClaimsPrincipal principal,
+            IApplicationAccountDeletionService deletion,
+            CancellationToken cancellationToken) =>
+        {
+            var identity = RequireIdentity(principal);
+            if (identity.IsGuest)
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            var result = await deletion.DeleteAsync(
+                identity,
+                cancellationToken);
+            return result switch
+            {
+                ApplicationAccountDeletionOutcome.Completed => Results.NoContent(),
+                ApplicationAccountDeletionOutcome.Accepted => Results.Accepted(),
+                _ => Results.StatusCode(StatusCodes.Status503ServiceUnavailable)
+            };
+        })
+            .RequireAuthorization(ApplicationIdentityPolicies.For(applicationKey))
+            .RequireRateLimiting(IdentityModule.MobileAccountDeletionRateLimitPolicy);
+
         return endpoints;
     }
 

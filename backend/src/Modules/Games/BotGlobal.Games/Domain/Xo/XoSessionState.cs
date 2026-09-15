@@ -43,6 +43,12 @@ public sealed class XoSessionState
         WinnerMembershipId = engine.WinnerPlayerId;
     }
 
+    internal void AnonymizeMembership(Guid membershipId, Guid anonymousId)
+    {
+        if (ActivePlayerMembershipId == membershipId) ActivePlayerMembershipId = anonymousId;
+        if (WinnerMembershipId == membershipId) WinnerMembershipId = anonymousId;
+    }
+
     public void Reset(Guid firstPlayerMembershipId)
     {
         Version = 0;
@@ -87,6 +93,12 @@ public sealed class XoMove
         Column = column;
         AcceptedVersion = acceptedVersion;
         AcceptedAtUtc = acceptedAtUtc;
+    }
+
+    internal void Anonymize(Guid anonymousId)
+    {
+        PlayerMembershipId = anonymousId;
+        CommandId = Guid.NewGuid().ToString("N");
     }
 
     public Guid Id { get; private set; }

@@ -58,6 +58,7 @@ public sealed class GameSession
     public DateTimeOffset? CompletedAtUtc { get; private set; }
     public Guid? RematchRequestedByMembershipId { get; private set; }
     public int MatchNumber { get; private set; } = 1;
+    public long AggregateVersion { get; private set; }
     public IReadOnlyCollection<GamePlayer> Players => _players;
 
     public GamePlayer AddPlayer(Guid membershipId, string displayName, DateTimeOffset now)
@@ -71,6 +72,7 @@ public sealed class GameSession
         if (existing is not null)
         {
             existing.SetConnected(true, now);
+            AdvanceVersion();
             return existing;
         }
 
@@ -83,6 +85,7 @@ public sealed class GameSession
             now);
         _players.Add(player);
         LastActivityAtUtc = now;
+        AdvanceVersion();
         return player;
     }
 
@@ -91,6 +94,7 @@ public sealed class GameSession
         var player = RequirePlayer(membershipId);
         player.SetReady();
         LastActivityAtUtc = now;
+        AdvanceVersion();
         if (_players.Count == MaximumPlayers && _players.All(x => x.IsReady))
         {
             Status = GameSessionStatus.Started;
@@ -108,6 +112,7 @@ public sealed class GameSession
         // presence events. Keep it strictly monotonic even when a reconnect and
         // an old connection close are observed in the same clock tick.
         LastActivityAtUtc = now > LastActivityAtUtc ? now : LastActivityAtUtc.AddTicks(1);
+        AdvanceVersion();
     }
 
     public void Complete(DateTimeOffset now)
@@ -115,9 +120,14 @@ public sealed class GameSession
         Status = GameSessionStatus.Completed;
         CompletedAtUtc = now;
         LastActivityAtUtc = now;
+        AdvanceVersion();
     }
 
-    public void RecordActivity(DateTimeOffset now) => LastActivityAtUtc = now;
+    public void RecordActivity(DateTimeOffset now)
+    {
+        LastActivityAtUtc = now;
+        AdvanceVersion();
+    }
 
     public void RequestRematch(Guid membershipId, DateTimeOffset now)
     {
@@ -129,6 +139,7 @@ public sealed class GameSession
         RequirePlayer(membershipId);
         RematchRequestedByMembershipId = membershipId;
         LastActivityAtUtc = now;
+        AdvanceVersion();
     }
 
     public void AcceptRematch(Guid membershipId, DateTimeOffset now)
@@ -146,7 +157,22 @@ public sealed class GameSession
         RematchRequestedByMembershipId = null;
         MatchNumber++;
         LastActivityAtUtc = now;
+        AdvanceVersion();
     }
+
+    internal void AnonymizeMembership(Guid membershipId, Guid anonymousId)
+    {
+        foreach (var player in _players.Where(player => player.MembershipId == membershipId))
+            player.Anonymize(anonymousId);
+        if (RematchRequestedByMembershipId == membershipId)
+            RematchRequestedByMembershipId = null;
+        // Always advance, even when the only identifying value is held by another
+        // aggregate row. Every writer also advances this token, so a stale writer
+        // cannot commit a retained reference after anonymization succeeds.
+        AdvanceVersion();
+    }
+
+    private void AdvanceVersion() => AggregateVersion = checked(AggregateVersion + 1);
 
     private GamePlayer RequirePlayer(Guid membershipId) =>
         _players.SingleOrDefault(x => x.MembershipId == membershipId)
@@ -197,6 +223,13 @@ public sealed class GamePlayer
     public bool IsConnected { get; private set; }
     public DateTimeOffset JoinedAtUtc { get; private set; }
     public DateTimeOffset LastSeenAtUtc { get; private set; }
+
+    internal void Anonymize(Guid anonymousId)
+    {
+        MembershipId = anonymousId;
+        DisplayName = "Deleted player";
+        IsConnected = false;
+    }
 
     internal void SetReady() => IsReady = true;
 

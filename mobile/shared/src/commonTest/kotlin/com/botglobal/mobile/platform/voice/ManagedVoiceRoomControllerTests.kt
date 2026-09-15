@@ -7,6 +7,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -92,6 +93,49 @@ class ManagedVoiceRoomControllerTests {
     }
 
     @Test
+    fun account_deletion_leave_retains_failed_signal_and_retries_original_generation() = runTest {
+        val signaling = FakeSignaling()
+        val factory = FakeMediaFactory()
+        val controller = ManagedVoiceRoomController(backgroundScope, signaling, factory)
+        controller.join("room")
+        val originalGeneration = controller.snapshot.value.generation
+        signaling.failLeave = true
+
+        assertFailsWith<IllegalStateException> { controller.leaveForAccountDeletion() }
+        assertTrue(factory.peers.single().closed)
+        assertEquals(listOf("room" to originalGeneration), signaling.leaves)
+
+        signaling.failLeave = false
+        controller.leaveForAccountDeletion()
+        controller.leaveForAccountDeletion()
+
+        assertEquals(listOf("room" to originalGeneration, "room" to originalGeneration), signaling.leaves)
+        assertEquals(VoiceRoomState.Idle, controller.snapshot.value.state)
+    }
+
+    @Test
+    fun account_deletion_leave_retains_failed_media_cleanup_before_signaling_and_converges() = runTest {
+        val signaling = FakeSignaling()
+        val factory = FakeMediaFactory()
+        val controller = ManagedVoiceRoomController(backgroundScope, signaling, factory)
+        controller.join("room")
+        val peer = factory.peers.single()
+        peer.closeFailuresRemaining = 1
+
+        assertFailsWith<IllegalStateException> { controller.leaveForAccountDeletion() }
+        assertEquals(1, peer.closeCalls)
+        assertEquals(0, signaling.leaveCount)
+
+        controller.leaveForAccountDeletion()
+        controller.leaveForAccountDeletion()
+
+        assertEquals(2, peer.closeCalls)
+        assertTrue(peer.closed)
+        assertEquals(1, signaling.leaveCount)
+        assertEquals(VoiceRoomState.Idle, controller.snapshot.value.state)
+    }
+
+    @Test
     fun self_addressed_offer_and_ice_candidate_are_rejected_before_media_peer() = runTest {
         val signaling = FakeSignaling(peerPresent = true)
         val factory = FakeMediaFactory()
@@ -116,6 +160,8 @@ class ManagedVoiceRoomControllerTests {
         override val signals = events
         var joinCount = 0
         var leaveCount = 0
+        var failLeave = false
+        val leaves = mutableListOf<Pair<String, Long>>()
         val offers = mutableListOf<String>()
         override suspend fun iceConfiguration(roomId: String) = VoiceIceConfiguration(emptyList(), "2099-01-01T00:00:00Z")
         override suspend fun join(roomId: String, generation: Long): VoiceJoinResult {
@@ -127,7 +173,11 @@ class ManagedVoiceRoomControllerTests {
                 peerConnectionId = if (peerPresent) "remote-connection" else null,
             )
         }
-        override suspend fun leave(roomId: String, generation: Long) { leaveCount++ }
+        override suspend fun leave(roomId: String, generation: Long) {
+            leaveCount++
+            leaves += roomId to generation
+            if (failLeave) error("leave_failed")
+        }
         override suspend fun offer(roomId: String, generation: Long, sessionDescription: String) { offers += sessionDescription }
         override suspend fun answer(roomId: String, generation: Long, sessionDescription: String) = Unit
         override suspend fun iceCandidate(roomId: String, generation: Long, candidate: String, sdpMid: String?, sdpMLineIndex: Int) = Unit
@@ -145,6 +195,8 @@ class ManagedVoiceRoomControllerTests {
         val remoteOffers = mutableListOf<String>()
         val remoteCandidates = mutableListOf<String>()
         var closed = false
+        var closeCalls = 0
+        var closeFailuresRemaining = 0
         override suspend fun createOffer() = "offer"
         override suspend fun acceptOfferAndCreateAnswer(sessionDescription: String): String {
             remoteOffers += sessionDescription
@@ -153,6 +205,13 @@ class ManagedVoiceRoomControllerTests {
         override suspend fun acceptAnswer(sessionDescription: String) = Unit
         override suspend fun addIceCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int) { remoteCandidates += candidate }
         override fun setMuted(muted: Boolean) { muteChanges += muted }
-        override suspend fun close() { closed = true }
+        override suspend fun close() {
+            closeCalls++
+            if (closeFailuresRemaining > 0) {
+                closeFailuresRemaining--
+                error("media_close_failed")
+            }
+            closed = true
+        }
     }
 }

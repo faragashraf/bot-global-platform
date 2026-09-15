@@ -20,4 +20,4 @@ private class IosRealtimeBoundary : GameRealtimeClient {
     override suspend fun rejoin() = Unit
 }
 
-actual fun createGameRealtimeClient(environment: FamilyGamesEnvironment): GameRealtimeClient = IosRealtimeBoundary()
+actual fun createGameRealtimeClient(environment: FamilyGamesEnvironment, diagnosticsEnabled: Boolean): GameRealtimeClient = IosRealtimeBoundary()

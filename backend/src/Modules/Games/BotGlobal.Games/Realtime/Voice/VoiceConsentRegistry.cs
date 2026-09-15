@@ -12,6 +12,58 @@ public sealed class VoiceConsentRegistry
     private readonly Dictionary<Guid, Request> _byId = new();
     private readonly Dictionary<(Guid SessionId, int MatchNumber), Guid> _activeByMatch = new();
 
+    private readonly HashSet<Guid> _revokedMemberships = [];
+    private readonly HashSet<Guid> _revokedSessions = [];
+
+    private readonly Dictionary<Guid, HashSet<RevokedConsent>> _pendingRevocations = [];
+
+    public sealed record RevokedConsent(Request Request, string RequesterConnectionId,
+        string RecipientConnectionId, string ReceiverConnectionId);
+
+    public void CompleteRevocation(Guid membershipId, RevokedConsent notification)
+    {
+        lock (_gate)
+        {
+            if (!_pendingRevocations.TryGetValue(membershipId, out var pending)) return;
+            pending.Remove(notification);
+            if (pending.Count == 0) _pendingRevocations.Remove(membershipId);
+        }
+    }
+
+    public IReadOnlyList<RevokedConsent> RevokeMembership(Guid membershipId,
+        IReadOnlyCollection<Guid> ownedSessionIds, GameConnectionRegistry connections)
+    {
+        lock (_gate)
+        {
+            _revokedMemberships.Add(membershipId);
+            _revokedSessions.UnionWith(ownedSessionIds);
+            if (!_pendingRevocations.TryGetValue(membershipId, out var pending))
+                _pendingRevocations[membershipId] = pending = [];
+            foreach (var request in _byId.Values.Where(request =>
+                request.RequesterMembershipId == membershipId || request.RecipientMembershipId == membershipId ||
+                ownedSessionIds.Contains(request.SessionId)).ToArray())
+            {
+                if (request.Status is Status.Pending or Status.Accepted)
+                {
+                    // The caller must capture these before game presence is revoked. An absent
+                    // deleting connection must not suppress notification to a connected peer.
+                    var requester = connections.ResolveParticipantConnection(request.SessionId, request.RequesterMembershipId);
+                    var recipient = connections.ResolveParticipantConnection(request.SessionId, request.RecipientMembershipId);
+                    var ended = request with { Status = Status.Ended };
+                    if (request.RequesterMembershipId != membershipId && requester is not null)
+                        pending.Add(new RevokedConsent(ended, requester, recipient ?? string.Empty, requester));
+                    if (request.RecipientMembershipId != membershipId && recipient is not null)
+                        pending.Add(new RevokedConsent(ended, requester ?? string.Empty, recipient, recipient));
+                }
+                _byId.Remove(request.RequestId);
+                var match = (request.SessionId, request.MatchNumber);
+                if (_activeByMatch.TryGetValue(match, out var id) && id == request.RequestId)
+                    _activeByMatch.Remove(match);
+            }
+            return pending.ToArray();
+        }
+    }
+
     public (Request Request, bool Created) RequestVoice(
         Guid sessionId,
         int matchNumber,
@@ -24,6 +76,9 @@ public sealed class VoiceConsentRegistry
             throw new InvalidOperationException("A voice request cannot target its sender.");
         lock (_gate)
         {
+            if (_revokedMemberships.Contains(requesterMembershipId) ||
+                _revokedMemberships.Contains(recipientMembershipId) || _revokedSessions.Contains(sessionId))
+                throw new InvalidOperationException("The voice membership or session has been revoked.");
             var match = (sessionId, matchNumber);
             if (_activeByMatch.TryGetValue(match, out var activeId) && _byId.TryGetValue(activeId, out var active))
             {

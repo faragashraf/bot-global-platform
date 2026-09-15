@@ -1,5 +1,9 @@
 package com.botglobal.lamma.app.state
 
+import com.botglobal.lamma.app.data.AccountDeletionAcceptance
+import com.botglobal.mobile.platform.identity.IdentityKind
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import com.botglobal.lamma.app.data.ApiException
 import com.botglobal.lamma.app.data.FamilyGamesGateway
 import com.botglobal.lamma.app.data.GameSessionSnapshot
@@ -50,6 +54,8 @@ import com.botglobal.mobile.platform.voice.ManagedVoiceConsentController
 import com.botglobal.mobile.platform.voice.VoiceConsentSnapshot
 import com.botglobal.mobile.platform.voice.VoiceConsentState
 
+enum class AccountDeletionConfirmation { Explanation, Final }
+
 enum class AppScreen {
     Startup,
     Welcome,
@@ -74,6 +80,29 @@ enum class SessionRecoveryState {
     Unrecoverable,
 }
 
+enum class AccountDeletionCleanupStepState { Pending, Failed, Completed }
+
+data class AccountDeletionCleanupState(
+    val voiceLeave: AccountDeletionCleanupStepState = AccountDeletionCleanupStepState.Pending,
+    val consentEnd: AccountDeletionCleanupStepState = AccountDeletionCleanupStepState.Pending,
+    val realtimeStop: AccountDeletionCleanupStepState = AccountDeletionCleanupStepState.Pending,
+    val credentialsClear: AccountDeletionCleanupStepState = AccountDeletionCleanupStepState.Pending,
+) {
+    val completed: Boolean get() =
+        voiceLeave == AccountDeletionCleanupStepState.Completed &&
+            consentEnd == AccountDeletionCleanupStepState.Completed &&
+            realtimeStop == AccountDeletionCleanupStepState.Completed &&
+            credentialsClear == AccountDeletionCleanupStepState.Completed
+}
+
+interface FamilyGamesAccountDeletionTeardown {
+    suspend fun leaveVoice()
+    suspend fun endVoiceConsent()
+    suspend fun stopRealtime()
+    suspend fun clearLocalCredentials()
+    fun reset() = Unit
+}
+
 data class FamilyGamesUiState(
     val screen: AppScreen = AppScreen.Startup,
     val language: AppLanguage = AppLanguage.Arabic,
@@ -84,6 +113,10 @@ data class FamilyGamesUiState(
     val opponentConnection: OpponentConnectionState = OpponentConnectionState.Unknown,
     val recoveredFromInterruption: Boolean = false,
     val busy: Boolean = false,
+    val accountDeletionConfirmation: AccountDeletionConfirmation? = null,
+    val accountDeletionAcceptance: AccountDeletionAcceptance? = null,
+    val accountDeletionCleanup: AccountDeletionCleanupState? = null,
+    val accountDeletionFailed: Boolean = false,
     val errorCode: String? = null,
     val optionalUpdateVisible: Boolean = false,
     val updateMessage: String? = null,
@@ -110,6 +143,7 @@ class FamilyGamesCoordinator(
     networkAvailability: NetworkAvailability = UnavailableNetworkAvailability,
     private val languagePreferences: ApplicationLanguagePreferences = UnavailableApplicationLanguagePreferences,
     voiceMediaFactory: VoiceMediaPeerFactory? = null,
+    private val accountDeletionTeardown: FamilyGamesAccountDeletionTeardown? = null,
 ) {
     private val voice: VoiceRoomController? = voiceMediaFactory?.let {
         ManagedVoiceRoomController(scope, realtime, it)
@@ -213,21 +247,30 @@ class FamilyGamesCoordinator(
     fun continueAsGuest(displayName: String) = launchAction {
         require(displayName.isNotBlank()) { "display_name_required" }
         val session = gateway.continueAsGuest(displayName.trim())
-        mutableState.update { it.copy(mobileSession = session, screen = AppScreen.Home) }
+        resetAcceptedDeletionCleanup()
+        mutableState.update { it.copy(mobileSession = session, screen = AppScreen.Home,
+            accountDeletionAcceptance = null, accountDeletionCleanup = null,
+            accountDeletionConfirmation = null, accountDeletionFailed = false) }
         haptics.perform(HapticEvent.Success)
         resolvePendingInvitationIfAvailable()
     }
 
     fun signIn(userNameOrEmail: String, password: String) = launchAction {
         val session = gateway.login(userNameOrEmail.trim(), password)
-        mutableState.update { it.copy(mobileSession = session, screen = AppScreen.Home) }
+        resetAcceptedDeletionCleanup()
+        mutableState.update { it.copy(mobileSession = session, screen = AppScreen.Home,
+            accountDeletionAcceptance = null, accountDeletionCleanup = null,
+            accountDeletionConfirmation = null, accountDeletionFailed = false) }
         haptics.perform(HapticEvent.Success)
         resolvePendingInvitationIfAvailable()
     }
 
     fun register(userName: String, email: String, displayName: String, password: String) = launchAction {
         val session = gateway.register(RegistrationRequest(userName, email, displayName, password))
-        mutableState.update { it.copy(mobileSession = session, screen = AppScreen.Home) }
+        resetAcceptedDeletionCleanup()
+        mutableState.update { it.copy(mobileSession = session, screen = AppScreen.Home,
+            accountDeletionAcceptance = null, accountDeletionCleanup = null,
+            accountDeletionConfirmation = null, accountDeletionFailed = false) }
         haptics.perform(HapticEvent.Success)
         resolvePendingInvitationIfAvailable()
     }
@@ -501,13 +544,114 @@ class FamilyGamesCoordinator(
         }
     }
 
-    fun logout() = launchAction {
+    fun beginAccountDeletion() {
+        if (mutableState.value.busy || actionJob?.isActive == true || mutableState.value.screen != AppScreen.Home ||
+            mutableState.value.mobileSession?.identity?.kind != IdentityKind.Registered) return
+        mutableState.update { it.copy(accountDeletionConfirmation = AccountDeletionConfirmation.Explanation,
+            accountDeletionFailed = false) }
+    }
+
+    fun confirmAccountDeletionExplanation() {
+        if (mutableState.value.busy ||
+            mutableState.value.accountDeletionConfirmation != AccountDeletionConfirmation.Explanation) return
+        mutableState.update { it.copy(accountDeletionConfirmation = AccountDeletionConfirmation.Final) }
+    }
+
+    fun cancelAccountDeletion() {
+        if (mutableState.value.busy || actionJob?.isActive == true ||
+            mutableState.value.accountDeletionAcceptance != null) return
+        mutableState.update { it.copy(accountDeletionConfirmation = null, accountDeletionFailed = false) }
+    }
+
+    fun deleteAccount() {
+        if (mutableState.value.accountDeletionConfirmation != AccountDeletionConfirmation.Final ||
+            mutableState.value.accountDeletionAcceptance == null &&
+            mutableState.value.mobileSession?.identity?.kind != IdentityKind.Registered) return
+        launchAction {
+            mutableState.update { it.copy(accountDeletionFailed = false) }
+            try {
+                val acceptance = mutableState.value.accountDeletionAcceptance ?: gateway.deleteAccount()
+                mutableState.update { it.copy(
+                    accountDeletionAcceptance = acceptance,
+                    accountDeletionCleanup = it.accountDeletionCleanup ?: AccountDeletionCleanupState(),
+                ) }
+                // Once accepted, cancellation must not interrupt local credential removal.
+                withContext(NonCancellable) {
+                    retryAcceptedDeletionCleanup(acceptance)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                mutableState.update { it.copy(accountDeletionFailed = true) }
+            }
+        }
+    }
+
+    fun logout() = launchAction { finishSession() }
+
+    private suspend fun finishSession() {
         resetRecoveryOrchestration()
-        voice?.leave()
-        voiceConsent?.end()
-        realtime.stop()
+        runCatching { voice?.leave() }
+        runCatching { voiceConsent?.end() }
+        runCatching { realtime.stop() }
         gateway.logout()
-        mutableState.value = FamilyGamesUiState(screen = AppScreen.Welcome, language = mutableState.value.language)
+        mutableState.value = FamilyGamesUiState(
+            screen = AppScreen.Welcome,
+            language = mutableState.value.language,
+        )
+    }
+
+    private suspend fun retryAcceptedDeletionCleanup(acceptance: AccountDeletionAcceptance) {
+        resetRecoveryOrchestration()
+        var progress = mutableState.value.accountDeletionCleanup ?: AccountDeletionCleanupState()
+
+        suspend fun attempt(
+            current: AccountDeletionCleanupStepState,
+            update: (AccountDeletionCleanupStepState) -> AccountDeletionCleanupState,
+            operation: suspend () -> Unit,
+        ) {
+            if (current == AccountDeletionCleanupStepState.Completed) return
+            progress = try {
+                operation()
+                update(AccountDeletionCleanupStepState.Completed)
+            } catch (_: Throwable) {
+                update(AccountDeletionCleanupStepState.Failed)
+            }
+            mutableState.update { it.copy(accountDeletionCleanup = progress) }
+        }
+
+        attempt(progress.voiceLeave, { progress.copy(voiceLeave = it) }) {
+            accountDeletionTeardown?.leaveVoice() ?: voice?.leaveForAccountDeletion()
+        }
+        attempt(progress.consentEnd, { progress.copy(consentEnd = it) }) {
+            accountDeletionTeardown?.endVoiceConsent() ?: voiceConsent?.endForAccountDeletion()
+        }
+        attempt(progress.realtimeStop, { progress.copy(realtimeStop = it) }) {
+            accountDeletionTeardown?.stopRealtime() ?: realtime.stop()
+        }
+        attempt(progress.credentialsClear, { progress.copy(credentialsClear = it) }) {
+            accountDeletionTeardown?.clearLocalCredentials() ?: gateway.clearLocalSession()
+        }
+
+        if (progress.credentialsClear == AccountDeletionCleanupStepState.Completed) {
+            mutableState.update { it.copy(mobileSession = null, game = null, invitation = null) }
+        }
+        if (progress.completed) {
+            mutableState.value = FamilyGamesUiState(
+                screen = AppScreen.Welcome,
+                language = mutableState.value.language,
+                accountDeletionAcceptance = acceptance,
+                accountDeletionCleanup = progress,
+            )
+        } else {
+            mutableState.update { it.copy(accountDeletionFailed = true, accountDeletionCleanup = progress) }
+        }
+    }
+
+    private fun resetAcceptedDeletionCleanup() {
+        accountDeletionTeardown?.reset()
+        voice?.resetAccountDeletionCleanup()
+        voiceConsent?.resetAccountDeletionCleanup()
     }
 
     fun dispose() {

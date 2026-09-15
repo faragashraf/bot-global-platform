@@ -35,6 +35,7 @@ class AndroidVoiceMediaPeerFactory(
     private val mediaIdPrefix: String = "voice",
     private val logTag: String = "VoiceMedia",
     private val manageAudioRouting: Boolean = true,
+    private val diagnosticsEnabled: Boolean = true,
 ) : VoiceMediaPeerFactory {
     override fun create(
         configuration: VoiceIceConfiguration,
@@ -48,6 +49,7 @@ class AndroidVoiceMediaPeerFactory(
         mediaIdPrefix,
         logTag,
         manageAudioRouting,
+        diagnosticsEnabled,
     )
 }
 
@@ -59,6 +61,7 @@ private class AndroidVoiceMediaPeer(
     private val mediaIdPrefix: String,
     private val logTag: String,
     private val manageAudioRouting: Boolean,
+    private val diagnosticsEnabled: Boolean,
 ) : VoiceMediaPeer {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val routing = CommunicationAudioRouting(context)
@@ -70,7 +73,30 @@ private class AndroidVoiceMediaPeer(
     private val pendingCandidates = mutableListOf<IceCandidate>()
     private var remoteDescriptionReady = false
     private var statsJob: Job? = null
-    private var closed = false
+    private var closeRequested = false
+    private var cleanupLogged = false
+    private val cleanup by lazy {
+        RetryableNativeVoiceCleanup(
+            listOf(
+                NativeVoiceCleanupStep("stats") { statsJob?.cancel(); statsJob = null },
+                NativeVoiceCleanupStep("track-disabled") { audioTrack.setEnabled(false) },
+                NativeVoiceCleanupStep("peer-closed", setOf("stats")) { peer.close() },
+                NativeVoiceCleanupStep("peer-disposed", setOf("peer-closed")) { peer.dispose() },
+                NativeVoiceCleanupStep("track-disposed", setOf("track-disabled")) { audioTrack.dispose() },
+                NativeVoiceCleanupStep("source-disposed", setOf("track-disposed")) { audioSource.dispose() },
+                NativeVoiceCleanupStep(
+                    "factory-disposed",
+                    setOf("peer-disposed", "track-disposed", "source-disposed"),
+                ) { factory.dispose() },
+                NativeVoiceCleanupStep("audio-device-released", setOf("factory-disposed")) {
+                    audioDeviceModule.release()
+                },
+                NativeVoiceCleanupStep("routing-stopped") {
+                    if (manageAudioRouting) routing.stop()
+                },
+            ),
+        )
+    }
 
     init {
         initializeWebRtc(context)
@@ -100,28 +126,28 @@ private class AndroidVoiceMediaPeer(
             "WebRTC PeerConnection creation failed."
         }
         peer.addTrack(audioTrack, listOf("$mediaIdPrefix-voice"))
-        Log.i(logTag, "voice media created generation=$generation icePolicy=${configuration.policy.name.lowercase()}")
+        if (diagnosticsEnabled) Log.i(logTag, "voice media created generation=$generation icePolicy=${configuration.policy.name.lowercase()}")
     }
 
     override suspend fun createOffer(): String {
-        Log.i(logTag, "voice offer creating generation=$generation")
+        if (diagnosticsEnabled) Log.i(logTag, "voice offer creating generation=$generation")
         val description = createDescription(isOffer = true)
         setLocalDescription(description)
-        Log.i(logTag, "voice offer local description set generation=$generation")
+        if (diagnosticsEnabled) Log.i(logTag, "voice offer local description set generation=$generation")
         return description.description
     }
 
     override suspend fun acceptOfferAndCreateAnswer(sessionDescription: String): String {
-        Log.i(logTag, "voice offer received generation=$generation")
+        if (diagnosticsEnabled) Log.i(logTag, "voice offer received generation=$generation")
         setRemoteDescription(SessionDescription(SessionDescription.Type.OFFER, sessionDescription))
         val answer = createDescription(isOffer = false)
         setLocalDescription(answer)
-        Log.i(logTag, "voice answer local description set generation=$generation")
+        if (diagnosticsEnabled) Log.i(logTag, "voice answer local description set generation=$generation")
         return answer.description
     }
 
     override suspend fun acceptAnswer(sessionDescription: String) {
-        Log.i(logTag, "voice answer received generation=$generation")
+        if (diagnosticsEnabled) Log.i(logTag, "voice answer received generation=$generation")
         setRemoteDescription(SessionDescription(SessionDescription.Type.ANSWER, sessionDescription))
     }
 
@@ -132,23 +158,16 @@ private class AndroidVoiceMediaPeer(
 
     override fun setMuted(muted: Boolean) {
         audioTrack.setEnabled(!muted)
-        Log.i(logTag, "voice microphone ${if (muted) "muted" else "unmuted"} generation=$generation")
+        if (diagnosticsEnabled) Log.i(logTag, "voice microphone ${if (muted) "muted" else "unmuted"} generation=$generation")
     }
 
     override suspend fun close() {
-        if (closed) return
-        closed = true
-        statsJob?.cancel()
-        statsJob = null
-        audioTrack.setEnabled(false)
-        peer.close()
-        peer.dispose()
-        audioTrack.dispose()
-        audioSource.dispose()
-        factory.dispose()
-        audioDeviceModule.release()
-        if (manageAudioRouting) routing.stop()
-        Log.i(logTag, "voice media disposed generation=$generation")
+        closeRequested = true
+        cleanup.run()
+        if (!cleanupLogged && cleanup.state == NativeVoiceCleanupState.Completed) {
+            cleanupLogged = true
+            if (diagnosticsEnabled) Log.i(logTag, "voice media disposed generation=$generation")
+        }
     }
 
     private suspend fun createDescription(isOffer: Boolean): SessionDescription = suspendCancellableCoroutine { continuation ->
@@ -184,13 +203,13 @@ private class AndroidVoiceMediaPeer(
     private fun observer() = object : PeerConnection.Observer {
         override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
-            Log.i(logTag, "voice ice state=${state.name.lowercase()} generation=$generation")
+            if (diagnosticsEnabled) Log.i(logTag, "voice ice state=${state.name.lowercase()} generation=$generation")
         }
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = Unit
         override fun onIceCandidate(candidate: IceCandidate) {
             val type = candidate.sdp.substringAfter(" typ ", "unknown").substringBefore(' ')
-            Log.i(logTag, "voice local candidate type=$type generation=$generation")
+            if (diagnosticsEnabled) Log.i(logTag, "voice local candidate type=$type generation=$generation")
             listener.onIceCandidate(candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex)
         }
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) = Unit
@@ -202,7 +221,7 @@ private class AndroidVoiceMediaPeer(
             receiver.track()?.setEnabled(true)
         }
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
-            Log.i(logTag, "voice peer state=${newState.name.lowercase()} generation=$generation")
+            if (diagnosticsEnabled) Log.i(logTag, "voice peer state=${newState.name.lowercase()} generation=$generation")
             val state = when (newState) {
                 PeerConnection.PeerConnectionState.NEW -> VoicePeerConnectionState.New
                 PeerConnection.PeerConnectionState.CONNECTING -> VoicePeerConnectionState.Connecting
@@ -218,8 +237,8 @@ private class AndroidVoiceMediaPeer(
 
     private fun startStats() {
         statsJob = scope.launch {
-            while (isActive && !closed) {
-                peer.getStats { report -> listener.onStats(report.toVoiceStats(generation, logTag)) }
+            while (isActive && !closeRequested) {
+                peer.getStats { report -> listener.onStats(report.toVoiceStats(generation, logTag, diagnosticsEnabled)) }
                 delay(1_000)
             }
         }
@@ -251,7 +270,7 @@ private open class SdpObserverAdapter : SdpObserver {
     override fun onSetFailure(message: String) = Unit
 }
 
-private fun org.webrtc.RTCStatsReport.toVoiceStats(generation: Long, logTag: String): VoiceMediaStats {
+private fun org.webrtc.RTCStatsReport.toVoiceStats(generation: Long, logTag: String, diagnosticsEnabled: Boolean): VoiceMediaStats {
     var outboundPackets = 0L
     var outboundBytes = 0L
     var inboundPackets = 0L
@@ -286,7 +305,7 @@ private fun org.webrtc.RTCStatsReport.toVoiceStats(generation: Long, logTag: Str
         localType == "host" || remoteType == "host" -> VoiceMediaPath.Host
         else -> VoiceMediaPath.Unknown
     }
-    Log.i("${logTag}Stats", "generation=$generation mediaPath=${path.name.lowercase()} local=$localType remote=$remoteType outPackets=$outboundPackets outBytes=$outboundBytes inPackets=$inboundPackets inBytes=$inboundBytes")
+    if (diagnosticsEnabled) Log.i("${logTag}Stats", "generation=$generation mediaPath=${path.name.lowercase()} local=$localType remote=$remoteType outPackets=$outboundPackets outBytes=$outboundBytes inPackets=$inboundPackets inBytes=$inboundBytes")
     return VoiceMediaStats(outboundPackets, outboundBytes, inboundPackets, inboundBytes, audioLevel, path, localType, remoteType, available)
 }
 
