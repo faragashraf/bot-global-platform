@@ -40,7 +40,7 @@ android {
 
     defaultConfig {
         applicationId = "com.botglobal.nqrb"
-        minSdk = libs.versions.android.minSdk.get().toInt()
+        minSdk = maxOf(24, libs.versions.android.minSdk.get().toInt())
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 3
         versionName = "0.1.2"
@@ -59,7 +59,7 @@ android {
             buildConfigField(
                 "String",
                 "API_BASE_URL",
-                "https://bgapi.challengershoes.com".asBuildConfigString(),
+                "https://botglobalservice.com/backend".asBuildConfigString(),
             )
         }
     }

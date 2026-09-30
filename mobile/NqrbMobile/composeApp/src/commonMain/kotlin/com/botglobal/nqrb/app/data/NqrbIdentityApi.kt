@@ -95,9 +95,21 @@ class NqrbIdentityApi(
 
     override suspend fun load(session: MobileSession): NqrbAccountProfileResult {
         return try {
-            val response = client.get(endpoint("/api/mobile/nqrb/identity/profile")) {
+            val stored = vault.restore() ?: return NqrbAccountProfileResult.AuthenticationRequired
+            if (stored.identity.membershipId != session.identity.membershipId) {
+                return NqrbAccountProfileResult.AuthenticationRequired
+            }
+            suspend fun requestProfile(accessToken: String) = client.get(endpoint("/api/mobile/nqrb/identity/profile")) {
                 accept(ContentType.Application.Json)
-                bearerAuth(session.accessToken)
+                bearerAuth(accessToken)
+            }
+            var response = requestProfile(stored.accessToken)
+            if (response.status == HttpStatusCode.Unauthorized) {
+                val refreshed = restore() ?: return NqrbAccountProfileResult.AuthenticationRequired
+                if (refreshed.identity.membershipId != session.identity.membershipId) {
+                    return NqrbAccountProfileResult.AuthenticationRequired
+                }
+                response = requestProfile(refreshed.accessToken)
             }
             when {
                 response.status.value in 200..299 -> {

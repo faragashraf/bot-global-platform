@@ -89,6 +89,8 @@ app.UseRateLimiter();
 app.UsePlatformHttpSecurity();
 
 app.MapPlatformHttpSecurity();
+app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
+    .ExcludeFromDescription();
 app.MapControllers();
 app.MapCatalogEndpoints();
 app.MapAdminCatalogEndpoints();

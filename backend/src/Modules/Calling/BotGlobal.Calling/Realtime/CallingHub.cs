@@ -113,12 +113,21 @@ public sealed class CallingHub(
             joined.Peer?.MembershipId, joined.Peer?.ConnectionId);
     }
 
-    public CallingIceConfiguration GetCallIceConfiguration(Guid callId)
+    public async Task<CallingIceConfiguration> GetCallIceConfiguration(Guid callId)
     {
         var identity = RequireIdentity();
-        try { sessions.RequireParticipant(Context.ConnectionId, callId); }
-        catch (InvalidOperationException error) { throw new HubException(error.Message); }
-        return ice.Create(identity.MembershipId);
+        RequireIceCredentialParticipant(callId);
+        try
+        {
+            var configuration = await ice.CreateAsync(identity.MembershipId, Context.ConnectionAborted);
+            RequireIceCredentialParticipant(callId);
+            return configuration;
+        }
+        catch (CallingIceConfigurationUnavailableException error)
+        {
+            logger.LogWarning("Temporary calling ICE credentials are unavailable. ErrorType={ErrorType}", error.GetType().Name);
+            throw new HubException("calling_ice_unavailable");
+        }
     }
 
     public Task CallOffer(CallDescriptionRequest request) => ForwardDescription("CallOffer", request);
@@ -177,6 +186,12 @@ public sealed class CallingHub(
             var sender = sessions.RequireCurrent(Context.ConnectionId, callId, generation);
             return (sender, sessions.PeerOf(sender));
         }
+        catch (InvalidOperationException error) { throw new HubException(error.Message); }
+    }
+
+    private void RequireIceCredentialParticipant(Guid callId)
+    {
+        try { sessions.RequireLiveIceParticipant(Context.ConnectionId, callId, timeProvider.GetUtcNow()); }
         catch (InvalidOperationException error) { throw new HubException(error.Message); }
     }
 

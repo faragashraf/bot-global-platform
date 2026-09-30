@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 
 namespace BotGlobal.Calling;
@@ -44,8 +45,29 @@ public static class CallingModule
             .Validate(
                 options => options.CredentialLifetimeMinutes is >= 5 and <= 1440,
                 "Calling ICE credential lifetime must be between 5 and 1440 minutes.")
+            .Validate(
+                options => !options.Cloudflare.Enabled ||
+                           (!string.IsNullOrWhiteSpace(options.Cloudflare.KeyId) &&
+                            !string.IsNullOrWhiteSpace(options.Cloudflare.ApiToken)),
+                "Cloudflare TURN requires both a key ID and an API token when enabled.")
+            .Validate(
+                options => !options.Cloudflare.Enabled ||
+                           options.Cloudflare.CredentialLifetimeSeconds is >= 60 and <= 86400,
+                "Cloudflare TURN credential lifetime must be between 60 and 86400 seconds.")
+            .Validate(
+                options => !options.Cloudflare.Enabled ||
+                           options.Cloudflare.RequestTimeoutSeconds is >= 1 and <= 30,
+                "Cloudflare TURN request timeout must be between 1 and 30 seconds.")
+            .Validate(
+                options => !options.Cloudflare.Enabled ||
+                           Uri.TryCreate(options.Cloudflare.EndpointBaseUrl, UriKind.Absolute, out var endpoint) &&
+                           (endpoint.Scheme == Uri.UriSchemeHttps || endpoint.IsLoopback),
+                "Cloudflare TURN endpoint must be an absolute HTTPS URI, except loopback test endpoints.")
             .ValidateOnStart();
-        services.AddSingleton<CallingIceConfigurationProvider>();
+        services.AddSingleton(sp => new CallingIceConfigurationProvider(
+            sp.GetRequiredService<IOptions<CallingIceOptions>>(),
+            sp.GetRequiredService<TimeProvider>(),
+            new HttpClient { Timeout = Timeout.InfiniteTimeSpan }));
         return services;
     }
 

@@ -2,6 +2,7 @@ package com.botglobal.nqrb
 
 import android.app.Application
 import com.botglobal.mobile.platform.identity.AndroidSecureSessionVault
+import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.notifications.PushRegistrationController
 import com.botglobal.mobile.platform.notifications.firebase.AndroidFirebaseMessagingRuntime
 import com.botglobal.mobile.platform.notifications.firebase.AndroidPushDeviceInstallation
@@ -19,6 +20,9 @@ import com.botglobal.nqrb.app.data.NqrbAccountDeletionApi
 import com.botglobal.nqrb.app.state.NqrbLocalAccountDataCleaner
 import com.botglobal.mobile.platform.calling.CallActivityController
 import com.botglobal.nqrb.calling.NqrbOngoingCallService
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 
 class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
     lateinit var callRuntime: NqrbCallRuntime
@@ -69,7 +73,14 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
             application = this,
             apiBaseUrl = BuildConfig.API_BASE_URL,
             sessionVault = sessionVault,
-            restoreSession = { identityApi.restore() != null },
+            restoreSession = {
+                val stored = sessionVault.restore()
+                when {
+                    stored == null -> false
+                    stored.accessExpiresSoon() -> identityApi.restore() != null
+                    else -> true
+                }
+            },
         )
         firebaseMessagingRuntime = AndroidFirebaseMessagingRuntime(
             context = this,
@@ -84,3 +95,7 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
         }
     }
 }
+
+private fun MobileSession.accessExpiresSoon(): Boolean = runCatching {
+    Instant.parse(accessExpiresAtUtc) <= Clock.System.now() + 1.minutes
+}.getOrDefault(true)

@@ -191,4 +191,65 @@ public sealed class CallSessionRegistryTests
         Assert.Single(registry.Expire(now.AddSeconds(2)));
         Assert.Throws<InvalidOperationException>(() => registry.Answer("callee", started.Session.CallId, now.AddSeconds(2)));
     }
+
+    [Fact]
+    public void Live_ice_guard_allows_caller_while_ringing_and_callee_only_after_answer()
+    {
+        var registry = new CallSessionRegistry();
+        var caller = Identity("nqrb", "Caller");
+        var calleeIdentity = Identity("nqrb", "Callee");
+        registry.Connected("caller", caller);
+        var callee = new CallingParticipantDescriptor(
+            calleeIdentity.MembershipId,
+            calleeIdentity.ApplicationKey,
+            calleeIdentity.SubjectId,
+            calleeIdentity.DisplayName,
+            true);
+        var now = DateTimeOffset.UtcNow;
+        var started = registry.Start("caller", callee, now, TimeSpan.FromSeconds(45));
+        registry.Connected("callee", calleeIdentity);
+
+        registry.RequireLiveIceParticipant("caller", started.Session.CallId, now);
+        var beforeAnswer = Assert.Throws<InvalidOperationException>(() =>
+            registry.RequireLiveIceParticipant("callee", started.Session.CallId, now));
+        registry.Answer("callee", started.Session.CallId, now);
+        registry.RequireLiveIceParticipant("callee", started.Session.CallId, now);
+
+        Assert.Equal("call_not_answered", beforeAnswer.Message);
+    }
+
+    [Fact]
+    public void Live_ice_guard_rejects_ended_rejected_expired_and_unauthorized_calls()
+    {
+        var registry = new CallSessionRegistry();
+        var caller = Identity("nqrb", "Caller");
+        var callee = Identity("nqrb", "Callee");
+        var stranger = Identity("nqrb", "Stranger");
+        var now = DateTimeOffset.UtcNow;
+        registry.Connected("caller", caller);
+        registry.Connected("callee", callee);
+        registry.Connected("stranger", stranger);
+
+        var answered = registry.Start("caller", Participant(callee), now, TimeSpan.FromSeconds(45));
+        registry.Answer("callee", answered.Session.CallId, now);
+        registry.End("caller", answered.Session.CallId);
+        Assert.Equal("call_session_unavailable", Assert.Throws<InvalidOperationException>(() =>
+            registry.RequireLiveIceParticipant("caller", answered.Session.CallId, now)).Message);
+
+        var rejected = registry.Start("caller", Participant(callee), now, TimeSpan.FromSeconds(45));
+        registry.Reject("callee", rejected.Session.CallId, now);
+        Assert.Equal("call_session_unavailable", Assert.Throws<InvalidOperationException>(() =>
+            registry.RequireLiveIceParticipant("caller", rejected.Session.CallId, now)).Message);
+
+        var expired = registry.Start("caller", Participant(callee), now, TimeSpan.FromSeconds(1));
+        Assert.Equal("call_session_unavailable", Assert.Throws<InvalidOperationException>(() =>
+            registry.RequireLiveIceParticipant("caller", expired.Session.CallId, now.AddSeconds(2))).Message);
+
+        var live = registry.Start("caller", Participant(callee), now, TimeSpan.FromSeconds(45));
+        Assert.Equal("call_participant_unauthorized", Assert.Throws<InvalidOperationException>(() =>
+            registry.RequireLiveIceParticipant("stranger", live.Session.CallId, now)).Message);
+    }
+
+    private static CallingParticipantDescriptor Participant(ApplicationIdentityDescriptor identity) =>
+        new(identity.MembershipId, identity.ApplicationKey, identity.SubjectId, identity.DisplayName, true);
 }

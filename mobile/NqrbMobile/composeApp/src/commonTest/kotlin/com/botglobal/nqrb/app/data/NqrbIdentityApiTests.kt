@@ -39,6 +39,64 @@ class NqrbIdentityApiTests {
     }
 
     @Test
+    fun profileUsesRotatedSessionSavedByCallingWithoutSigningOut() = runTest {
+        val signedIn = session()
+        val vault = RecordingSessionVault(signedIn.copy(accessToken = "rotated-access"))
+        val engine = MockEngine { request ->
+            assertEquals("Bearer rotated-access", request.headers[HttpHeaders.Authorization])
+            respond(
+                """{"displayName":"Canonical Person","email":"person@example.test"}""",
+                HttpStatusCode.OK,
+                headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+
+        val result = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault).load(signedIn)
+
+        assertIs<NqrbAccountProfileResult.Available>(result)
+        assertEquals("rotated-access", vault.value?.accessToken)
+    }
+
+    @Test
+    fun expiredProfileAccessRefreshesAndRetriesOnce() = runTest {
+        val signedIn = session()
+        val vault = RecordingSessionVault(signedIn)
+        var profileRequests = 0
+        val engine = MockEngine { request ->
+            when (request.url.encodedPath) {
+                "/api/mobile/nqrb/identity/profile" -> {
+                    profileRequests++
+                    assertEquals(
+                        if (profileRequests == 1) "Bearer test-access" else "Bearer renewed-access",
+                        request.headers[HttpHeaders.Authorization],
+                    )
+                    if (profileRequests == 1) respond("", HttpStatusCode.Unauthorized)
+                    else respond(
+                        """{"displayName":"Canonical Person","email":"person@example.test"}""",
+                        HttpStatusCode.OK,
+                        headersOf(HttpHeaders.ContentType, "application/json"),
+                    )
+                }
+                "/api/mobile/nqrb/identity/refresh" -> {
+                    assertEquals(HttpMethod.Post, request.method)
+                    respond(
+                        """{"accessToken":"renewed-access","accessExpiresAtUtc":"2099-01-01T00:00:00Z","refreshToken":"renewed-refresh","refreshExpiresAtUtc":"2099-02-01T00:00:00Z","identity":{"membershipId":"test-membership-id","subjectId":"test-subject-id","displayName":"Snapshot","isGuest":false,"applicationKey":"nqrb"}}""",
+                        HttpStatusCode.OK,
+                        headersOf(HttpHeaders.ContentType, "application/json"),
+                    )
+                }
+                else -> error("Unexpected request")
+            }
+        }
+
+        val result = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault).load(signedIn)
+
+        assertIs<NqrbAccountProfileResult.Available>(result)
+        assertEquals(2, profileRequests)
+        assertEquals("renewed-access", vault.value?.accessToken)
+    }
+
+    @Test
     fun rejectedOlderProfileSessionDoesNotClearNewerStoredSession() = runTest {
         val newerSession = session("newer")
         val vault = RecordingSessionVault(newerSession)

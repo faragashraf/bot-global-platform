@@ -25,7 +25,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AspNetCoreHostingModel>OutOfProcess</AspNetCoreHostingModel>
     <UserSecretsId>846df752-33a4-4477-a65f-0da9f2d65e50</UserSecretsId>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
 
 </Project>

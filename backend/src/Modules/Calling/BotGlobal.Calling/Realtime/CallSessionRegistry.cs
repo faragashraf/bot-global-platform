@@ -100,6 +100,19 @@ public sealed class CallSessionRegistry
     }
 
     public void RequireParticipant(string connectionId, Guid callId) { lock (gate) { var c = RequireConnection(connectionId); RequireSession(callId).RequireParticipant(c.MembershipId, c.ApplicationKey); } }
+    public void RequireLiveIceParticipant(string connectionId, Guid callId, DateTimeOffset now)
+    {
+        lock (gate)
+        {
+            ExpireLocked(now);
+            var connection = RequireConnection(connectionId);
+            var session = RequireSession(callId);
+            session.RequireParticipant(connection.MembershipId, connection.ApplicationKey);
+            if (!session.IsLive) throw Error("call_session_unavailable");
+            if (connection.MembershipId == session.CalleeMembershipId && session.Status != CallStatus.Answered)
+                throw Error("call_not_answered");
+        }
+    }
     public JoinedParticipant RequireCurrent(string connectionId, Guid callId, long generation) { lock (gate) return RequireSession(callId).RequireCurrent(connectionId, generation); }
     public JoinedParticipant? PeerOf(JoinedParticipant participant) { lock (gate) return sessions.TryGetValue(participant.CallId, out var s) && s.IsLive ? s.PeerOf(participant.MembershipId) : null; }
 
