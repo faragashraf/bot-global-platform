@@ -12,6 +12,19 @@ plugins {
     alias(libs.plugins.googleServices)
 }
 
+val validateNqrbGoogleSignInConfig = tasks.register("validateNqrbGoogleSignInConfig") {
+    val configuredGoogleServerClientId = googleServerClientId
+    doLast {
+        require(configuredGoogleServerClientId.isNotBlank()) {
+            "NQRB Android sign-in requires nqrbGoogleServerClientId (or NQRB_GOOGLE_SERVER_CLIENT_ID) matching the backend ServerClientId."
+        }
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn(validateNqrbGoogleSignInConfig)
+}
+
 dependencies {
     implementation(projects.nqrbMobile.composeApp)
     implementation(projects.firebaseMessaging)
@@ -29,8 +42,8 @@ android {
         applicationId = "com.botglobal.nqrb"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.1.2"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", googleServerClientId.asBuildConfigString())
     }
