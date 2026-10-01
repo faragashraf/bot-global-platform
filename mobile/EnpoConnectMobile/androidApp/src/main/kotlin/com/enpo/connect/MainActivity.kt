@@ -22,7 +22,6 @@ import com.botglobal.mobile.platform.device.PreferenceInstallationIdStore
 import com.botglobal.mobile.platform.networking.createNetworkClient
 import com.botglobal.mobile.platform.invitations.QrScanResult
 import com.botglobal.mobile.platform.invitations.QrScannerCapability
-import com.botglobal.mobile.platform.notifications.HttpsHostAllowlist
 import com.botglobal.mobile.platform.notifications.SemanticNotificationDestination
 import com.botglobal.mobile.platform.preferences.AndroidPreferenceStore
 import com.enpo.connect.app.EnpoConnectApp
@@ -218,10 +217,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun notificationActionHandler(): EnpoNotificationActionHandler {
-        val allowlist = HttpsHostAllowlist(setOf(EnpoNotificationContract.ApprovedActionHost))
         return EnpoNotificationActionHandler { destination ->
             val url = (destination as? SemanticNotificationDestination.ExternalHttps)?.url
-                ?.let(allowlist::validated)
+                ?.let(EnpoNotificationContract::validatedActionUrl)
                 ?: return@EnpoNotificationActionHandler
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         }

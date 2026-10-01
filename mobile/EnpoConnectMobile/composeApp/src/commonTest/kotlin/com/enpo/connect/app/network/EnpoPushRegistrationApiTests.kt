@@ -37,7 +37,7 @@ class EnpoPushRegistrationApiTests {
         assertEquals(PushRegistrationOutcome.Registered, outcome)
         val request = captured!!
         assertEquals(HttpMethod.Put, request.method)
-        assertEquals("/api/mobile/devices/push-registration", request.url.encodedPath)
+        assertEquals("/backend/api/mobile/devices/push-registration", request.url.encodedPath)
         assertTrue(request.headers[HttpHeaders.Authorization].orEmpty().startsWith("Device "))
         val body = requestBody(request)
         assertTrue("\"provider\":\"fcm\"" in body)
@@ -102,7 +102,7 @@ class EnpoPushRegistrationApiTests {
     )
 
     private fun configuration() = EnpoNetworkConfiguration.from(
-        "https://bgapi.challengershoes.com",
+        "https://botglobalservice.com/backend",
         NetworkEnvironment.Production,
     )
 

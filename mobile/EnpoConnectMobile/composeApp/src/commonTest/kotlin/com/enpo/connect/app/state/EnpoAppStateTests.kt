@@ -104,7 +104,7 @@ class EnpoAppStateTests {
     fun bootstrapReflectsCompatibleCredentialAvailabilityWithoutNetworkPairing() = runTest {
         var inspections = 0
         val configuration = EnpoNetworkConfiguration.from(
-            "https://bgapi.challengershoes.com",
+            "https://botglobalservice.com/backend",
             NetworkEnvironment.Production,
         )
         val state = EnpoAppState(

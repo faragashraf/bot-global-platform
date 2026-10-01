@@ -13,7 +13,7 @@ Version code `1` was used for the first Internal Testing upload. This corrected 
 
 ## Release connectivity
 
-Debug builds keep their isolated local endpoint override through `familyGamesDebugApiBaseUrl`. Release builds use the approved canonical Bot Global API base `https://bgapi.challengershoes.com`; the build validates that it is public HTTPS rather than localhost, an emulator address, or a private/LAN address.
+Debug builds keep their isolated local endpoint override through `familyGamesDebugApiBaseUrl`. Release builds use the approved canonical Bot Global API base `https://botglobalservice.com/backend`; the build validates that it is public HTTPS rather than localhost, an emulator address, or a private/LAN address.
 
 HTTP APIs, invitation resolution, and the `/hubs/games` SignalR route are composed from the same normalized environment base. Release does not enable cleartext traffic.
 

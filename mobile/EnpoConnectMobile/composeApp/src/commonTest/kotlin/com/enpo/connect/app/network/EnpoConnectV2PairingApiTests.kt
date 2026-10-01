@@ -46,7 +46,7 @@ class EnpoConnectV2PairingApiTests {
         assertIs<EnpoPairingClaimResult.Success>(result)
         val request = captured!!
         assertEquals(HttpMethod.Post, request.method)
-        assertEquals("/api/mobile/pairing/claim", request.url.encodedPath)
+        assertEquals("/backend/api/mobile/pairing/claim", request.url.encodedPath)
         assertNull(request.headers[HttpHeaders.Authorization])
         val body = requestBody(request)
         assertTrue(body.contains("\"pairingToken\":\"${"A".repeat(43)}\""))
@@ -123,7 +123,7 @@ class EnpoConnectV2PairingApiTests {
         return EnpoConnectV2PairingApi(
             client = client,
             configuration = EnpoNetworkConfiguration.from(
-                "https://bgapi.challengershoes.com",
+                "https://botglobalservice.com/backend",
                 NetworkEnvironment.Production,
             ),
             installationIdentity = InstallationIdentity(

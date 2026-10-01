@@ -1,5 +1,6 @@
 package com.botglobal.mobile.platform.notifications
 
+import com.botglobal.mobile.platform.networking.hasUnambiguousUrlPath
 import kotlin.jvm.JvmInline
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -93,10 +94,18 @@ class InMemoryNotificationInbox(
     }
 }
 
-class HttpsHostAllowlist(hosts: Set<String>) {
+class HttpsHostAllowlist(
+    hosts: Set<String>,
+    pathPrefixes: Set<String> = emptySet(),
+) {
     private val allowedHosts = hosts.map(String::lowercase).toSet().also {
         require(it.isNotEmpty()) { "At least one HTTPS host is required." }
         require(it.none(String::isBlank)) { "HTTPS hosts cannot be blank." }
+    }
+    private val allowedPathPrefixes = pathPrefixes.map { it.trim().trimEnd('/') }.toSet().also {
+        require(it.all { prefix -> prefix.isEmpty() || prefix.startsWith('/') }) {
+            "HTTPS path prefixes must be absolute paths."
+        }
     }
 
     fun validated(value: String?): String? {
@@ -109,8 +118,26 @@ class HttpsHostAllowlist(hosts: Set<String>) {
         if (authority.isEmpty() || '@' in authority) return null
         val host = authority.substringBefore(':').lowercase()
         val port = authority.substringAfter(':', missingDelimiterValue = "")
-        return candidate.takeIf { host in allowedHosts && (port.isEmpty() || port == "443") }
+        if (host.isBlank() || port.isNotEmpty() && !port.all(Char::isDigit) || authority.endsWith(':')) {
+            return null
+        }
+        val path = candidate.substring(HTTPS_SCHEME.length + authority.length)
+            .substringBeforeAny('?', '#')
+            .takeIf { it.startsWith('/') }
+            ?: ""
+        return candidate.takeIf {
+            host in allowedHosts &&
+                (port.isEmpty() || port == "443") &&
+                pathHasNoTraversal(path) &&
+                pathMatchesAllowedPrefix(path)
+        }
     }
+
+    private fun pathMatchesAllowedPrefix(path: String): Boolean =
+        allowedPathPrefixes.isEmpty() ||
+            allowedPathPrefixes.any { prefix -> path == prefix || path.startsWith("$prefix/") }
+
+    private fun pathHasNoTraversal(path: String): Boolean = hasUnambiguousUrlPath(path)
 
     private companion object {
         const val HTTPS_SCHEME = "https://"

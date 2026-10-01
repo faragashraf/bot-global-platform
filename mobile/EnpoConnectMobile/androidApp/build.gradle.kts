@@ -8,7 +8,7 @@ fun File.sha256(): String = MessageDigest.getInstance("SHA-256")
     .digest(readBytes())
     .joinToString("") { byte -> "%02x".format(byte) }
 
-val enpoProductionPublicBaseUrl = "https://bgapi.challengershoes.com"
+val enpoProductionPublicBaseUrl = "https://botglobalservice.com/backend"
 val enpoDebugPublicBaseUrl = providers.gradleProperty("enpoDebugPublicBaseUrl")
     .orElse(providers.environmentVariable("ENPO_DEBUG_PUBLIC_BASE_URL"))
     .getOrElse(enpoProductionPublicBaseUrl)
@@ -57,7 +57,7 @@ android {
         applicationId = "com.enpo.connect"
         minSdk = 23
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 3
+        versionCode = 4
         versionName = "1.0.2"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
     }

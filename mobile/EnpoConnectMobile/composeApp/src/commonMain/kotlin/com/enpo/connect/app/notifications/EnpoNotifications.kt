@@ -25,12 +25,16 @@ object EnpoNotificationContract {
     const val PackageName = "com.enpo.connect"
     const val InboxStorageName = "enpo_connect_notifications"
     const val ChannelPrefix = "enpo_connect_notifications"
-    const val ApprovedActionHost = "bgapi.challengershoes.com"
+    const val ApprovedActionHost = "botglobalservice.com"
+    const val ApprovedActionPathPrefix = "/backend"
+    private val actionLinks = HttpsHostAllowlist(setOf(ApprovedActionHost), setOf(ApprovedActionPathPrefix))
 
     val sounds: List<EnpoNotificationSound> = EnpoNotificationSound.entries
 
+    fun validatedActionUrl(value: String?): String? = actionLinks.validated(value)
+
     fun parser() = SemanticPushEnvelopeParser(
-        externalLinks = HttpsHostAllowlist(setOf(ApprovedActionHost)),
+        externalLinks = actionLinks,
         internalDestination = { route ->
             route.trim().lowercase()
                 .takeIf { it == "notifications" }

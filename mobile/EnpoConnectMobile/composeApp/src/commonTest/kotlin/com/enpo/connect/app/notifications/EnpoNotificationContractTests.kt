@@ -38,13 +38,22 @@ class EnpoNotificationContractTests {
 
     @Test
     fun validEnpoHttpsActionIsAcceptedAndUnsafeActionsAreDropped() {
-        val valid = parse("https://bgapi.challengershoes.com/connect/action?id=1")
-        val http = parse("http://bgapi.challengershoes.com/connect/action")
-        val deceptive = parse("https://bgapi.challengershoes.com.evil.invalid/action")
+        val valid = parse("https://botglobalservice.com/backend/connect/action?id=1")
+        val http = parse("http://botglobalservice.com/backend/connect/action")
+        val missingPrefix = parse("https://botglobalservice.com/connect/action")
+        val deceptive = parse("https://botglobalservice.com.evil.invalid/backend/action")
+        val traversal = parse("https://botglobalservice.com/backend/../connect/action")
 
         assertIs<SemanticNotificationDestination.ExternalHttps>(valid.destination)
         assertNull(http.destination)
+        assertNull(missingPrefix.destination)
         assertNull(deceptive.destination)
+        assertNull(traversal.destination)
+        assertEquals(
+            "https://botglobalservice.com/backend/connect/action?id=1",
+            EnpoNotificationContract.validatedActionUrl("https://botglobalservice.com/backend/connect/action?id=1"),
+        )
+        assertNull(EnpoNotificationContract.validatedActionUrl("https://bgapi.challengershoes.com/connect/action?id=1"))
     }
 
     private fun parse(actionUrl: String) = EnpoNotificationContract.parser().parse(

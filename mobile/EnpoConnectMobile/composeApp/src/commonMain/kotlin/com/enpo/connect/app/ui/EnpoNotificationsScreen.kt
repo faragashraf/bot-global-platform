@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.botglobal.mobile.platform.notifications.SemanticNotification
 import com.botglobal.mobile.platform.notifications.SemanticNotificationDestination
 import com.botglobal.mobile.platform.notifications.SemanticNotificationPriority
+import com.enpo.connect.app.notifications.EnpoNotificationContract
 
 @Composable
 fun EnpoNotificationsScreen(
@@ -212,8 +213,12 @@ private fun NotificationDetail(
     val action = notification.destination as? SemanticNotificationDestination.ExternalHttps
     if (action != null) {
         Spacer(Modifier.height(26.dp))
-        Button(onClick = { onOpenAction(action) }, modifier = Modifier.fillMaxWidth()) {
-            Text(strings.openAction)
+        if (EnpoNotificationContract.validatedActionUrl(action.url) != null) {
+            Button(onClick = { onOpenAction(action) }, modifier = Modifier.fillMaxWidth()) {
+                Text(strings.openAction)
+            }
+        } else {
+            Text(strings.actionUnavailable, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

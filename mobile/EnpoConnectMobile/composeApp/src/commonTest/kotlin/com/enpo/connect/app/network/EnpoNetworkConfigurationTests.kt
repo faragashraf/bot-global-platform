@@ -9,7 +9,7 @@ class EnpoNetworkConfigurationTests {
     @Test
     fun authoritativePublicServiceRoutesComposeFromOneProductBaseUrl() {
         val configuration = EnpoNetworkConfiguration.from(
-            "https://bgapi.challengershoes.com/",
+            "https://botglobalservice.com/backend/",
             NetworkEnvironment.Production,
         )
 
@@ -19,19 +19,19 @@ class EnpoNetworkConfigurationTests {
         assertEquals(18_000, configuration.clientConfiguration.requestTimeoutMillis)
         assertEquals(18_000, configuration.clientConfiguration.socketTimeoutMillis)
         assertEquals(
-            "https://bgapi.challengershoes.com/api/mobile/pairing/claim",
+            "https://botglobalservice.com/backend/api/mobile/pairing/claim",
             configuration.endpoint(EnpoPublicServiceRoute.PairingClaim),
         )
         assertEquals(
-            "https://bgapi.challengershoes.com/api/mobile/devices/unpair",
+            "https://botglobalservice.com/backend/api/mobile/devices/unpair",
             configuration.endpoint(EnpoPublicServiceRoute.DeviceUnpair),
         )
         assertEquals(
-            "https://bgapi.challengershoes.com/api/mobile/devices/push-registration",
+            "https://botglobalservice.com/backend/api/mobile/devices/push-registration",
             configuration.endpoint(EnpoPublicServiceRoute.PushRegistration),
         )
         assertEquals(
-            "https://bgapi.challengershoes.com/api/mobile/profile",
+            "https://botglobalservice.com/backend/api/mobile/profile",
             configuration.endpoint(EnpoPublicServiceRoute.Profile),
         )
     }
@@ -39,7 +39,7 @@ class EnpoNetworkConfigurationTests {
     @Test
     fun configurationDiagnosticsAreRedactedAndContainNoSiblingProductConfiguration() {
         val configuration = EnpoNetworkConfiguration.from(
-            "https://bgapi.challengershoes.com",
+            "https://botglobalservice.com/backend",
             NetworkEnvironment.Production,
         )
         val diagnostic = configuration.toString().lowercase()

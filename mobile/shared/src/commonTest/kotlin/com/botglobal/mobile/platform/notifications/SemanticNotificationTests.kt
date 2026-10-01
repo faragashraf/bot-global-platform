@@ -97,6 +97,25 @@ class SemanticNotificationTests {
         assertNull(rejected.destination)
         assertNull(HttpsHostAllowlist(setOf("notify.example.com")).validated("http://notify.example.com"))
         assertNull(HttpsHostAllowlist(setOf("notify.example.com")).validated("https://user@notify.example.com"))
+        assertNull(HttpsHostAllowlist(setOf("notify.example.com")).validated("https://notify.example.com:/action"))
+    }
+
+    @Test
+    fun destinationValidationCanRequireASafePathPrefix() {
+        val allowlist = HttpsHostAllowlist(
+            hosts = setOf("notify.example.com"),
+            pathPrefixes = setOf("/backend"),
+        )
+
+        assertEquals(
+            "https://notify.example.com/backend/action?id=1",
+            allowlist.validated("https://notify.example.com/backend/action?id=1"),
+        )
+        assertNull(allowlist.validated("https://notify.example.com/action?id=1"))
+        assertNull(allowlist.validated("https://notify.example.com/backend.evil/action"))
+        assertNull(allowlist.validated("https://notify.example.com/backend/../action"))
+        assertNull(allowlist.validated("https://notify.example.com/backend/%2e%2e%2faction"))
+        assertNull(allowlist.validated("https://notify.example.com/backend/%252e%252e%252faction"))
     }
 
     @Test
