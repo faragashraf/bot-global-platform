@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/settings_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/vision_background_primary">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/settings_toolbar"
+        style="@style/Widget.SentriCam.Vision.ScreenToolbar"
+        android:layout_width="0dp"
+        android:layout_height="@dimen/vision_screen_toolbar_height"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:navigationContentDescription="@string/navigation_back"
+        app:navigationIcon="@drawable/ic_arrow_back_24"
+        app:title="@string/app_settings_title" />
+
+    <FrameLayout
+        android:id="@+id/settings_content"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginStart="@dimen/vision_space_8"
+        android:layout_marginEnd="@dimen/vision_space_8"
+        app:layout_constraintBottom_toTopOf="@id/apply_settings"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/settings_toolbar"
+        app:layout_constraintWidth_max="@dimen/vision_settings_content_max_width" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/apply_settings"
+        style="@style/Widget.SentriCam.Vision.PrimaryAction"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/vision_space_16"
+        android:layout_marginTop="@dimen/vision_space_8"
+        android:layout_marginEnd="@dimen/vision_space_16"
+        android:layout_marginBottom="@dimen/vision_space_12"
+        android:text="@string/app_settings_apply"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/settings_content"
+        app:layout_constraintWidth_max="@dimen/vision_settings_action_max_width" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

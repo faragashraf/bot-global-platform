@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:minHeight="@dimen/vision_compact_control_height"
+    android:orientation="horizontal"
+    android:paddingHorizontal="@dimen/vision_space_12"
+    android:paddingVertical="@dimen/vision_space_4">
+
+    <ImageView
+        android:id="@+id/live_status_icon"
+        android:layout_width="@dimen/vision_icon_size_small"
+        android:layout_height="@dimen/vision_icon_size_small"
+        android:importantForAccessibility="yes"
+        android:src="@drawable/ic_live_24"
+        app:tint="@color/vision_status_offline" />
+
+    <TextView
+        android:id="@+id/live_status_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/vision_space_8"
+        android:breakStrategy="simple"
+        android:hyphenationFrequency="none"
+        android:maxLines="1"
+        android:text="@string/live_status_idle"
+        android:textAppearance="@style/TextAppearance.SentriCam.Vision.Status"
+        android:textColor="@color/vision_status_offline" />
+
+</LinearLayout>

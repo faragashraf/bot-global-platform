@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingHorizontal="@dimen/vision_space_12"
+    android:paddingVertical="@dimen/vision_space_8">
+
+    <TextView
+        android:id="@+id/engine_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.SentriCam.Vision.Status" />
+
+    <TextView
+        android:id="@+id/engine_durations"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/vision_space_8"
+        android:fontFamily="sans-serif-monospace"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.SentriCam.Vision.Status" />
+
+    <TextView
+        android:id="@+id/engine_details"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/engine_storage"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone" />
+</LinearLayout>

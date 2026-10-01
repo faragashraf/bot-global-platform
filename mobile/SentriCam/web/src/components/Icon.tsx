@@ -1,0 +1,41 @@
+type IconName = 'camera' | 'home' | 'devices' | 'database' | 'media' | 'wifi' | 'shield' | 'check' | 'folder' | 'qr' | 'battery' | 'storage' | 'motion' | 'recording' | 'pulse' | 'refresh' | 'play' | 'stop' | 'ping' | 'download' | 'trash' | 'search' | 'grid' | 'compact' | 'list' | 'filter' | 'calendar' | 'chevron' | 'retry' | 'close' | 'fullscreen' | 'controls' | 'sun' | 'moon'
+
+export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
+  const paths: Record<IconName, React.ReactNode> = {
+    camera: <><path d="M4 7.5h3l1.4-2h7.2l1.4 2h3v10H4z"/><circle cx="12" cy="12.5" r="3.3"/></>,
+    home: <><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></>,
+    devices: <><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M9 6h6M10 18h4"/></>,
+    database: <><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6M4 11.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></>,
+    media: <><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z" className="icon-fill"/></>,
+    wifi: <><path d="M3 9c5-4 13-4 18 0M6 13c3.5-2.7 8.5-2.7 12 0M9.5 16.5c1.5-1 3.5-1 5 0"/><circle cx="12" cy="20" r=".8" className="icon-fill"/></>,
+    shield: <path d="M12 3 5 6v5c0 4.4 2.8 8 7 10 4.2-2 7-5.6 7-10V6z"/>,
+    check: <path d="m5 12 4 4L19 6"/>,
+    folder: <path d="M3 7h7l2 2h9v10H3z"/>,
+    qr: <><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2v6h-2zM14 18h2v2h-2z"/></>,
+    battery: <><rect x="3" y="7" width="17" height="10" rx="2"/><path d="M20 10h1.5v4H20M6 10h8v4H6z"/></>,
+    storage: <><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></>,
+    motion: <><path d="M4 15c2.3-5 4.7-7 7-6 2.4 1 3.4 4.2 9 1"/><path d="M4 19c3.2-2 5.6-2 7.4 0M7 7h.01M17 5h.01"/></>,
+    recording: <><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" className="icon-fill"/></>,
+    pulse: <path d="M3 12h4l2-6 4 12 2-6h6"/>,
+    refresh: <><path d="M20 7v5h-5"/><path d="M19 12a7 7 0 1 0-2 5"/></>,
+    play: <path d="m8 5 11 7-11 7z" className="icon-fill"/>,
+    stop: <rect x="6" y="6" width="12" height="12" rx="2" className="icon-fill"/>,
+    ping: <><circle cx="12" cy="12" r="2" className="icon-fill"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.5 5.5a9 9 0 0 0 0 13M18.5 5.5a9 9 0 0 1 0 13"/></>,
+    download: <><path d="M12 3v12m-4-4 4 4 4-4"/><path d="M5 20h14"/></>,
+    trash: <><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/></>,
+    search: <><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></>,
+    grid: <><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></>,
+    compact: <><rect x="3" y="4" width="5" height="5" rx="1"/><rect x="10" y="4" width="5" height="5" rx="1"/><rect x="17" y="4" width="4" height="5" rx="1"/><rect x="3" y="12" width="5" height="8" rx="1"/><rect x="10" y="12" width="5" height="8" rx="1"/><rect x="17" y="12" width="4" height="8" rx="1"/></>,
+    list: <><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="5" cy="6" r="1" className="icon-fill"/><circle cx="5" cy="12" r="1" className="icon-fill"/><circle cx="5" cy="18" r="1" className="icon-fill"/></>,
+    filter: <path d="M4 6h16M7 12h10M10 18h4"/>,
+    calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/></>,
+    chevron: <path d="m9 5 7 7-7 7"/>,
+    retry: <><path d="M20 7v5h-5"/><path d="M19 12a7 7 0 1 0-2 5"/></>,
+    close: <path d="m6 6 12 12M18 6 6 18"/>,
+    fullscreen: <><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></>,
+    controls: <><path d="M4 6h8M16 6h4M4 12h3M11 12h9M4 18h10M18 18h2"/><circle cx="14" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="16" cy="18" r="2"/></>,
+    sun: <><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></>,
+    moon: <path d="M20 15.5A8 8 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5z"/>,
+  }
+  return <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
+}

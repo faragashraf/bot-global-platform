@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web"><PropertyGroup>  <UserSecretsId>0ccb27c6-4f15-47b1-9361-709ae67f5cba</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SentriCam.Application\SentriCam.Application.csproj" />
+    <ProjectReference Include="..\SentriCam.Infrastructure\SentriCam.Infrastructure.csproj" />
+    <ProjectReference Include="..\SentriCam.SignalR\SentriCam.SignalR.csproj" />
+    <ProjectReference Include="..\SentriCam.Contracts\SentriCam.Contracts.csproj" />
+    <ProjectReference Include="..\SentriCam.Shared\SentriCam.Shared.csproj" />
+    <ProjectReference Include="..\SentriCam.Migrations.Sqlite\SentriCam.Migrations.Sqlite.csproj" />
+    <ProjectReference Include="..\SentriCam.Migrations.PostgreSql\SentriCam.Migrations.PostgreSql.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Asp.Versioning.Mvc" />
+    <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="data/**/*" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+</Project>

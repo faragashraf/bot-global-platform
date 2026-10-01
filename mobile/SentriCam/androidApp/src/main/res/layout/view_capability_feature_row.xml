@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:minHeight="@dimen/vision_settings_navigation_row_min_height"
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/vision_space_16"
+    android:paddingTop="@dimen/vision_space_12"
+    android:paddingEnd="@dimen/vision_space_16"
+    android:paddingBottom="@dimen/vision_space_12">
+
+    <ImageView
+        android:id="@+id/capability_icon"
+        android:layout_width="@dimen/vision_settings_navigation_icon_container_size"
+        android:layout_height="@dimen/vision_settings_navigation_icon_container_size"
+        android:background="@drawable/vision_background_settings_icon"
+        android:contentDescription="@null"
+        android:padding="@dimen/vision_space_8"
+        android:src="@drawable/ic_motion_24" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/vision_space_12"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/capability_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.SentriCam.Vision.SectionTitle"
+            android:textDirection="locale" />
+
+        <TextView
+            android:id="@+id/capability_description"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/vision_space_4"
+            android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+            android:textDirection="locale" />
+    </LinearLayout>
+
+    <com.google.android.material.chip.Chip
+        android:id="@+id/capability_status"
+        style="@style/Widget.SentriCam.Vision.StatusChip.Secondary"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/vision_space_8"
+        android:clickable="false"
+        android:focusable="false"
+        android:text="@string/capability_coming_soon" />
+</LinearLayout>

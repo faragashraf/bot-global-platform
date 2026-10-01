@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/player_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/vision_background_primary"
+    tools:context=".recording.library.android.ui.VideoPlayerActivity">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/player_toolbar"
+        style="@style/Widget.SentriCam.Vision.ScreenToolbar"
+        android:layout_width="0dp"
+        android:layout_height="@dimen/vision_screen_toolbar_height"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:navigationIcon="@drawable/ic_arrow_back_24"
+        app:title="@string/library_player_title" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/video_player_card"
+        style="@style/Widget.SentriCam.Vision.PlayerSurface"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/library_content_padding"
+        android:visibility="gone"
+        app:cardPreventCornerOverlap="false"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/player_toolbar"
+        tools:visibility="visible">
+
+        <FrameLayout
+            android:id="@+id/video_player_frame"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/black">
+
+            <com.ashraffarag.sentricam.recording.playback.android.ui.VideoPlayerSurfaceView
+                android:id="@+id/video_player_surface"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+        </FrameLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/details_scroll"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:fillViewport="true"
+        android:paddingHorizontal="@dimen/library_content_padding"
+        android:paddingTop="@dimen/vision_space_12"
+        android:paddingBottom="@dimen/vision_space_24"
+        android:scrollbars="vertical"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/video_player_card"
+        tools:visibility="visible">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/recording_information_card"
+                style="@style/Widget.SentriCam.Vision.Surface.Card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/vision_space_16">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/library_information"
+                        android:textAppearance="@style/TextAppearance.SentriCam.Vision.SectionTitle"
+                        android:textDirection="locale" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/vision_space_4"
+                        android:layout_marginBottom="@dimen/vision_space_8"
+                        android:text="@string/library_more_details_hint"
+                        android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+                        android:textDirection="locale" />
+
+                    <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                        android:id="@+id/recording_started"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:detailLabel="@string/library_started" />
+
+                    <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                        android:id="@+id/detail_duration"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:detailLabel="@string/library_duration" />
+
+                    <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                        android:id="@+id/detail_trigger"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:detailLabel="@string/library_trigger" />
+
+                    <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                        android:id="@+id/detail_resolution"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:detailLabel="@string/library_resolution" />
+
+                    <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                        android:id="@+id/detail_file_size"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:detailLabel="@string/library_file_size" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/details_toggle"
+                        style="@style/Widget.SentriCam.Vision.SecondaryAction"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/vision_space_12"
+                        android:text="@string/library_show_technical_details"
+                        app:icon="@drawable/ic_info_24" />
+
+                    <LinearLayout
+                        android:id="@+id/technical_details"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/vision_space_16"
+                        android:orientation="vertical"
+                        android:visibility="gone"
+                        tools:visibility="visible">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="@dimen/vision_space_8"
+                            android:text="@string/library_technical_details"
+                            android:textAppearance="@style/TextAppearance.SentriCam.Vision.Label"
+                            android:textColor="@color/vision_brand_secondary"
+                            android:textDirection="locale" />
+
+                        <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                            android:id="@+id/recording_finished"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:detailLabel="@string/library_finished" />
+
+                        <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                            android:id="@+id/detail_audio"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:detailLabel="@string/library_audio" />
+
+                        <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                            android:id="@+id/detail_camera"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:detailLabel="@string/library_camera" />
+
+                        <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                            android:id="@+id/detail_timestamp"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:detailLabel="@string/library_timestamp" />
+
+                        <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                            android:id="@+id/detail_stop_reason"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:detailLabel="@string/library_stop_reason" />
+
+                        <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                            android:id="@+id/detail_motion_event"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:detailLabel="@string/library_motion_event" />
+
+                        <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                            android:id="@+id/detail_motion_detected"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:detailLabel="@string/library_motion_detected" />
+
+                        <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                            android:id="@+id/detail_motion_recording_started"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:detailLabel="@string/library_motion_recording_started" />
+
+                        <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                            android:id="@+id/detail_last_motion"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:detailLabel="@string/library_last_motion" />
+
+                        <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                            android:id="@+id/detail_motion_ended"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:detailLabel="@string/library_motion_ended" />
+
+                        <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                            android:id="@+id/detail_motion_stats"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:detailLabel="@string/library_motion_stats" />
+
+                        <com.ashraffarag.sentricam.recording.library.android.ui.view.RecordingDetailView
+                            android:id="@+id/detail_storage_path"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            app:detailLabel="@string/library_storage_path" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/delete_button"
+                style="@style/Widget.SentriCam.Vision.DestructiveAction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/vision_space_16"
+                android:text="@string/library_delete"
+                app:icon="@drawable/ic_delete_24" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:id="@+id/loading_indicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:indicatorColor="@color/vision_brand_primary"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/player_toolbar" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/player_error_group"
+        style="@style/Widget.SentriCam.Vision.StatusBanner.Critical"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/vision_space_24"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/player_toolbar">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="@dimen/vision_space_24">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="@string/library_player_failed"
+                android:textAppearance="@style/TextAppearance.SentriCam.Vision.Body"
+                android:textDirection="locale" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/retry_player_button"
+                style="@style/Widget.SentriCam.Vision.PrimaryAction"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/vision_space_12"
+                android:text="@string/library_retry" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

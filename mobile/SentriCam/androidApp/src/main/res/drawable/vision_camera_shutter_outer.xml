@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/vision_ripple_light">
+
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/vision_surface_glass" />
+            <stroke
+                android:width="@dimen/vision_camera_shutter_stroke"
+                android:color="@color/vision_text_primary" />
+        </shape>
+    </item>
+
+    <item android:id="@android:id/mask">
+        <shape android:shape="oval">
+            <solid android:color="@color/white" />
+        </shape>
+    </item>
+</ripple>

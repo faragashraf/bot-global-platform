@@ -1,0 +1,24 @@
+*.iml
+.gradle
+/androidApp/local.properties
+/androidApp/.idea/
+.DS_Store
+/androidApp/build
+/androidApp/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# .NET server artifacts
+**/bin/
+**/obj/
+.vs/
+TestResults/
+*.user
+*.suo
+
+# Web artifacts
+/web/node_modules/
+/web/dist/
+/server/data/
+/server/**/data/

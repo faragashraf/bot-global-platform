@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/group_title"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingStart="@dimen/vision_space_4"
+    android:paddingTop="@dimen/vision_space_16"
+    android:paddingEnd="@dimen/vision_space_4"
+    android:paddingBottom="@dimen/vision_space_4"
+    android:textAppearance="@style/TextAppearance.SentriCam.Vision.SectionTitle"
+    android:textColor="@color/vision_brand_primary"
+    android:textDirection="locale" />

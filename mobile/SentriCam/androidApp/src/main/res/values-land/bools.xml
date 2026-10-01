@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The bottom recording controls already carry state and duration in short landscape viewports. -->
+    <bool name="show_recording_engine_summary">false</bool>
+    <bool name="show_recording_result">false</bool>
+</resources>

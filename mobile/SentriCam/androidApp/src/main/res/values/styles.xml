@@ -1,0 +1,405 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- SentriCam Vision: typography. System families preserve Arabic shaping and fallback. -->
+    <style name="TextAppearance.SentriCam.Vision.Display" parent="TextAppearance.Material3.DisplaySmall">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">@dimen/vision_text_display</item>
+        <item name="android:textColor">@color/vision_text_primary</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textDirection">locale</item>
+    </style>
+
+    <style name="TextAppearance.SentriCam.Vision.ScreenTitle" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">@dimen/vision_text_screen_title</item>
+        <item name="android:textColor">@color/vision_text_primary</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textDirection">locale</item>
+    </style>
+
+    <style name="TextAppearance.SentriCam.Vision.SectionTitle" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">@dimen/vision_text_section_title</item>
+        <item name="android:textColor">@color/vision_text_primary</item>
+        <item name="android:textDirection">locale</item>
+    </style>
+
+    <style name="TextAppearance.SentriCam.Vision.Body" parent="TextAppearance.Material3.BodyLarge">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">@dimen/vision_text_body</item>
+        <item name="android:textColor">@color/vision_text_primary</item>
+        <item name="android:textDirection">locale</item>
+    </style>
+
+    <style name="TextAppearance.SentriCam.Vision.Supporting" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">@dimen/vision_text_supporting</item>
+        <item name="android:textColor">@color/vision_text_secondary</item>
+        <item name="android:textDirection">locale</item>
+    </style>
+
+    <style name="TextAppearance.SentriCam.Vision.Label" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">@dimen/vision_text_label</item>
+        <item name="android:textColor">@color/vision_text_primary</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textDirection">locale</item>
+    </style>
+
+    <style name="TextAppearance.SentriCam.Vision.Status" parent="TextAppearance.Material3.LabelMedium">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">@dimen/vision_text_status</item>
+        <item name="android:textColor">@color/vision_text_secondary</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textDirection">locale</item>
+    </style>
+
+    <style name="TextAppearance.SentriCam.Vision.Numeric" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:fontFamily">sans-serif-monospace</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:textSize">@dimen/vision_text_numeric</item>
+        <item name="android:textColor">@color/vision_text_primary</item>
+        <item name="android:textDirection">locale</item>
+    </style>
+
+    <style name="TextAppearance.SentriCam.Vision.PlayerTime" parent="TextAppearance.SentriCam.Vision.Status">
+        <item name="android:fontFamily">sans-serif-monospace</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:textColor">@color/vision_text_primary</item>
+        <item name="android:textDirection">ltr</item>
+    </style>
+
+    <!-- SentriCam Vision: shape semantics -->
+    <style name="ShapeAppearance.SentriCam.Vision.ScreenSurface" parent="ShapeAppearance.Material3.Corner.None">
+        <item name="cornerSize">@dimen/vision_radius_screen</item>
+    </style>
+
+    <style name="ShapeAppearance.SentriCam.Vision.Card" parent="ShapeAppearance.Material3.MediumComponent">
+        <item name="cornerSize">@dimen/vision_radius_card</item>
+    </style>
+
+    <style name="ShapeAppearance.SentriCam.Vision.CompactControl" parent="ShapeAppearance.Material3.SmallComponent">
+        <item name="cornerSize">@dimen/vision_radius_compact</item>
+    </style>
+
+    <style name="ShapeAppearance.SentriCam.Vision.Pill" parent="ShapeAppearance.Material3.Corner.Full">
+        <item name="cornerSize">@dimen/vision_radius_pill</item>
+    </style>
+
+    <style name="ShapeAppearance.SentriCam.Vision.BottomPanel" parent="ShapeAppearance.Material3.LargeComponent">
+        <item name="cornerSizeTopLeft">@dimen/vision_radius_bottom_panel</item>
+        <item name="cornerSizeTopRight">@dimen/vision_radius_bottom_panel</item>
+        <item name="cornerSizeBottomLeft">@dimen/vision_radius_screen</item>
+        <item name="cornerSizeBottomRight">@dimen/vision_radius_screen</item>
+    </style>
+
+    <style name="ShapeAppearance.SentriCam.Vision.Modal" parent="ShapeAppearance.Material3.LargeComponent">
+        <item name="cornerSize">@dimen/vision_radius_modal</item>
+    </style>
+
+    <!-- SentriCam Vision: reusable surfaces -->
+    <style name="Widget.SentriCam.Vision.Surface.Card" parent="Widget.Material3.CardView.Filled">
+        <item name="cardBackgroundColor">@color/vision_surface</item>
+        <item name="cardElevation">0dp</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.Card</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.Surface.Elevated" parent="Widget.Material3.CardView.Elevated">
+        <item name="cardBackgroundColor">@color/vision_surface_elevated</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.Card</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.Surface.Glass" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardBackgroundColor">@color/vision_surface_glass</item>
+        <item name="cardElevation">0dp</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.Card</item>
+        <item name="strokeColor">@color/vision_border_glass</item>
+        <item name="strokeWidth">@dimen/vision_stroke_thin</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.OperationalStatus" parent="Widget.SentriCam.Vision.Surface.Glass">
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.Pill</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.CameraOverlayChip" parent="Widget.SentriCam.Vision.OperationalStatus">
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">@dimen/vision_stroke_thin</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.CameraControlDock" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardBackgroundColor">@color/vision_overlay_scrim</item>
+        <item name="cardElevation">0dp</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.Pill</item>
+        <item name="strokeColor">@color/vision_border_glass</item>
+        <item name="strokeWidth">@dimen/vision_stroke_thin</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.CameraControlRail" parent="Widget.SentriCam.Vision.Surface.Glass">
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.Pill</item>
+        <item name="strokeColor">@color/vision_border_glass</item>
+        <item name="strokeWidth">@dimen/vision_stroke_thin</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.BottomPanel" parent="Widget.Material3.CardView.Filled">
+        <item name="cardBackgroundColor">@color/vision_surface_elevated</item>
+        <item name="cardElevation">0dp</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.BottomPanel</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.Modal" parent="Widget.Material3.CardView.Elevated">
+        <item name="cardBackgroundColor">@color/vision_surface_elevated</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.Modal</item>
+    </style>
+
+    <!-- SentriCam Vision: actions -->
+    <style name="Widget.SentriCam.Vision.PrimaryAction" parent="Widget.Material3.Button">
+        <item name="android:minHeight">@dimen/vision_touch_target</item>
+        <item name="android:textAppearance">@style/TextAppearance.SentriCam.Vision.Label</item>
+        <item name="backgroundTint">@color/vision_action_primary_background</item>
+        <item name="iconTint">@color/vision_action_primary_content</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.CompactControl</item>
+        <item name="android:textColor">@color/vision_action_primary_content</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.SecondaryAction" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:minHeight">@dimen/vision_touch_target</item>
+        <item name="android:textAppearance">@style/TextAppearance.SentriCam.Vision.Label</item>
+        <item name="backgroundTint">@color/vision_action_secondary_background</item>
+        <item name="iconTint">@color/vision_action_secondary_content</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.CompactControl</item>
+        <item name="strokeColor">@color/vision_action_secondary_stroke</item>
+        <item name="strokeWidth">@dimen/vision_stroke_thin</item>
+        <item name="android:textColor">@color/vision_action_secondary_content</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.IconAction" parent="Widget.Material3.Button.IconButton.Filled.Tonal">
+        <item name="android:minWidth">@dimen/vision_touch_target</item>
+        <item name="android:minHeight">@dimen/vision_touch_target</item>
+        <item name="backgroundTint">@color/vision_icon_action_background</item>
+        <item name="iconTint">@color/vision_icon_action_content</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.Pill</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.IconAction.Prominent">
+        <item name="android:minWidth">@dimen/vision_prominent_icon_action_size</item>
+        <item name="android:minHeight">@dimen/vision_prominent_icon_action_size</item>
+        <item name="iconSize">@dimen/vision_prominent_icon_size</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.ScreenToolbar" parent="Widget.Material3.Toolbar">
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:minHeight">@dimen/vision_screen_toolbar_height</item>
+        <item name="navigationIconTint">@color/vision_text_primary</item>
+        <item name="titleTextAppearance">@style/TextAppearance.SentriCam.Vision.ScreenTitle</item>
+        <item name="titleTextColor">@color/vision_text_primary</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.TextField" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxBackgroundColor">@color/vision_background_secondary</item>
+        <item name="boxCornerRadiusBottomEnd">@dimen/vision_radius_compact</item>
+        <item name="boxCornerRadiusBottomStart">@dimen/vision_radius_compact</item>
+        <item name="boxCornerRadiusTopEnd">@dimen/vision_radius_compact</item>
+        <item name="boxCornerRadiusTopStart">@dimen/vision_radius_compact</item>
+        <item name="boxStrokeColor">@color/vision_border</item>
+        <item name="endIconTint">@color/vision_text_secondary</item>
+        <item name="hintTextColor">@color/vision_text_secondary</item>
+        <item name="startIconTint">@color/vision_text_secondary</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.SearchField" parent="Widget.SentriCam.Vision.TextField" />
+
+    <style name="Widget.SentriCam.Vision.FilterChip" parent="Widget.SentriCam.Vision.SegmentedControl" />
+
+    <style name="Widget.SentriCam.Vision.MediaCard" parent="Widget.SentriCam.Vision.Surface.Card">
+        <item name="strokeColor">@color/vision_border</item>
+        <item name="strokeWidth">@dimen/vision_stroke_thin</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.MediaDurationBadge" parent="">
+        <item name="android:background">@drawable/vision_background_media_badge</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:paddingStart">@dimen/vision_space_8</item>
+        <item name="android:paddingTop">@dimen/vision_space_4</item>
+        <item name="android:paddingEnd">@dimen/vision_space_8</item>
+        <item name="android:paddingBottom">@dimen/vision_space_4</item>
+        <item name="android:textAppearance">@style/TextAppearance.SentriCam.Vision.Status</item>
+        <item name="android:textColor">@color/vision_text_primary</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.PlayerSurface" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardBackgroundColor">@color/black</item>
+        <item name="cardElevation">0dp</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.Card</item>
+        <item name="strokeColor">@color/vision_border</item>
+        <item name="strokeWidth">@dimen/vision_stroke_thin</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.PlayerAction" parent="Widget.SentriCam.Vision.IconAction">
+        <item name="backgroundTint">@android:color/transparent</item>
+        <item name="iconTint">@color/vision_text_primary</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.PlayerPrimaryAction" parent="Widget.SentriCam.Vision.IconAction">
+        <item name="android:minHeight">@dimen/vision_player_primary_control_size</item>
+        <item name="android:minWidth">@dimen/vision_player_primary_control_size</item>
+        <item name="backgroundTint">@color/vision_brand_primary</item>
+        <item name="iconSize">@dimen/vision_player_primary_icon_size</item>
+        <item name="iconTint">@color/vision_on_brand</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.DestructiveAction" parent="Widget.SentriCam.Vision.SecondaryAction">
+        <item name="android:textColor">@color/vision_status_critical</item>
+        <item name="backgroundTint">@color/vision_status_critical_container</item>
+        <item name="iconTint">@color/vision_status_critical</item>
+        <item name="strokeColor">@color/vision_status_critical</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.CameraShutter" parent="">
+        <item name="android:minWidth">@dimen/vision_camera_shutter_size</item>
+        <item name="android:minHeight">@dimen/vision_camera_shutter_size</item>
+        <item name="android:background">@drawable/vision_camera_shutter_outer</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:scaleType">center</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.RecordingAction" parent="Widget.SentriCam.Vision.PrimaryAction">
+        <item name="backgroundTint">@color/vision_action_recording_background</item>
+        <item name="iconTint">@color/vision_action_recording_content</item>
+        <item name="android:textColor">@color/vision_action_recording_content</item>
+    </style>
+
+    <!-- SentriCam Vision: compact status chips -->
+    <style name="Widget.SentriCam.Vision.StatusChip" parent="Widget.Material3.Chip.Assist">
+        <item name="android:textAppearance">@style/TextAppearance.SentriCam.Vision.Status</item>
+        <item name="android:textColor">@color/vision_status_offline</item>
+        <item name="chipBackgroundColor">@color/vision_status_offline_container</item>
+        <item name="chipCornerRadius">@dimen/vision_radius_pill</item>
+        <item name="chipMinHeight">@dimen/vision_status_chip_height</item>
+        <item name="chipStrokeColor">@color/vision_status_offline</item>
+        <item name="chipStrokeWidth">@dimen/vision_stroke_thin</item>
+        <item name="ensureMinTouchTargetSize">false</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.StatusChip.Healthy">
+        <item name="android:textColor">@color/vision_status_healthy</item>
+        <item name="chipBackgroundColor">@color/vision_status_healthy_container</item>
+        <item name="chipStrokeColor">@color/vision_status_healthy</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.StatusChip.Recording">
+        <item name="android:textColor">@color/vision_status_recording</item>
+        <item name="chipBackgroundColor">@color/vision_status_recording_container</item>
+        <item name="chipStrokeColor">@color/vision_status_recording</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.StatusChip.Motion">
+        <item name="android:textColor">@color/vision_status_motion</item>
+        <item name="chipBackgroundColor">@color/vision_status_motion_container</item>
+        <item name="chipStrokeColor">@color/vision_status_motion</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.StatusChip.Primary">
+        <item name="android:textColor">@color/vision_brand_primary</item>
+        <item name="chipBackgroundColor">@color/vision_brand_primary_container</item>
+        <item name="chipStrokeColor">@color/vision_brand_primary</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.StatusChip.Secondary">
+        <item name="android:textColor">@color/vision_text_primary</item>
+        <item name="chipBackgroundColor">@color/vision_brand_secondary_container</item>
+        <item name="chipStrokeColor">@color/vision_brand_secondary</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.StatusChip.Offline" />
+
+    <!-- SentriCam Vision: banners, settings, segmented input, and recording controls -->
+    <style name="Widget.SentriCam.Vision.StatusBanner" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardBackgroundColor">@color/vision_surface_elevated</item>
+        <item name="cardElevation">0dp</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.CompactControl</item>
+        <item name="strokeColor">@color/vision_border</item>
+        <item name="strokeWidth">@dimen/vision_stroke_thin</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.StatusBanner.Healthy">
+        <item name="strokeColor">@color/vision_status_healthy</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.StatusBanner.Warning">
+        <item name="strokeColor">@color/vision_status_motion</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.StatusBanner.Critical">
+        <item name="strokeColor">@color/vision_status_critical</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.SettingsRow" parent="">
+        <item name="android:minHeight">@dimen/vision_touch_target</item>
+        <item name="android:paddingStart">@dimen/vision_space_16</item>
+        <item name="android:paddingTop">@dimen/vision_space_12</item>
+        <item name="android:paddingEnd">@dimen/vision_space_16</item>
+        <item name="android:paddingBottom">@dimen/vision_space_12</item>
+        <item name="android:foreground">?attr/selectableItemBackground</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.SettingsSection" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardBackgroundColor">@color/vision_surface</item>
+        <item name="cardElevation">0dp</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.Card</item>
+        <item name="strokeColor">@color/vision_border</item>
+        <item name="strokeWidth">@dimen/vision_stroke_thin</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.SettingsSection.Motion">
+        <item name="strokeColor">@color/vision_status_motion</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.SettingsSection.Healthy">
+        <item name="strokeColor">@color/vision_status_healthy</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.SettingsSection.Secondary">
+        <item name="strokeColor">@color/vision_brand_secondary</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.SettingsSwitch" parent="Widget.Material3.CompoundButton.MaterialSwitch">
+        <item name="android:minHeight">@dimen/vision_touch_target</item>
+        <item name="android:textAppearance">@style/TextAppearance.SentriCam.Vision.Body</item>
+        <item name="android:textColor">@color/vision_text_primary</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.SettingsNavigationRow" parent="Widget.SentriCam.Vision.SettingsSection">
+        <item name="android:foreground">?attr/selectableItemBackground</item>
+        <item name="android:minHeight">@dimen/vision_settings_navigation_row_min_height</item>
+        <item name="rippleColor">@color/vision_brand_primary_container</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.HealthRow" parent="">
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:minHeight">@dimen/vision_touch_target</item>
+        <item name="android:textAppearance">@style/TextAppearance.SentriCam.Vision.Body</item>
+        <item name="android:textColor">@color/vision_text_primary</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.SegmentedControl" parent="Widget.Material3.Chip.Filter">
+        <item name="android:minHeight">@dimen/vision_touch_target</item>
+        <item name="android:textAppearance">@style/TextAppearance.SentriCam.Vision.Label</item>
+        <item name="android:textColor">@color/vision_segmented_control_content</item>
+        <item name="checkedIconVisible">false</item>
+        <item name="chipBackgroundColor">@color/vision_segmented_control_background</item>
+        <item name="chipCornerRadius">@dimen/vision_radius_compact</item>
+        <item name="chipMinHeight">@dimen/vision_compact_control_height</item>
+        <item name="chipStrokeColor">@color/vision_segmented_control_stroke</item>
+        <item name="chipStrokeWidth">@dimen/vision_stroke_thin</item>
+        <item name="ensureMinTouchTargetSize">true</item>
+    </style>
+
+    <style name="Widget.SentriCam.Vision.RecordingControlSurface" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardBackgroundColor">@color/vision_surface_glass</item>
+        <item name="cardElevation">0dp</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.SentriCam.Vision.BottomPanel</item>
+        <item name="strokeColor">@color/vision_border_glass</item>
+        <item name="strokeWidth">@dimen/vision_stroke_thin</item>
+    </style>
+
+</resources>

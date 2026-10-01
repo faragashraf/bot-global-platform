@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="recording_panel_bottom_margin">8dp</dimen>
+    <dimen name="recording_panel_padding">4dp</dimen>
+    <dimen name="recording_panel_item_spacing">4dp</dimen>
+    <dimen name="vision_camera_control_rail_height">192dp</dimen>
+    <dimen name="vision_camera_zoom_track_length">96dp</dimen>
+</resources>

@@ -24,6 +24,26 @@ ktor = "3.5.1"
 zxing-android-embedded = "4.3.0"
 zxing-core-api23 = "3.3.0"
 webrtc = "144.7559.14"
+sentricam-coreKtx = "1.10.1"
+sentricam-coreSplashscreen = "1.2.0"
+sentricam-junit = "4.13.2"
+sentricam-androidxJunit = "1.1.5"
+sentricam-espresso = "3.5.1"
+sentricam-appcompat = "1.6.1"
+sentricam-material = "1.10.0"
+sentricam-activityKtx = "1.8.0"
+sentricam-constraintlayout = "2.1.4"
+sentricam-camerax = "1.6.1"
+sentricam-recyclerview = "1.4.0"
+sentricam-coroutines = "1.9.0"
+sentricam-lifecycle = "2.6.2"
+sentricam-work = "2.11.2"
+sentricam-okhttp = "4.12.0"
+sentricam-gson = "2.11.0"
+sentricam-signalr = "8.0.25"
+sentricam-desugar = "2.1.5"
+sentricam-webrtc = "144.7559.09"
+sentricam-zxing = "3.5.3"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
@@ -55,6 +75,32 @@ ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx
 zxing-android-embedded = { module = "com.journeyapps:zxing-android-embedded", version.ref = "zxing-android-embedded" }
 zxing-core-api23 = { module = "com.google.zxing:core", version.ref = "zxing-core-api23" }
 webrtc-android = { module = "io.github.webrtc-sdk:android", version.ref = "webrtc" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "sentricam-coreKtx" }
+androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "sentricam-coreSplashscreen" }
+junit = { module = "junit:junit", version.ref = "sentricam-junit" }
+androidx-junit = { module = "androidx.test.ext:junit", version.ref = "sentricam-androidxJunit" }
+androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "sentricam-espresso" }
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "sentricam-appcompat" }
+material = { module = "com.google.android.material:material", version.ref = "sentricam-material" }
+androidx-activity-ktx = { module = "androidx.activity:activity-ktx", version.ref = "sentricam-activityKtx" }
+androidx-constraintlayout = { module = "androidx.constraintlayout:constraintlayout", version.ref = "sentricam-constraintlayout" }
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "sentricam-camerax" }
+androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "sentricam-camerax" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "sentricam-camerax" }
+androidx-camera-video = { module = "androidx.camera:camera-video", version.ref = "sentricam-camerax" }
+androidx-camera-effects = { module = "androidx.camera:camera-effects", version.ref = "sentricam-camerax" }
+androidx-recyclerview = { module = "androidx.recyclerview:recyclerview", version.ref = "sentricam-recyclerview" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "sentricam-coroutines" }
+androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "sentricam-lifecycle" }
+androidx-lifecycle-service = { module = "androidx.lifecycle:lifecycle-service", version.ref = "sentricam-lifecycle" }
+androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "sentricam-work" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "sentricam-okhttp" }
+okhttp-mockwebserver = { module = "com.squareup.okhttp3:mockwebserver", version.ref = "sentricam-okhttp" }
+gson = { module = "com.google.code.gson:gson", version.ref = "sentricam-gson" }
+signalr = { module = "com.microsoft.signalr:signalr", version.ref = "sentricam-signalr" }
+desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "sentricam-desugar" }
+sentricam-webrtc-android = { module = "io.github.webrtc-sdk:android", version.ref = "sentricam-webrtc" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "sentricam-zxing" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

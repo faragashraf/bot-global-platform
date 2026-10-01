@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Single dark, camera-first foundation shared by all configurations. -->
+    <style name="Base.Theme.SentriCam.Foundation" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/vision_brand_primary</item>
+        <item name="colorOnPrimary">@color/vision_on_brand</item>
+        <item name="colorPrimaryContainer">@color/vision_brand_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/vision_text_primary</item>
+        <item name="colorSecondary">@color/vision_brand_secondary</item>
+        <item name="colorOnSecondary">@color/vision_on_brand</item>
+        <item name="colorSecondaryContainer">@color/vision_brand_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/vision_text_primary</item>
+        <item name="colorTertiary">@color/vision_status_motion</item>
+        <item name="colorOnTertiary">@color/vision_background_primary</item>
+        <item name="colorError">@color/vision_status_critical</item>
+        <item name="colorOnError">@color/vision_on_brand</item>
+        <item name="colorErrorContainer">@color/vision_status_critical_container</item>
+        <item name="colorOnErrorContainer">@color/vision_text_primary</item>
+        <item name="android:colorBackground">@color/vision_background_primary</item>
+        <item name="colorOnBackground">@color/vision_text_primary</item>
+        <item name="colorSurface">@color/vision_surface</item>
+        <item name="colorOnSurface">@color/vision_text_primary</item>
+        <item name="colorSurfaceVariant">@color/vision_surface_elevated</item>
+        <item name="colorOnSurfaceVariant">@color/vision_text_secondary</item>
+        <item name="colorSurfaceContainerLowest">@color/vision_background_primary</item>
+        <item name="colorSurfaceContainerLow">@color/vision_background_secondary</item>
+        <item name="colorSurfaceContainer">@color/vision_surface</item>
+        <item name="colorSurfaceContainerHigh">@color/vision_surface_elevated</item>
+        <item name="colorSurfaceContainerHighest">@color/vision_surface_highest</item>
+        <item name="colorOutline">@color/vision_border</item>
+        <item name="colorOutlineVariant">@color/vision_divider</item>
+        <item name="android:colorAccent">@color/vision_brand_primary</item>
+        <item name="android:windowBackground">@color/vision_background_primary</item>
+        <item name="android:statusBarColor">@color/vision_background_primary</item>
+        <item name="android:navigationBarColor">@color/vision_background_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.SentriCam.Vision.CompactControl</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.SentriCam.Vision.Card</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.SentriCam.Vision.Modal</item>
+        <item name="textAppearanceDisplaySmall">@style/TextAppearance.SentriCam.Vision.Display</item>
+        <item name="textAppearanceHeadlineSmall">@style/TextAppearance.SentriCam.Vision.ScreenTitle</item>
+        <item name="textAppearanceTitleLarge">@style/TextAppearance.SentriCam.Vision.SectionTitle</item>
+        <item name="textAppearanceBodyLarge">@style/TextAppearance.SentriCam.Vision.Body</item>
+        <item name="textAppearanceBodyMedium">@style/TextAppearance.SentriCam.Vision.Supporting</item>
+        <item name="textAppearanceLabelLarge">@style/TextAppearance.SentriCam.Vision.Label</item>
+        <item name="textAppearanceLabelMedium">@style/TextAppearance.SentriCam.Vision.Status</item>
+    </style>
+
+    <style name="Base.Theme.SentriCam" parent="Base.Theme.SentriCam.Foundation" />
+
+    <style name="Theme.SentriCam" parent="Base.Theme.SentriCam" />
+
+    <style name="Theme.SentriCam.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.SentriCam</item>
+    </style>
+</resources>

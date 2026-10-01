@@ -39,6 +39,7 @@ TestResults/
 mobile/.gradle/
 mobile/.kotlin/
 mobile/**/build/
+mobile/**/google-services.json
 mobile/local.properties
 mobile/NqrbMobile/androidApp/google-services.json
 mobile/EnpoConnectMobile/androidApp/google-services.json

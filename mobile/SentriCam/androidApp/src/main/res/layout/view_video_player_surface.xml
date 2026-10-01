@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <com.ashraffarag.sentricam.recording.playback.android.ui.FitVideoView
+        android:id="@+id/video_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"
+        android:keepScreenOn="true" />
+
+    <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:id="@+id/player_loading"
+        android:layout_width="@dimen/vision_compact_control_height"
+        android:layout_height="@dimen/vision_compact_control_height"
+        android:layout_gravity="center"
+        app:indicatorColor="@color/vision_text_primary" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/center_play_pause_button"
+        style="@style/Widget.SentriCam.Vision.PlayerPrimaryAction"
+        android:layout_width="@dimen/vision_player_primary_control_size"
+        android:layout_height="@dimen/vision_player_primary_control_size"
+        android:layout_gravity="center"
+        android:contentDescription="@string/library_play"
+        android:visibility="gone"
+        app:icon="@drawable/ic_play_24" />
+
+    <LinearLayout
+        android:id="@+id/player_controls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/vision_player_controls_scrim"
+        android:orientation="vertical"
+        android:paddingStart="@dimen/vision_space_8"
+        android:paddingTop="@dimen/vision_space_24"
+        android:paddingEnd="@dimen/vision_space_8"
+        android:paddingBottom="@dimen/vision_space_8">
+
+        <SeekBar
+            android:id="@+id/player_seek"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/vision_player_seek_height"
+            android:contentDescription="@string/library_seek"
+            android:progressTint="@color/vision_brand_primary"
+            android:thumbTint="@color/vision_brand_primary" />
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/vision_touch_target">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/play_pause_button"
+                style="@style/Widget.SentriCam.Vision.PlayerAction"
+                android:layout_width="@dimen/vision_touch_target"
+                android:layout_height="@dimen/vision_touch_target"
+                android:contentDescription="@string/library_play"
+                app:icon="@drawable/ic_play_24"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+
+            <LinearLayout
+                android:id="@+id/player_time_group"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layoutDirection="ltr"
+                android:gravity="center"
+                android:orientation="horizontal"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toStartOf="@id/full_screen_button"
+                app:layout_constraintStart_toEndOf="@id/play_pause_button"
+                app:layout_constraintTop_toTopOf="parent">
+
+                <TextView
+                    android:id="@+id/current_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/recording_duration_zero"
+                    android:textAppearance="@style/TextAppearance.SentriCam.Vision.PlayerTime" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="@dimen/vision_space_8"
+                    android:text="@string/library_time_separator"
+                    android:textAppearance="@style/TextAppearance.SentriCam.Vision.PlayerTime"
+                    android:textColor="@color/vision_text_subtle" />
+
+                <TextView
+                    android:id="@+id/total_time"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/recording_duration_zero"
+                    android:textAppearance="@style/TextAppearance.SentriCam.Vision.PlayerTime" />
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/full_screen_button"
+                style="@style/Widget.SentriCam.Vision.PlayerAction"
+                android:layout_width="@dimen/vision_touch_target"
+                android:layout_height="@dimen/vision_touch_target"
+                android:contentDescription="@string/library_full_screen"
+                app:icon="@drawable/ic_fullscreen_24"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </LinearLayout>
+</merge>

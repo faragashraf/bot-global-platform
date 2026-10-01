@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    style="@style/Widget.SentriCam.Vision.MediaCard"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginVertical="@dimen/vision_space_8"
+    android:clickable="true"
+    android:focusable="true">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="@dimen/vision_space_12">
+
+        <com.google.android.material.imageview.ShapeableImageView
+            android:id="@+id/thumbnail"
+            android:layout_width="@dimen/vision_media_thumbnail_width"
+            android:layout_height="@dimen/vision_media_thumbnail_height"
+            android:background="@color/black"
+            android:contentDescription="@string/library_player_title"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_video_placeholder"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:shapeAppearanceOverlay="@style/ShapeAppearance.SentriCam.Vision.CompactControl" />
+
+        <TextView
+            android:id="@+id/recording_duration"
+            style="@style/Widget.SentriCam.Vision.MediaDurationBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="@dimen/vision_space_4"
+            android:layout_marginBottom="@dimen/vision_space_4"
+            app:layout_constraintBottom_toBottomOf="@id/thumbnail"
+            app:layout_constraintEnd_toEndOf="@id/thumbnail"
+            tools:text="00:00:18" />
+
+        <TextView
+            android:id="@+id/recording_time"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/vision_space_12"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textAppearance="@style/TextAppearance.SentriCam.Vision.SectionTitle"
+            android:textDirection="locale"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/thumbnail"
+            app:layout_constraintTop_toTopOf="@id/thumbnail"
+            tools:text="18 Aug 2026 · 2:29 am" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/recording_summary_chips"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/vision_space_12"
+            android:layout_marginTop="@dimen/vision_space_8"
+            app:chipSpacingHorizontal="@dimen/vision_space_4"
+            app:chipSpacingVertical="@dimen/vision_space_4"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/thumbnail"
+            app:layout_constraintTop_toBottomOf="@id/recording_time">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/recording_trigger"
+                style="@style/Widget.SentriCam.Vision.StatusChip.Offline"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:clickable="false"
+                android:focusable="false"
+                tools:text="يدوي" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/recording_quality"
+                style="@style/Widget.SentriCam.Vision.StatusChip.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:clickable="false"
+                android:focusable="false"
+                tools:text="Full HD" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/recording_completion"
+                style="@style/Widget.SentriCam.Vision.StatusChip.Recording"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:clickable="false"
+                android:focusable="false"
+                android:visibility="gone"
+                tools:text="فشل الحفظ"
+                tools:visibility="visible" />
+        </com.google.android.material.chip.ChipGroup>
+
+        <TextView
+            android:id="@+id/recording_file_size"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/vision_space_12"
+            android:layout_marginTop="@dimen/vision_space_4"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@id/thumbnail"
+            app:layout_constraintTop_toBottomOf="@id/recording_summary_chips"
+            tools:text="الحجم: 14.8 MB" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/thumbnail">
+
+            <TextView
+                android:id="@+id/recording_session"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                android:id="@+id/recording_segment"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                android:id="@+id/recording_resolution"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                android:id="@+id/recording_camera"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                android:id="@+id/recording_audio"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                android:id="@+id/recording_timestamp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+</com.google.android.material.card.MaterialCardView>

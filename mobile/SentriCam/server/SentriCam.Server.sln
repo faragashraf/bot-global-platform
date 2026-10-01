@@ -1,0 +1,92 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{0E4C184A-299A-477E-9E33-83B8CE535F6E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentriCam.Domain", "src\SentriCam.Domain\SentriCam.Domain.csproj", "{FD55F815-B899-4913-B8D0-C490355E6008}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentriCam.Shared", "src\SentriCam.Shared\SentriCam.Shared.csproj", "{33EE2CF8-D89A-4BC9-BAC1-EEDB015E7665}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentriCam.Contracts", "src\SentriCam.Contracts\SentriCam.Contracts.csproj", "{113175FE-4DE6-4522-9C4C-FAFA52FAAD51}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentriCam.Application", "src\SentriCam.Application\SentriCam.Application.csproj", "{06212D57-5896-4F62-8182-2294DE25FF91}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentriCam.Infrastructure", "src\SentriCam.Infrastructure\SentriCam.Infrastructure.csproj", "{B3F24E38-5E1B-4F0C-8B67-D2A4DCB67C37}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentriCam.SignalR", "src\SentriCam.SignalR\SentriCam.SignalR.csproj", "{EDA9EE47-1D62-4C0C-9D4B-185501F794A6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentriCam.Api", "src\SentriCam.Api\SentriCam.Api.csproj", "{13ACF448-3D01-4DD2-A422-11E721EA6DE9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentriCam.Migrations.Sqlite", "src\SentriCam.Migrations.Sqlite\SentriCam.Migrations.Sqlite.csproj", "{08C5B796-4807-48D3-AE49-BC2970352565}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentriCam.Migrations.PostgreSql", "src\SentriCam.Migrations.PostgreSql\SentriCam.Migrations.PostgreSql.csproj", "{C31A2EA2-EF45-43B9-8D42-7008B4CA8296}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{D878C169-1AB7-4847-A5F4-D49CAF36CB4F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SentriCam.Tests", "tests\SentriCam.Tests\SentriCam.Tests.csproj", "{9443BCF7-86C7-4AE7-9D87-7D435C99C5C6}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FD55F815-B899-4913-B8D0-C490355E6008}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FD55F815-B899-4913-B8D0-C490355E6008}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FD55F815-B899-4913-B8D0-C490355E6008}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FD55F815-B899-4913-B8D0-C490355E6008}.Release|Any CPU.Build.0 = Release|Any CPU
+		{33EE2CF8-D89A-4BC9-BAC1-EEDB015E7665}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{33EE2CF8-D89A-4BC9-BAC1-EEDB015E7665}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{33EE2CF8-D89A-4BC9-BAC1-EEDB015E7665}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{33EE2CF8-D89A-4BC9-BAC1-EEDB015E7665}.Release|Any CPU.Build.0 = Release|Any CPU
+		{113175FE-4DE6-4522-9C4C-FAFA52FAAD51}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{113175FE-4DE6-4522-9C4C-FAFA52FAAD51}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{113175FE-4DE6-4522-9C4C-FAFA52FAAD51}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{113175FE-4DE6-4522-9C4C-FAFA52FAAD51}.Release|Any CPU.Build.0 = Release|Any CPU
+		{06212D57-5896-4F62-8182-2294DE25FF91}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{06212D57-5896-4F62-8182-2294DE25FF91}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{06212D57-5896-4F62-8182-2294DE25FF91}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{06212D57-5896-4F62-8182-2294DE25FF91}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B3F24E38-5E1B-4F0C-8B67-D2A4DCB67C37}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B3F24E38-5E1B-4F0C-8B67-D2A4DCB67C37}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B3F24E38-5E1B-4F0C-8B67-D2A4DCB67C37}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B3F24E38-5E1B-4F0C-8B67-D2A4DCB67C37}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EDA9EE47-1D62-4C0C-9D4B-185501F794A6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EDA9EE47-1D62-4C0C-9D4B-185501F794A6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EDA9EE47-1D62-4C0C-9D4B-185501F794A6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EDA9EE47-1D62-4C0C-9D4B-185501F794A6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{13ACF448-3D01-4DD2-A422-11E721EA6DE9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{13ACF448-3D01-4DD2-A422-11E721EA6DE9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{13ACF448-3D01-4DD2-A422-11E721EA6DE9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{13ACF448-3D01-4DD2-A422-11E721EA6DE9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{08C5B796-4807-48D3-AE49-BC2970352565}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{08C5B796-4807-48D3-AE49-BC2970352565}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{08C5B796-4807-48D3-AE49-BC2970352565}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{08C5B796-4807-48D3-AE49-BC2970352565}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C31A2EA2-EF45-43B9-8D42-7008B4CA8296}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C31A2EA2-EF45-43B9-8D42-7008B4CA8296}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C31A2EA2-EF45-43B9-8D42-7008B4CA8296}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C31A2EA2-EF45-43B9-8D42-7008B4CA8296}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9443BCF7-86C7-4AE7-9D87-7D435C99C5C6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9443BCF7-86C7-4AE7-9D87-7D435C99C5C6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9443BCF7-86C7-4AE7-9D87-7D435C99C5C6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9443BCF7-86C7-4AE7-9D87-7D435C99C5C6}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{FD55F815-B899-4913-B8D0-C490355E6008} = {0E4C184A-299A-477E-9E33-83B8CE535F6E}
+		{33EE2CF8-D89A-4BC9-BAC1-EEDB015E7665} = {0E4C184A-299A-477E-9E33-83B8CE535F6E}
+		{113175FE-4DE6-4522-9C4C-FAFA52FAAD51} = {0E4C184A-299A-477E-9E33-83B8CE535F6E}
+		{06212D57-5896-4F62-8182-2294DE25FF91} = {0E4C184A-299A-477E-9E33-83B8CE535F6E}
+		{B3F24E38-5E1B-4F0C-8B67-D2A4DCB67C37} = {0E4C184A-299A-477E-9E33-83B8CE535F6E}
+		{EDA9EE47-1D62-4C0C-9D4B-185501F794A6} = {0E4C184A-299A-477E-9E33-83B8CE535F6E}
+		{13ACF448-3D01-4DD2-A422-11E721EA6DE9} = {0E4C184A-299A-477E-9E33-83B8CE535F6E}
+		{08C5B796-4807-48D3-AE49-BC2970352565} = {0E4C184A-299A-477E-9E33-83B8CE535F6E}
+		{C31A2EA2-EF45-43B9-8D42-7008B4CA8296} = {0E4C184A-299A-477E-9E33-83B8CE535F6E}
+		{9443BCF7-86C7-4AE7-9D87-7D435C99C5C6} = {D878C169-1AB7-4847-A5F4-D49CAF36CB4F}
+	EndGlobalSection
+EndGlobal

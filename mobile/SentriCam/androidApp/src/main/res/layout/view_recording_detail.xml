@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <TextView
+        android:id="@+id/detail_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:minHeight="@dimen/vision_compact_control_height"
+        android:gravity="center_vertical"
+        android:paddingVertical="@dimen/vision_space_8"
+        android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+        android:textColor="@color/vision_text_subtle"
+        android:textDirection="locale" />
+
+    <TextView
+        android:id="@+id/detail_value"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1.35"
+        android:minHeight="@dimen/vision_compact_control_height"
+        android:gravity="end|center_vertical"
+        android:paddingVertical="@dimen/vision_space_8"
+        android:textAppearance="@style/TextAppearance.SentriCam.Vision.Supporting"
+        android:textColor="@color/vision_text_primary"
+        android:textDirection="locale"
+        android:textIsSelectable="true" />
+</merge>
