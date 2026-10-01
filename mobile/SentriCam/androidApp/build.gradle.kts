@@ -2,6 +2,29 @@ plugins {
     alias(libs.plugins.androidApplication)
 }
 
+abstract class ValidateSentriCamReleaseSigningTask : DefaultTask() {
+    @get:Input
+    abstract val missingPropertyNames: ListProperty<String>
+
+    @get:Internal
+    abstract val configuredStoreFile: RegularFileProperty
+
+    @TaskAction
+    fun validateSigning() {
+        val missingProperties = missingPropertyNames.get()
+
+        if (missingProperties.isNotEmpty()) {
+            throw GradleException(
+                "Release signing requires these Gradle properties: ${missingProperties.joinToString()}",
+            )
+        }
+
+        if (configuredStoreFile.orNull?.asFile?.isFile != true) {
+            throw GradleException("The configured release signing keystore file does not exist.")
+        }
+    }
+}
+
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 val debugServerUrl = providers.gradleProperty("sentricam.debugServerUrl")
@@ -52,34 +75,26 @@ val releaseSigningPropertyNames = listOf(
 val releaseSigningProperties = releaseSigningPropertyNames.associateWith { propertyName ->
     providers.gradleProperty(propertyName).orNull
 }
-val requestedTaskNames = gradle.startParameter.taskNames.map { it.substringAfterLast(':') }
 val releaseSigningTaskPrefixes = listOf("assemble", "bundle", "install", "package", "publish", "sign", "upload")
-val releaseSigningRequested = requestedTaskNames.any { taskName ->
-    taskName.equals("signingReport", ignoreCase = true) ||
-        taskName.equals("build", ignoreCase = true) ||
-        taskName.equals("assemble", ignoreCase = true) ||
-        taskName.equals("bundle", ignoreCase = true) ||
-        (
-            taskName.contains("Release", ignoreCase = true) &&
-                releaseSigningTaskPrefixes.any { taskName.startsWith(it, ignoreCase = true) }
-        )
+val releaseSigningStoreFile = releaseSigningProperties["SENTRICAM_UPLOAD_STORE_FILE"]
+    ?.takeIf(String::isNotBlank)
+    ?.let(::file)
+
+fun String.requiresSentriCamReleaseSigning(): Boolean {
+    if (equals("signingReport", ignoreCase = true)) return true
+    return contains("Release", ignoreCase = true) &&
+        releaseSigningTaskPrefixes.any { startsWith(it, ignoreCase = true) }
 }
 
-if (releaseSigningRequested) {
-    val missingProperties = releaseSigningProperties
-        .filterValues { it.isNullOrBlank() }
-        .keys
-
-    if (missingProperties.isNotEmpty()) {
-        throw GradleException(
-            "Release signing requires these Gradle properties: ${missingProperties.joinToString()}",
-        )
-    }
-
-    val configuredStoreFile = file(releaseSigningProperties.getValue("SENTRICAM_UPLOAD_STORE_FILE")!!)
-    if (!configuredStoreFile.isFile) {
-        throw GradleException("The configured release signing keystore file does not exist.")
-    }
+val validateSentriCamReleaseSigning = tasks.register<ValidateSentriCamReleaseSigningTask>(
+    "validateSentriCamReleaseSigning",
+) {
+    group = "verification"
+    description = "Validates SentriCam release signing credentials before a signing task runs."
+    missingPropertyNames.set(
+        releaseSigningProperties.filterValues { it.isNullOrBlank() }.keys,
+    )
+    releaseSigningStoreFile?.let(configuredStoreFile::set)
 }
 
 android {
@@ -146,6 +161,9 @@ android {
 tasks.configureEach {
     if (name == "preDebugBuild") {
         dependsOn(prepareSentriCamLocalCa)
+    }
+    if (name.requiresSentriCamReleaseSigning()) {
+        dependsOn(validateSentriCamReleaseSigning)
     }
 }
 
