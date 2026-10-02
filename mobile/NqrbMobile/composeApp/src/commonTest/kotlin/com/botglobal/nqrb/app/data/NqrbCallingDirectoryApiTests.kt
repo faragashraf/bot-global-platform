@@ -23,7 +23,7 @@ class NqrbCallingDirectoryApiTests {
     fun maps_membership_and_display_from_the_same_api_participant() = runTest {
         val engine = MockEngine { request ->
             assertEquals(
-                "https://api.example/api/mobile/calling/participants",
+                "https://api.example/api/mobile/calling/participants?savedOnly=true",
                 request.url.toString(),
             )
             assertEquals("Bearer access-token", request.headers[HttpHeaders.Authorization])

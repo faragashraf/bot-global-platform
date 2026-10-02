@@ -3,6 +3,7 @@ using BotGlobal.Communication.Contracts.MobileNotifications;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Notifications;
 using Microsoft.Extensions.Options;
+using System.Globalization;
 
 namespace BotGlobal.Communication.Application.MobileNotifications;
 
@@ -60,6 +61,11 @@ internal sealed class CompositeMobileNotificationDelivery(
                 continue;
             }
 
+            var defaultTimeToLive = TimeSpan.FromDays(
+                Math.Clamp(pushOptions.Value.DefaultTimeToLiveDays, 1, 28));
+            var timeToLive = SelectPushTimeToLive(notification, defaultTimeToLive, DateTimeOffset.UtcNow);
+            if (timeToLive is null) continue;
+
             var pushResult =
                 await push.DispatchAsync(
                     new ApplicationPushMessage(
@@ -69,11 +75,7 @@ internal sealed class CompositeMobileNotificationDelivery(
                         notification.TitleAr,
                         notification.BodyAr,
                         CreatePushData(notification),
-                        TimeSpan.FromDays(
-                            Math.Clamp(
-                                pushOptions.Value.DefaultTimeToLiveDays,
-                                1,
-                                28)),
+                        timeToLive.Value,
                         notification.Priority),
                     cancellationToken);
 
@@ -90,6 +92,22 @@ internal sealed class CompositeMobileNotificationDelivery(
             DeliveredDeviceCount: delivered,
             SignalRDeliveredDeviceCount: signalRDelivered,
             FcmDeliveredDeviceCount: fcmDelivered);
+    }
+
+    internal static TimeSpan? SelectPushTimeToLive(
+        MobileNotificationEnvelope notification,
+        TimeSpan defaultTimeToLive,
+        DateTimeOffset now)
+    {
+        if (!string.Equals(notification.Type, "incoming_call", StringComparison.Ordinal) ||
+            notification.Data?.TryGetValue("expiresAtUtc", out var expirationText) != true ||
+            !DateTimeOffset.TryParse(expirationText, CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind, out var expiration))
+            return defaultTimeToLive;
+
+        var remaining = expiration - now;
+        if (remaining <= TimeSpan.Zero) return null;
+        return remaining < defaultTimeToLive ? remaining : defaultTimeToLive;
     }
 
     private static Dictionary<string, string> CreatePushData(MobileNotificationEnvelope notification)

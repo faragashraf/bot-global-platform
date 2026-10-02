@@ -11,6 +11,9 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -130,6 +133,42 @@ class NqrbIdentityApiTests {
 
         assertIs<NqrbAccountProfileResult.RetryableFailure>(result)
         assertEquals(currentSession, vault.value)
+    }
+
+    @Test
+    fun logout_waits_for_inflight_refresh_then_clears_the_rotated_session() = runTest {
+        val vault = RecordingSessionVault(session())
+        val refreshStarted = CompletableDeferred<Unit>()
+        val releaseRefresh = CompletableDeferred<Unit>()
+        val engine = MockEngine { request ->
+            when (request.url.encodedPath) {
+                "/api/mobile/nqrb/identity/refresh" -> {
+                    refreshStarted.complete(Unit)
+                    releaseRefresh.await()
+                    respond(
+                        """{"accessToken":"renewed-access","accessExpiresAtUtc":"2099-01-01T00:00:00Z","refreshToken":"renewed-refresh","refreshExpiresAtUtc":"2099-02-01T00:00:00Z","identity":{"membershipId":"test-membership-id","subjectId":"test-subject-id","displayName":"Snapshot","isGuest":false,"applicationKey":"nqrb"}}""",
+                        HttpStatusCode.OK,
+                        headersOf(HttpHeaders.ContentType, "application/json"),
+                    )
+                }
+                "/api/mobile/nqrb/identity/logout" -> {
+                    assertEquals("Bearer renewed-access", request.headers[HttpHeaders.Authorization])
+                    respond("", HttpStatusCode.NoContent)
+                }
+                else -> error("Unexpected request")
+            }
+        }
+        val api = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault)
+
+        val refresh = async { api.restore() }
+        refreshStarted.await()
+        val logout = async { api.logout() }
+        runCurrent()
+        releaseRefresh.complete(Unit)
+        refresh.await()
+        logout.await()
+
+        assertEquals(null, vault.value)
     }
 
     private class RecordingSessionVault(var value: MobileSession?) : SessionVault {

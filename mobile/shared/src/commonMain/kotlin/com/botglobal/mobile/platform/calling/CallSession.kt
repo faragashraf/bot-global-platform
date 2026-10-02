@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -126,13 +128,18 @@ sealed interface CallPlatformAction {
 
 interface CallPlatformLifecycle {
     val actions: Flow<CallPlatformAction> get() = emptyFlow()
+    suspend fun presentIncoming(callId: CallId, participant: CallParticipant) {
+        start(callId, participant, CallDirection.Incoming)
+    }
     suspend fun start(callId: CallId, participant: CallParticipant, direction: CallDirection)
+    fun setRingback(active: Boolean) = Unit
     suspend fun markActive()
     suspend fun requestRoute(route: CallAudioRoute): CallAudioRoute
     suspend fun end(reason: CallTerminationReason)
 }
 
 object UnavailableCallPlatformLifecycle : CallPlatformLifecycle {
+    override suspend fun presentIncoming(callId: CallId, participant: CallParticipant) = Unit
     override suspend fun start(callId: CallId, participant: CallParticipant, direction: CallDirection) = Unit
     override suspend fun markActive() = Unit
     override suspend fun requestRoute(route: CallAudioRoute) = CallAudioRoute.System
@@ -149,6 +156,7 @@ class CallSessionController(
 ) {
     private val operation = Mutex()
     private val mutableState = MutableStateFlow(CallSessionSnapshot())
+    private val presentedIncomingCallId = MutableStateFlow<CallId?>(null)
     private var durationJob: Job? = null
     private val usage = CallNetworkUsageAccumulator()
     val state: StateFlow<CallSessionSnapshot> = mutableState.asStateFlow()
@@ -189,8 +197,20 @@ class CallSessionController(
     }
 
     suspend fun connectSignaling() = signaling.connect()
-    suspend fun receiveIncoming(callId: CallId) = signaling.receiveIncoming(callId)
+    suspend fun receiveIncoming(callId: CallId) {
+        if (presentedIncomingCallId.value != callId) {
+            signaling.receiveIncoming(callId)
+            // Keep the FCM callback alive until the system notification and Telecom
+            // presentation have completed, rather than only queueing the event.
+            withTimeout(6_000) { presentedIncomingCallId.first { it == callId } }
+        }
+    }
     suspend fun dismissIncoming(callId: CallId, reason: CallTerminationReason) {
+        // A terminal push is sent to every device on the callee account. The device
+        // that answered must keep its connected call while sibling devices clear ringing.
+        val current = mutableState.value
+        if (current.callId != callId || current.direction != CallDirection.Incoming ||
+            current.state != CallState.Ringing) return
         val terminal = when (reason) {
             CallTerminationReason.Cancelled -> CallState.Cancelled
             CallTerminationReason.Expired, CallTerminationReason.Missed -> CallState.Expired
@@ -253,6 +273,7 @@ class CallSessionController(
             mutableState.value = current.copy(state = CallState.Answering)
             logger("call state=answering")
             signaling.answer(callId)
+            platform.start(callId, participant, CallDirection.Incoming)
             mutableState.value = mutableState.value.copy(state = CallState.Connecting)
             voice.join(callId.value)
             StartCallResult.Started(callId)
@@ -341,6 +362,9 @@ class CallSessionController(
             VoiceRoomState.Reconnecting -> CallState.Reconnecting
             VoiceRoomState.Failed, VoiceRoomState.Unavailable -> CallState.Failed
         }
+        if (next != current.state) {
+            platform.setRingback(current.direction == CallDirection.Outgoing && next == CallState.Ringing)
+        }
         val becameActive = next == CallState.Active && current.state != CallState.Active
         val activeTransitionAtEpochMillis = if (becameActive) nowEpochMillis() else null
         val activeSinceEpochMillis = if (becameActive) {
@@ -394,7 +418,7 @@ class CallSessionController(
         )
     }
 
-    private fun onIncomingOffered(event: CallSignalingEvent.IncomingOffered) {
+    private suspend fun onIncomingOffered(event: CallSignalingEvent.IncomingOffered) {
         val current = mutableState.value
         if (current.callId == event.callId) {
             logger("duplicate incoming call ignored")
@@ -412,10 +436,9 @@ class CallSessionController(
             state = CallState.Ringing,
         )
         usage.reset()
-        scope.launch {
-            runCatching { platform.start(event.callId, event.caller, CallDirection.Incoming) }
-                .onFailure { terminalFromRemote(event.callId, CallState.Failed, CallTerminationReason.Failed) }
-        }
+        runCatching { platform.presentIncoming(event.callId, event.caller) }
+            .onSuccess { presentedIncomingCallId.value = event.callId }
+            .onFailure { terminalFromRemote(event.callId, CallState.Failed, CallTerminationReason.Failed) }
     }
 
     private suspend fun terminalFromRemote(callId: CallId, state: CallState, reason: CallTerminationReason): Unit = operation.withLock {

@@ -12,7 +12,8 @@ internal sealed class CallExpiryBackgroundService(
     IHubContext<CallingHub> hub,
     IServiceScopeFactory scopes,
     TimeProvider timeProvider,
-    ILogger<CallExpiryBackgroundService> logger) : BackgroundService
+    ILogger<CallExpiryBackgroundService> logger,
+    NqrbGuestCallInviteService? guestInvites = null) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -27,11 +28,13 @@ internal sealed class CallExpiryBackgroundService(
     {
         foreach (var session in sessions.Expire(now))
         {
+            if (session.IsGuestCall) guestInvites?.Complete(session.GuestInviteId);
             await using var scope = scopes.CreateAsyncScope();
             try
             {
                 var activity = scope.ServiceProvider.GetService<ICallActivityService>();
-                if (activity is not null) await activity.FinishAsync(session, now, cancellationToken);
+                if (activity is not null)
+                    await activity.FinishAsync(session, now, cancellationToken);
             }
             catch (Exception error) when (error is not OperationCanceledException)
             {

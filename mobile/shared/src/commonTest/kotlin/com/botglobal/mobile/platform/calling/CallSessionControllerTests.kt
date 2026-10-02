@@ -17,6 +17,21 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class CallSessionControllerTests {
     @Test
+    fun outgoing_ringback_follows_waiting_state_and_stops_when_media_connects() = runTest {
+        val fixture = fixture(backgroundScope)
+        fixture.session.start(request())
+        fixture.voice.emit(VoiceRoomState.WaitingForPeer)
+        runCurrent()
+        assertEquals(CallState.Ringing, fixture.session.state.value.state)
+        assertEquals(listOf(true), fixture.platform.ringbackEvents)
+
+        fixture.voice.emit(VoiceRoomState.Connected)
+        runCurrent()
+        assertEquals(CallState.Active, fixture.session.state.value.state)
+        assertEquals(listOf(true, false), fixture.platform.ringbackEvents)
+    }
+
+    @Test
     fun lifecycle_is_authoritative_and_independent_of_ui_observers() = runTest {
         val fixture = fixture(backgroundScope)
         assertEquals(CallState.Idle, fixture.session.state.value.state)
@@ -226,9 +241,45 @@ class CallSessionControllerTests {
         assertEquals(CallDirection.Incoming, fixture.session.state.value.direction)
         assertEquals(CallState.Ringing, fixture.session.state.value.state)
         assertIs<StartCallResult.Started>(fixture.session.acceptIncoming())
-        assertEquals(listOf("answer", "join"), fixture.operationOrder)
+        assertEquals(listOf("answer", "platform_start_incoming", "join"), fixture.operationOrder)
+        assertEquals(1, fixture.platform.presentCount)
+        assertEquals(1, fixture.platform.startCount)
         assertEquals(1, fixture.signaling.answers)
         assertEquals(1, fixture.voice.joinCount)
+    }
+
+    @Test
+    fun answered_device_ignores_terminal_push_sent_to_other_devices() = runTest {
+        val fixture = fixture(backgroundScope)
+        runCurrent()
+        val callId = CallId("incoming")
+        fixture.signaling.mutableEvents.emit(
+            CallSignalingEvent.IncomingOffered(callId, "nqrb", CallParticipant("caller", "Caller")),
+        )
+        runCurrent()
+        assertIs<StartCallResult.Started>(fixture.session.acceptIncoming())
+
+        fixture.session.dismissIncoming(callId, CallTerminationReason.Cancelled)
+
+        assertEquals(CallState.Connecting, fixture.session.state.value.state)
+        assertEquals(0, fixture.platform.endCount)
+        assertEquals(0, fixture.voice.leaves)
+    }
+
+    @Test
+    fun sibling_device_clears_ringing_when_terminal_push_arrives() = runTest {
+        val fixture = fixture(backgroundScope)
+        runCurrent()
+        val callId = CallId("incoming")
+        fixture.signaling.mutableEvents.emit(
+            CallSignalingEvent.IncomingOffered(callId, "nqrb", CallParticipant("caller", "Caller")),
+        )
+        runCurrent()
+
+        fixture.session.dismissIncoming(callId, CallTerminationReason.Cancelled)
+
+        assertEquals(CallState.Cancelled, fixture.session.state.value.state)
+        assertEquals(1, fixture.platform.endCount)
     }
 
     @Test
@@ -259,7 +310,8 @@ class CallSessionControllerTests {
         runCurrent()
 
         assertEquals(CallState.Ringing, fixture.session.state.value.state)
-        assertEquals(1, fixture.platform.startCount)
+        assertEquals(1, fixture.platform.presentCount)
+        assertEquals(0, fixture.platform.startCount)
         assertEquals(0, fixture.signaling.ends)
     }
 
@@ -288,7 +340,8 @@ class CallSessionControllerTests {
         assertEquals(0, fixture.signaling.answers)
         assertEquals(0, fixture.voice.joinCount)
         assertEquals(0, fixture.voice.leaves)
-        assertEquals(1, fixture.platform.startCount)
+        assertEquals(1, fixture.platform.presentCount)
+        assertEquals(0, fixture.platform.startCount)
         assertEquals(listOf(CallTerminationReason.Rejected), fixture.platform.endReasons)
     }
 
@@ -313,6 +366,30 @@ class CallSessionControllerTests {
         assertEquals(0, fixture.signaling.ends)
         assertEquals(0, fixture.voice.joinCount)
         assertEquals(listOf(CallTerminationReason.Rejected), fixture.platform.endReasons)
+    }
+
+    @Test
+    fun system_answer_action_accepts_incoming_call_and_starts_media_once() = runTest {
+        val fixture = fixture(backgroundScope)
+        runCurrent()
+        fixture.signaling.mutableEvents.emit(
+            CallSignalingEvent.IncomingOffered(
+                CallId("incoming"),
+                "nqrb",
+                CallParticipant("caller", "Caller"),
+            ),
+        )
+        runCurrent()
+
+        fixture.platform.events.emit(CallPlatformAction.Answer)
+        runCurrent()
+
+        assertEquals(CallState.Connecting, fixture.session.state.value.state)
+        assertEquals(listOf("answer", "platform_start_incoming", "join"), fixture.operationOrder)
+        assertEquals(1, fixture.platform.presentCount)
+        assertEquals(1, fixture.platform.startCount)
+        assertEquals(1, fixture.signaling.answers)
+        assertEquals(1, fixture.voice.joinCount)
     }
 
     @Test
@@ -352,7 +429,8 @@ class CallSessionControllerTests {
         runCurrent()
 
         assertEquals(CallId("first"), fixture.session.state.value.callId)
-        assertEquals(1, fixture.platform.startCount)
+        assertEquals(1, fixture.platform.presentCount)
+        assertEquals(0, fixture.platform.startCount)
         assertEquals(1, fixture.signaling.ends)
     }
 
@@ -363,7 +441,7 @@ class CallSessionControllerTests {
         val operationOrder = mutableListOf<String>()
         val signaling = FakeSignaling(operationOrder)
         val voice = FakeVoice(operationOrder)
-        val platform = FakePlatform()
+        val platform = FakePlatform(operationOrder)
         return Fixture(
             CallSessionController(scope, signaling, voice, platform, nowEpochMillis = nowEpochMillis),
             signaling,
@@ -437,17 +515,24 @@ class CallSessionControllerTests {
         }
     }
 
-    private class FakePlatform : CallPlatformLifecycle {
+    private class FakePlatform(private val operationOrder: MutableList<String>) : CallPlatformLifecycle {
         val events = MutableSharedFlow<CallPlatformAction>(extraBufferCapacity = 2)
         override val actions = events
         var activeCount = 0
         var endCount = 0
+        var presentCount = 0
         var startCount = 0
         var failStart = false
         var appliedRoute: CallAudioRoute? = null
         val endReasons = mutableListOf<CallTerminationReason>()
+        val ringbackEvents = mutableListOf<Boolean>()
+        override fun setRingback(active: Boolean) { ringbackEvents += active }
+        override suspend fun presentIncoming(callId: CallId, participant: CallParticipant) {
+            presentCount++
+        }
         override suspend fun start(callId: CallId, participant: CallParticipant, direction: CallDirection) {
             startCount++
+            operationOrder += "platform_start_${direction.name.lowercase()}"
             if (failStart) error("platform unavailable")
         }
         override suspend fun markActive() { activeCount++ }

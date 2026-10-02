@@ -96,6 +96,22 @@ class CallingDirectoryControllerTests {
         assertEquals(CallingDirectorySnapshot(), controller.state.value)
     }
 
+    @Test
+    fun clear_discards_a_delayed_response_from_the_previous_account() = runTest {
+        val delayed = CompletableDeferred<List<CallableParticipant>>()
+        val controller = CallingDirectoryController(object : CallingDirectory {
+            override suspend fun loadCallableParticipants() = delayed.await()
+        })
+
+        backgroundScope.launch { controller.refresh("old-account") }
+        runCurrent()
+        controller.clear()
+        delayed.complete(listOf(CallableParticipant("old-contact", "Old contact")))
+        runCurrent()
+
+        assertEquals(CallingDirectorySnapshot(), controller.state.value)
+    }
+
     private class FixedDirectory(
         private val participants: List<CallableParticipant>,
     ) : CallingDirectory {

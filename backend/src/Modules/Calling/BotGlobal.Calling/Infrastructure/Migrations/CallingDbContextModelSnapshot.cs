@@ -87,6 +87,11 @@ namespace BotGlobal.Calling.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("EndedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<bool>("IsGuestCall")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Outcome")
                         .HasMaxLength(16)
                         .IsUnicode(false)
@@ -140,6 +145,95 @@ namespace BotGlobal.Calling.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("CK_CallUsageReports_NonNegative", "[BytesSent] >= 0 AND [BytesReceived] >= 0 AND [ConnectedDurationSeconds] >= 0");
                         });
+                });
+
+            modelBuilder.Entity("BotGlobal.Calling.Domain.NqrbBlockedAccount", b =>
+                {
+                    b.Property<string>("ApplicationKey")
+                        .HasMaxLength(80)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(80)");
+
+                    b.Property<Guid>("OwnerMembershipId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BlockedMembershipId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("ApplicationKey", "OwnerMembershipId", "BlockedMembershipId");
+
+                    b.HasIndex("ApplicationKey", "BlockedMembershipId");
+
+                    b.ToTable("NqrbBlockedAccounts", "calling");
+                });
+
+            modelBuilder.Entity("BotGlobal.Calling.Domain.NqrbContactEdge", b =>
+                {
+                    b.Property<string>("ApplicationKey")
+                        .HasMaxLength(80)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(80)");
+
+                    b.Property<Guid>("OwnerMembershipId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ContactMembershipId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Nickname")
+                        .HasMaxLength(80)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.HasKey("ApplicationKey", "OwnerMembershipId", "ContactMembershipId");
+
+                    b.HasIndex("ApplicationKey", "ContactMembershipId");
+
+                    b.HasIndex("ApplicationKey", "OwnerMembershipId", "CreatedAtUtc", "ContactMembershipId");
+
+                    b.ToTable("NqrbContactEdges", "calling");
+                });
+
+            modelBuilder.Entity("BotGlobal.Calling.Domain.NqrbContactInvite", b =>
+                {
+                    b.Property<string>("ApplicationKey")
+                        .HasMaxLength(80)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(80)");
+
+                    b.Property<string>("CodeHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTimeOffset?>("ClaimedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ClaimedByMembershipId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("IssuerMembershipId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("ApplicationKey", "CodeHash");
+
+                    b.HasIndex("ApplicationKey", "ClaimedByMembershipId");
+
+                    b.HasIndex("ApplicationKey", "IssuerMembershipId", "ExpiresAtUtc");
+
+                    b.ToTable("NqrbContactInvites", "calling");
                 });
 
             modelBuilder.Entity("BotGlobal.Calling.Domain.UsageCounterPeriod", b =>

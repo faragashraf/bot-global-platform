@@ -11,6 +11,7 @@ internal sealed class CallActivityService(
     CallingDbContext db,
     IPlatformClientApplicationResolver applications,
     IApplicationMembershipActivityReader membershipActivity,
+    INqrbCallEligibilityService nqrbEligibility,
     CallingAccountDataEraser accountDataEraser,
     TimeProvider clock) : ICallActivityService
 {
@@ -25,12 +26,14 @@ internal sealed class CallActivityService(
             return;
         }
         var application = await RequireApplicationAsync(session.ApplicationKey, cancellationToken);
-        var call = new CallRecord(session.CallId, application.PlatformClientId, session.ApplicationKey, session.CreatedAtUtc);
+        var call = new CallRecord(session.CallId, application.PlatformClientId, session.ApplicationKey,
+            session.CreatedAtUtc, session.IsGuestCall);
         call.Participants.Add(new CallParticipantRecord(call.Id, session.CallerMembershipId, CallParticipantRole.Initiator, session.CallerDisplayName));
         call.Participants.Add(new CallParticipantRecord(call.Id, session.CalleeMembershipId, CallParticipantRole.Recipient, session.CalleeDisplayName));
         db.Calls.Add(call);
         await db.SaveChangesAsync(cancellationToken);
-        await RequireCurrentPeriodAsync(application.PlatformClientId, session.CallerMembershipId, cancellationToken);
+        if (!session.IsGuestCall)
+            await RequireCurrentPeriodAsync(application.PlatformClientId, session.CallerMembershipId, cancellationToken);
         await RequireCurrentPeriodAsync(application.PlatformClientId, session.CalleeMembershipId, cancellationToken);
         await EnsureParticipantsRemainActiveAsync(session, cancellationToken);
     }
@@ -68,13 +71,29 @@ internal sealed class CallActivityService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<CallHistoryPage> ListAsync(string applicationKey, Guid membershipId, int page, int pageSize, CancellationToken cancellationToken)
+    public async Task<CallHistoryPage> ListAsync(
+        string applicationKey,
+        Guid membershipId,
+        int page,
+        int pageSize,
+        CallHistoryFilter filter,
+        CancellationToken cancellationToken)
     {
         var application = await RequireApplicationAsync(applicationKey, cancellationToken);
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 50);
         var query = db.Calls.AsNoTracking()
-            .Where(call => call.ApplicationId == application.PlatformClientId && call.Participants.Any(p => p.MembershipId == membershipId))
-            .OrderByDescending(call => call.CreatedAtUtc)
+            .Where(call => call.ApplicationId == application.PlatformClientId && call.Participants.Any(p => p.MembershipId == membershipId));
+        query = filter switch
+        {
+            CallHistoryFilter.Incoming => query.Where(call => call.Participants.Any(p => p.MembershipId == membershipId && p.Role == CallParticipantRole.Recipient)),
+            CallHistoryFilter.Outgoing => query.Where(call => call.Participants.Any(p => p.MembershipId == membershipId && p.Role == CallParticipantRole.Initiator)),
+            CallHistoryFilter.Missed => query.Where(call => call.Participants.Any(p => p.MembershipId == membershipId && p.Role == CallParticipantRole.Recipient) &&
+                call.Outcome != null && (call.Outcome == DurableCallOutcome.Missed ||
+                    call.Outcome == DurableCallOutcome.Cancelled ||
+                    call.Outcome == DurableCallOutcome.Expired)),
+            _ => query
+        };
+        query = query.OrderByDescending(call => call.CreatedAtUtc)
             .ThenByDescending(call => call.Id);
         var rows = await query.Skip((page - 1) * pageSize).Take(pageSize + 1)
             .Select(call => new
@@ -84,11 +103,32 @@ internal sealed class CallActivityService(
                 Other = call.Participants.Where(p => p.MembershipId != membershipId).OrderBy(p => p.Id).First(),
                 Usage = call.UsageReports.SingleOrDefault(u => u.MembershipId == membershipId)
             }).ToListAsync(cancellationToken);
-        return new CallHistoryPage(rows.Take(pageSize).Select(x => new CallHistoryItem(
-            x.Call.Id, x.Self.Role == CallParticipantRole.Initiator ? "outgoing" : "incoming",
-            x.Other.DisplayNameSnapshot, OutcomeName(x.Call.Outcome, x.Self.Role), x.Call.CreatedAtUtc,
-            x.Usage == null ? null : x.Usage.ConnectedDurationSeconds,
-            x.Usage == null ? null : x.Usage.BytesSent + x.Usage.BytesReceived)).ToArray(), page, pageSize, rows.Count > pageSize);
+        var capabilitiesByCounterpart = applicationKey == BotGlobalApplications.Nqrb
+            ? await nqrbEligibility.EvaluateManyAsync(
+                membershipId,
+                rows.Take(pageSize).Where(row => !row.Call.IsGuestCall)
+                    .Select(row => row.Other.MembershipId).Distinct().ToArray(),
+                cancellationToken)
+            : new Dictionary<Guid, NqrbCallEligibilityResult>();
+        var items = new List<CallHistoryItem>(pageSize);
+        foreach (var row in rows.Take(pageSize))
+        {
+            var capabilities = applicationKey == BotGlobalApplications.Nqrb && !row.Call.IsGuestCall
+                ? capabilitiesByCounterpart.GetValueOrDefault(row.Other.MembershipId)
+                : null;
+            items.Add(new CallHistoryItem(
+                row.Call.Id, row.Self.Role == CallParticipantRole.Initiator ? "outgoing" : "incoming",
+                row.Other.DisplayNameSnapshot, OutcomeName(row.Call.Outcome, row.Self.Role), row.Call.CreatedAtUtc,
+                row.Usage == null ? null : row.Usage.ConnectedDurationSeconds,
+                row.Usage == null ? null : row.Usage.BytesSent + row.Usage.BytesReceived,
+                row.Call.IsGuestCall,
+                capabilities?.IsSavedContact,
+                applicationKey == BotGlobalApplications.Nqrb && !row.Call.IsGuestCall
+                    ? row.Other.MembershipId : null,
+                capabilities?.CanCall ?? false,
+                capabilities?.CanAddContact ?? false));
+        }
+        return new CallHistoryPage(items, page, pageSize, rows.Count > pageSize);
     }
 
     public async Task<CallHistoryDetail?> DetailAsync(string applicationKey, Guid membershipId, Guid callId, CancellationToken cancellationToken)
@@ -98,12 +138,20 @@ internal sealed class CallActivityService(
             .SingleOrDefaultAsync(x => x.Id == callId && x.ApplicationId == application.PlatformClientId && x.Participants.Any(p => p.MembershipId == membershipId), cancellationToken);
         if (call is null) return null;
         var self = call.Participants.Single(x => x.MembershipId == membershipId);
+        var other = call.Participants.First(x => x.MembershipId != membershipId);
         var usage = call.UsageReports.SingleOrDefault(x => x.MembershipId == membershipId);
+        var capabilities = applicationKey == BotGlobalApplications.Nqrb && !call.IsGuestCall
+            ? await nqrbEligibility.EvaluateAsync(membershipId, other.MembershipId, cancellationToken)
+            : null;
         return new CallHistoryDetail(call.Id, self.Role == CallParticipantRole.Initiator ? "outgoing" : "incoming",
-            call.Participants.Where(x => x.MembershipId != membershipId).Select(x => x.DisplayNameSnapshot).ToArray(),
+            [other.DisplayNameSnapshot],
             OutcomeName(call.Outcome, self.Role), call.EndReason, call.CreatedAtUtc, call.AnsweredAtUtc, call.EndedAtUtc,
             RingingDurationSeconds(call),
-            usage?.ConnectedDurationSeconds, usage?.BytesSent, usage?.BytesReceived);
+            usage?.ConnectedDurationSeconds, usage?.BytesSent, usage?.BytesReceived, call.IsGuestCall,
+            capabilities?.IsSavedContact,
+            applicationKey == BotGlobalApplications.Nqrb && !call.IsGuestCall ? other.MembershipId : null,
+            capabilities?.CanCall ?? false,
+            capabilities?.CanAddContact ?? false);
     }
 
     public async Task<FinalizeUsageResult> FinalizeUsageAsync(string applicationKey, Guid membershipId, Guid callId, UsageSummary usage, CancellationToken cancellationToken)
@@ -186,6 +234,12 @@ internal sealed class CallActivityService(
         CallSessionRegistry.Session session,
         CancellationToken cancellationToken)
     {
+        if (session.IsGuestCall)
+        {
+            await EnsureMembershipRemainsActiveAsync(
+                session.ApplicationKey, session.CalleeMembershipId, cancellationToken);
+            return;
+        }
         var callerActive = await membershipActivity.IsActiveAsync(
             session.CallerMembershipId,
             session.ApplicationKey,

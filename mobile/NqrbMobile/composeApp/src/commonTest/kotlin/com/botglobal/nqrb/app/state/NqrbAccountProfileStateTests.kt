@@ -254,7 +254,7 @@ class NqrbAccountProfileStateTests {
 
         state.signInWithGoogle()
 
-        assertEquals(NqrbDestination.ContactsOnboarding, state.navigation.current)
+        assertEquals(NqrbDestination.Home, state.navigation.current)
         assertEquals(emptyList(), profiles.requests)
         assertIs<FederatedAuthenticationState.SignedIn>(state.identity.state.value)
     }

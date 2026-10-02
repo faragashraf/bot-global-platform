@@ -55,6 +55,20 @@ public sealed class CallingIceConfigurationProvider(
         return CreateLegacyConfiguration(configured, membershipId);
     }
 
+    public CallingIceConfiguration CreateStunOnly(Guid membershipId)
+    {
+        var configured = options.Value;
+        var expires = timeProvider.GetUtcNow().AddMinutes(configured.CredentialLifetimeMinutes);
+        var stunUrls = configured.StunUrls
+            .Where(url => url.StartsWith("stun:", StringComparison.OrdinalIgnoreCase) ||
+                          url.StartsWith("stuns:", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        IReadOnlyList<CallingIceServer> servers = stunUrls.Length > 0
+            ? [new CallingIceServer(stunUrls, null, null)]
+            : [];
+        return new CallingIceConfiguration(servers, expires);
+    }
+
     public async Task<CallingIceConfiguration> CreateAsync(Guid membershipId, CancellationToken cancellationToken = default)
     {
         var configured = options.Value;

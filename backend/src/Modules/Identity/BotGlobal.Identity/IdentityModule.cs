@@ -84,6 +84,7 @@ public static class IdentityModule
         services.AddScoped<INqrbWebGoogleIdentityValidator, NqrbWebGoogleIdentityValidator>();
         services.AddScoped<IMobileFederatedIdentityService, MobileFederatedIdentityService>();
         services.AddScoped<ICallingParticipantDirectory, CallingParticipantDirectory>();
+        services.AddScoped<ICallingAccountDirectory, CallingAccountDirectory>();
         services.AddScoped<IApplicationAccountDeletionService, ApplicationAccountDeletionService>();
         services.AddScoped<IPublicNqrbAccountDeletionService, PublicNqrbAccountDeletionService>();
         services.AddScoped<IApplicationMembershipActivityReader, ApplicationMembershipActivityReader>();

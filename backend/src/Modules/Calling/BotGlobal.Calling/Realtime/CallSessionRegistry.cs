@@ -40,6 +40,31 @@ public sealed class CallSessionRegistry
         }
     }
 
+    public Started StartGuestInvite(
+        CallingParticipantDescriptor host,
+        CallingParticipantDescriptor guest,
+        Guid inviteId,
+        DateTimeOffset now,
+        TimeSpan lifetime)
+    {
+        lock (gate)
+        {
+            ExpireLocked(now);
+            if (!host.IsActive || !guest.IsActive ||
+                !string.Equals(host.ApplicationKey, guest.ApplicationKey, StringComparison.Ordinal))
+                throw Error("call_peer_unavailable");
+            if (host.MembershipId == guest.MembershipId) throw Error("call_self_not_allowed");
+            if (sessions.Values.Any(x => x.IsLive && x.HasParticipant(host.MembershipId))) throw Error("call_peer_busy");
+            if (sessions.Values.Any(x => x.IsLive && x.HasParticipant(guest.MembershipId))) throw Error("call_active_exists");
+            var session = new Session(Guid.NewGuid(), host.ApplicationKey, guest.MembershipId, host.MembershipId,
+                guest.SubjectId, host.SubjectId, guest.DisplayName, host.DisplayName, now, now.Add(lifetime),
+                isGuestCall: true, guestInviteId: inviteId);
+            sessions.Add(session.CallId, session);
+            var caller = new ConnectedParticipant(string.Empty, guest.MembershipId, guest.ApplicationKey, guest.SubjectId, guest.DisplayName);
+            return new Started(session, caller, ConnectionsFor(host.MembershipId, host.ApplicationKey));
+        }
+    }
+
     // Compatibility entry point for the original connected-peer calling contract.
     public Started Start(string connectionId, Guid calleeMembershipId)
     {
@@ -100,6 +125,16 @@ public sealed class CallSessionRegistry
     }
 
     public void RequireParticipant(string connectionId, Guid callId) { lock (gate) { var c = RequireConnection(connectionId); RequireSession(callId).RequireParticipant(c.MembershipId, c.ApplicationKey); } }
+    public Session RequireSessionForParticipant(string connectionId, Guid callId)
+    {
+        lock (gate)
+        {
+            var connection = RequireConnection(connectionId);
+            var session = RequireSession(callId);
+            session.RequireParticipant(connection.MembershipId, connection.ApplicationKey);
+            return session;
+        }
+    }
     public void RequireLiveIceParticipant(string connectionId, Guid callId, DateTimeOffset now)
     {
         lock (gate)
@@ -144,6 +179,41 @@ public sealed class CallSessionRegistry
         lock (gate) return connections.Values.Any(x =>
             x.MembershipId == membershipId &&
             string.Equals(x.ApplicationKey, applicationKey, StringComparison.Ordinal));
+    }
+    public bool IsLiveCall(Guid callId)
+    {
+        lock (gate) return sessions.TryGetValue(callId, out var session) && session.IsLive;
+    }
+    public CallStatus? GuestCallStatus(Guid callId, Guid inviteId)
+    {
+        lock (gate)
+            return sessions.TryGetValue(callId, out var session) &&
+                session.IsGuestCall && session.GuestInviteId == inviteId
+                    ? session.Status
+                    : null;
+    }
+    public Session RequireGuestInviteSession(Guid callId, Guid inviteId, Guid hostMembershipId)
+    {
+        lock (gate)
+        {
+            var session = RequireSession(callId);
+            if (!session.IsGuestCall || session.GuestInviteId != inviteId ||
+                session.CalleeMembershipId != hostMembershipId || !session.IsLive)
+                throw Error("call_session_unavailable");
+            return session;
+        }
+    }
+    public void CancelGuestInvite(Guid callId, Guid inviteId)
+    {
+        lock (gate)
+        {
+            if (!sessions.TryGetValue(callId, out var session) ||
+                !session.IsGuestCall || session.GuestInviteId != inviteId || !session.IsLive)
+                return;
+            session.Status = CallStatus.Cancelled;
+            session.TerminationReason = "failed";
+            session.ClearParticipants();
+        }
     }
     public IReadOnlyList<Transition> BlockMembership(Guid membershipId, string applicationKey)
     {
@@ -217,7 +287,8 @@ public sealed class CallSessionRegistry
 
     public sealed class Session(Guid callId, string applicationKey, Guid callerMembershipId, Guid calleeMembershipId,
         string callerSubjectId, string calleeSubjectId, string callerDisplayName, string calleeDisplayName,
-        DateTimeOffset createdAtUtc, DateTimeOffset expiresAtUtc)
+        DateTimeOffset createdAtUtc, DateTimeOffset expiresAtUtc,
+        bool isGuestCall = false, Guid? guestInviteId = null)
     {
         private readonly Dictionary<Guid, JoinedParticipant> participants = [];
         public Guid CallId { get; } = callId;
@@ -230,6 +301,8 @@ public sealed class CallSessionRegistry
         public string CalleeDisplayName { get; } = calleeDisplayName;
         public DateTimeOffset CreatedAtUtc { get; } = createdAtUtc;
         public DateTimeOffset ExpiresAtUtc { get; } = expiresAtUtc;
+        public bool IsGuestCall { get; } = isGuestCall;
+        public Guid? GuestInviteId { get; } = guestInviteId;
         public CallStatus Status { get; set; } = CallStatus.Ringing;
         public string? TerminationReason { get; internal set; }
         public bool IsLive => Status is CallStatus.Ringing or CallStatus.Answered;

@@ -14,6 +14,7 @@ using BotGlobal.Pairing.Security;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace BotGlobal.UnitTests.Compliance;
 
@@ -123,6 +124,10 @@ public sealed class NqrbAccountDeletionHandlerTests
         db.UsagePeriods.AddRange(
             new UsageCounterPeriod(appId, targetId, now, UsagePeriodResetReason.Initial),
             new UsageCounterPeriod(appId, unrelatedId, now, UsagePeriodResetReason.Initial));
+        db.NqrbBlockedAccounts.AddRange(
+            new NqrbBlockedAccount("nqrb", targetId, otherId, now),
+            new NqrbBlockedAccount("nqrb", otherId, targetId, now),
+            new NqrbBlockedAccount("nqrb", unrelatedId, otherId, now));
         await db.SaveChangesAsync();
 
         var sessions = new CallSessionRegistry();
@@ -131,8 +136,13 @@ public sealed class NqrbAccountDeletionHandlerTests
         sessions.Start("target-connection", new CallingParticipantDescriptor(
             otherId, "nqrb", $"user:{otherId:N}", "Other", true), now, TimeSpan.FromMinutes(1));
         var activity = new RecordingCallActivity();
+        var guestInvites = new NqrbGuestCallInviteService(
+            sessions,
+            Options.Create(new NqrbGuestCallInviteOptions()),
+            TimeProvider.System);
         var handler = new BotGlobal.Calling.Application.CallingAccountDeletionHandler(
             sessions,
+            guestInvites,
             activity,
             new RecordingHubContext(),
             new CallingAccountDataEraser(db),
@@ -157,6 +167,55 @@ public sealed class NqrbAccountDeletionHandlerTests
         Assert.Contains(retained.UsageReports, item => item.MembershipId == otherId);
         Assert.Empty(await db.UsagePeriods.Where(item => item.MembershipId == targetId).ToListAsync());
         Assert.Single(await db.UsagePeriods.Where(item => item.MembershipId == unrelatedId).ToListAsync());
+        Assert.Single(await db.NqrbBlockedAccounts.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Calling_deletion_completes_active_guest_call_without_durable_finish()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new CallingDbContext(new DbContextOptionsBuilder<CallingDbContext>()
+            .UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var host = Identity(TargetMembershipId, "Host");
+        var now = DateTimeOffset.UtcNow;
+        var sessions = new CallSessionRegistry();
+        sessions.Connected("host-connection", host);
+        var guestInvites = new NqrbGuestCallInviteService(
+            sessions,
+            Options.Create(new NqrbGuestCallInviteOptions()),
+            TimeProvider.System);
+        var invite = guestInvites.CreateHostInvite(host);
+        var accepted = guestInvites.Accept(invite.Capability, "Browser guest", true, "request-1").Value!;
+        var authenticatedGuest = guestInvites.AuthenticateGuestToken(accepted.GuestAccessToken)!;
+        sessions.Connected("guest-connection", authenticatedGuest.Identity);
+        sessions.Answer("host-connection", accepted.CallId, now);
+        var activity = new RecordingCallActivity();
+        var hub = new RecordingHubContext();
+        var handler = new BotGlobal.Calling.Application.CallingAccountDeletionHandler(
+            sessions,
+            guestInvites,
+            activity,
+            hub,
+            new CallingAccountDataEraser(db),
+            TimeProvider.System);
+
+        await handler.DeleteAsync(Scope(), CancellationToken.None);
+        await handler.DeleteAsync(Scope(), CancellationToken.None);
+
+        Assert.False(guestInvites.IsGuestAuthorized(
+            invite.InviteId,
+            authenticatedGuest.Identity.MembershipId,
+            accepted.CallId));
+        Assert.False(sessions.IsLiveCall(accepted.CallId));
+        Assert.Equal(0, activity.Finished);
+        var sent = Assert.Single(hub.Clients.Sent);
+        Assert.Equal("guest-connection", sent.ConnectionId);
+        Assert.Equal("CallEnded", sent.Method);
+        var ended = Assert.IsType<CallEndedEvent>(Assert.Single(sent.Args));
+        Assert.Equal(accepted.CallId, ended.CallId);
+        Assert.Equal("account_deleted", ended.Reason);
     }
 
     [Fact]
@@ -213,7 +272,7 @@ public sealed class NqrbAccountDeletionHandlerTests
         public Task AnswerAsync(CallSessionRegistry.Session session, DateTimeOffset at, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task JoinedAsync(CallSessionRegistry.Session session, Guid membershipId, DateTimeOffset at, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task FinishAsync(CallSessionRegistry.Session session, DateTimeOffset at, CancellationToken cancellationToken) { Finished++; return Task.CompletedTask; }
-        public Task<CallHistoryPage> ListAsync(string applicationKey, Guid membershipId, int page, int pageSize, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<CallHistoryPage> ListAsync(string applicationKey, Guid membershipId, int page, int pageSize, CallHistoryFilter filter, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<CallHistoryDetail?> DetailAsync(string applicationKey, Guid membershipId, Guid callId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<FinalizeUsageResult> FinalizeUsageAsync(string applicationKey, Guid membershipId, Guid callId, UsageSummary usage, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<UsagePeriodView> CurrentPeriodAsync(string applicationKey, Guid membershipId, CancellationToken cancellationToken) => throw new NotSupportedException();
@@ -223,28 +282,37 @@ public sealed class NqrbAccountDeletionHandlerTests
 
     private sealed class RecordingHubContext : IHubContext<CallingHub>
     {
-        public IHubClients Clients { get; } = new RecordingHubClients();
+        public RecordingHubClients Clients { get; } = new();
+        IHubClients IHubContext<CallingHub>.Clients => Clients;
         public IGroupManager Groups { get; } = new RecordingGroups();
     }
 
     private sealed class RecordingHubClients : IHubClients
     {
-        private static readonly IClientProxy Proxy = new RecordingClientProxy();
+        private readonly RecordingClientProxy proxy;
+        public RecordingHubClients() => proxy = new RecordingClientProxy(Sent);
+        public List<SentHubMessage> Sent { get; } = [];
         public IClientProxy All => Proxy;
         public IClientProxy AllExcept(IReadOnlyList<string> excludedConnectionIds) => Proxy;
-        public IClientProxy Client(string connectionId) => Proxy;
+        public IClientProxy Client(string connectionId) => new RecordingClientProxy(Sent, connectionId);
         public IClientProxy Clients(IReadOnlyList<string> connectionIds) => Proxy;
         public IClientProxy Group(string groupName) => Proxy;
         public IClientProxy GroupExcept(string groupName, IReadOnlyList<string> excludedConnectionIds) => Proxy;
         public IClientProxy Groups(IReadOnlyList<string> groupNames) => Proxy;
         public IClientProxy User(string userId) => Proxy;
         public IClientProxy Users(IReadOnlyList<string> userIds) => Proxy;
+        private IClientProxy Proxy => proxy;
     }
 
-    private sealed class RecordingClientProxy : IClientProxy
+    private sealed record SentHubMessage(string? ConnectionId, string Method, object?[] Args);
+
+    private sealed class RecordingClientProxy(List<SentHubMessage> sent, string? connectionId = null) : IClientProxy
     {
-        public Task SendCoreAsync(string method, object?[] args, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
+        public Task SendCoreAsync(string method, object?[] args, CancellationToken cancellationToken = default)
+        {
+            sent.Add(new SentHubMessage(connectionId, method, args));
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingGroups : IGroupManager

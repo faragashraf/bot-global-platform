@@ -1,5 +1,6 @@
 package com.botglobal.mobile.platform.identity
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -108,6 +109,32 @@ class FederatedIdentityController(
                 },
             )
     }
+
+    suspend fun refreshSignedInSession(): MobileSession? {
+        val previous = mutableState.value as? FederatedAuthenticationState.SignedIn
+            ?: return null
+        val restored = try {
+            gateway.restore()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return null
+        }
+        val current = mutableState.value as? FederatedAuthenticationState.SignedIn ?: return null
+        if (current.session != previous.session) {
+            return current.session.takeIf { it.sameAccountAs(previous.session) }
+        }
+        if (restored == null || !restored.sameAccountAs(previous.session)) {
+            mutableState.value = FederatedAuthenticationState.SignedOut
+            return null
+        }
+        mutableState.value = FederatedAuthenticationState.SignedIn(restored)
+        return restored
+    }
+
+    private fun MobileSession.sameAccountAs(other: MobileSession): Boolean =
+        identity.membershipId == other.identity.membershipId &&
+            identity.applicationKey == other.identity.applicationKey
 
     suspend fun signIn(provider: FederatedIdentityProvider) {
         mutableState.value = FederatedAuthenticationState.SigningIn(provider)

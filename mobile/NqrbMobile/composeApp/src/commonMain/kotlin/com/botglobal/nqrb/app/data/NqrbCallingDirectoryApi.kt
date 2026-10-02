@@ -27,7 +27,7 @@ class NqrbCallingDirectoryApi(
     override suspend fun loadCallableParticipants(): List<CallableParticipant> {
         val session = sessionVault.restore()
             ?: throw NqrbCallingDirectoryAuthenticationException()
-        val response = client.get(endpoint("/api/mobile/calling/participants")) {
+        val response = client.get(endpoint("/api/mobile/calling/participants?savedOnly=true")) {
             bearerAuth(session.accessToken)
             accept(ContentType.Application.Json)
         }

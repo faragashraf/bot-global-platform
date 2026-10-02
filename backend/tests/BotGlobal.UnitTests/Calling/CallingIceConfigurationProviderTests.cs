@@ -25,6 +25,24 @@ public sealed class CallingIceConfigurationProviderTests
     }
 
     [Fact]
+    public void Guest_call_ice_configuration_returns_only_configured_stun_servers()
+    {
+        var provider = CreateProvider(
+            new CallingIceOptions {
+                StunUrls = ["stun:stun.example.test:3478", "turn:misconfigured.example.test:3478"],
+                TurnUrls = ["turn:turn.example.test:3478?transport=udp"],
+                TurnRestSecret = "server-side-test-secret",
+            });
+
+        var result = provider.CreateStunOnly(Guid.NewGuid());
+
+        var stun = Assert.Single(result.Servers);
+        Assert.Equal(["stun:stun.example.test:3478"], stun.Urls);
+        Assert.Null(stun.Username);
+        Assert.Null(stun.Credential);
+    }
+
+    [Fact]
     public async Task Turn_rest_credentials_are_short_lived_and_do_not_expose_the_server_secret()
     {
         var now = new DateTimeOffset(2026, 8, 31, 12, 0, 0, TimeSpan.Zero);

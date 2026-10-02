@@ -3,8 +3,13 @@ package com.botglobal.mobile.platform.calling
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class CallActivityControllerTests {
     @Test
     fun history_exposes_ready_empty_detail_and_error_states() = runTest {
@@ -35,7 +40,7 @@ class CallActivityControllerTests {
         val first = CallHistoryItem("new", "outgoing", "Remote", "completed", "2026-09-02T12:00:00Z", 60, 100)
         val second = CallHistoryItem("old", "incoming", "Remote", "missed", "2026-09-01T12:00:00Z", null, null)
         val gateway = object : CallActivityGateway by FakeGateway() {
-            override suspend fun history(page: Int, pageSize: Int) =
+            override suspend fun history(page: Int, pageSize: Int, filter: CallHistoryFilter) =
                 if (page == 1) CallHistoryPage(listOf(first), 1, pageSize, true)
                 else CallHistoryPage(listOf(second), 2, pageSize, false)
         }
@@ -46,6 +51,68 @@ class CallActivityControllerTests {
 
         assertEquals(listOf(first, second), controller.state.value.history)
         assertEquals(2, controller.state.value.historyPage)
+        assertEquals(false, controller.state.value.historyHasMore)
+    }
+
+    @Test
+    fun overlapping_filter_requests_ignore_stale_response() = runTest {
+        val allResponse = CompletableDeferred<CallHistoryPage>()
+        val missedResponse = CompletableDeferred<CallHistoryPage>()
+        val gateway = object : CallActivityGateway by FakeGateway() {
+            override suspend fun history(page: Int, pageSize: Int, filter: CallHistoryFilter) =
+                when (filter) {
+                    CallHistoryFilter.All -> allResponse.await()
+                    CallHistoryFilter.Missed -> missedResponse.await()
+                    else -> error("unexpected filter")
+                }
+        }
+        val controller = CallActivityController(gateway)
+        val stale = CallHistoryItem("all", "outgoing", "Old", "completed", "2026-09-01T12:00:00Z", 60, 100)
+        val fresh = CallHistoryItem("missed", "incoming", "Fresh", "missed", "2026-09-02T12:00:00Z", null, null)
+
+        backgroundScope.launch { controller.loadHistory(CallHistoryFilter.All) }
+        runCurrent()
+        backgroundScope.launch { controller.loadHistory(CallHistoryFilter.Missed) }
+        runCurrent()
+        missedResponse.complete(CallHistoryPage(listOf(fresh), 1, 20, false))
+        runCurrent()
+        allResponse.complete(CallHistoryPage(listOf(stale), 1, 20, false))
+        runCurrent()
+
+        assertEquals(CallHistoryFilter.Missed, controller.state.value.historyFilter)
+        assertEquals(listOf(fresh), controller.state.value.history)
+    }
+
+    @Test
+    fun overlapping_next_page_response_does_not_overwrite_new_filter() = runTest {
+        val first = CallHistoryItem("first", "outgoing", "First", "completed", "2026-09-02T12:00:00Z", 60, 100)
+        val stalePage = CallHistoryItem("stale-page", "outgoing", "Stale", "completed", "2026-09-01T12:00:00Z", 60, 100)
+        val missed = CallHistoryItem("missed", "incoming", "Missed", "missed", "2026-09-03T12:00:00Z", null, null)
+        val nextPageResponse = CompletableDeferred<CallHistoryPage>()
+        val missedResponse = CompletableDeferred<CallHistoryPage>()
+        val gateway = object : CallActivityGateway by FakeGateway() {
+            override suspend fun history(page: Int, pageSize: Int, filter: CallHistoryFilter) =
+                when {
+                    page == 1 && filter == CallHistoryFilter.All -> CallHistoryPage(listOf(first), 1, pageSize, true)
+                    page == 2 && filter == CallHistoryFilter.All -> nextPageResponse.await()
+                    page == 1 && filter == CallHistoryFilter.Missed -> missedResponse.await()
+                    else -> error("unexpected request")
+                }
+        }
+        val controller = CallActivityController(gateway)
+
+        controller.loadHistory(CallHistoryFilter.All)
+        backgroundScope.launch { controller.loadNextHistoryPage() }
+        runCurrent()
+        backgroundScope.launch { controller.loadHistory(CallHistoryFilter.Missed) }
+        runCurrent()
+        missedResponse.complete(CallHistoryPage(listOf(missed), 1, 20, false))
+        runCurrent()
+        nextPageResponse.complete(CallHistoryPage(listOf(stalePage), 2, 20, false))
+        runCurrent()
+
+        assertEquals(CallHistoryFilter.Missed, controller.state.value.historyFilter)
+        assertEquals(listOf(missed), controller.state.value.history)
         assertEquals(false, controller.state.value.historyHasMore)
     }
 
@@ -138,7 +205,7 @@ class CallActivityControllerTests {
         var failHistory = false
         var failFinalize = false
         val finalizeAttempts = mutableListOf<FinalCallUsage>()
-        override suspend fun history(page: Int, pageSize: Int): CallHistoryPage {
+        override suspend fun history(page: Int, pageSize: Int, filter: CallHistoryFilter): CallHistoryPage {
             if (failHistory) error("history unavailable")
             return CallHistoryPage(historyItems, page, pageSize, false)
         }

@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -16,10 +17,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -28,7 +33,11 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -48,21 +57,30 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import kotlin.time.Clock
+import kotlin.time.Instant
 import com.botglobal.mobile.platform.appearance.AppearancePreference
 import com.botglobal.mobile.platform.appearance.ResolvedAppearance
 import com.botglobal.mobile.platform.calling.CallAudioRoute
@@ -77,20 +95,32 @@ import com.botglobal.mobile.platform.calling.CallingParticipantAvailability
 import com.botglobal.mobile.platform.calling.CallActivitySnapshot
 import com.botglobal.mobile.platform.calling.CallActivityLoadState
 import com.botglobal.mobile.platform.calling.CallHistoryDetail
+import com.botglobal.mobile.platform.calling.CallHistoryFilter
+import com.botglobal.mobile.platform.calling.CallHistoryItem
 import com.botglobal.mobile.platform.calling.speakerControlTarget
-import com.botglobal.mobile.platform.contacts.ContactsSnapshot
-import com.botglobal.mobile.platform.contacts.ContactsStatus
-import com.botglobal.mobile.platform.contacts.DeviceContact
 import com.botglobal.mobile.platform.identity.FederatedAuthenticationError
 import com.botglobal.mobile.platform.identity.FederatedAuthenticationState
 import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.nqrb.app.state.NqrbAppState
+import com.botglobal.nqrb.app.state.NqrbContactBookLoadState
+import com.botglobal.nqrb.app.state.NqrbContactBookSnapshot
+import com.botglobal.nqrb.app.state.NqrbContactInviteAcceptState
+import com.botglobal.nqrb.app.state.NqrbContactInviteCreateState
+import com.botglobal.nqrb.app.state.NqrbGuestCallInviteCreateState
+import com.botglobal.nqrb.app.state.NqrbContactMutationState
+import com.botglobal.nqrb.app.state.NqrbBlockState
+import com.botglobal.nqrb.app.state.NqrbContactSearchState
 import com.botglobal.nqrb.app.state.NqrbDestination
+import com.botglobal.nqrb.app.state.NqrbRingtone
 import com.botglobal.nqrb.app.state.NqrbStartupState
 import com.botglobal.nqrb.app.state.NqrbAccountActionState
 import com.botglobal.nqrb.app.state.NqrbAccountProfileState
 import com.botglobal.nqrb.app.config.NqrbPublicSite
+import com.botglobal.nqrb.app.data.NqrbContactInvite
+import com.botglobal.nqrb.app.data.NqrbContact
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 internal enum class NqrbDeletionConfirmation { Closed, Explanation, Final }
 
@@ -106,13 +136,20 @@ internal fun nqrbPublicLinks(strings: NqrbStrings): List<NqrbPublicLink> = listO
 fun NqrbApp(
     appState: NqrbAppState = remember { NqrbAppState() },
     onResolvedAppearanceChanged: (ResolvedAppearance) -> Unit = {},
+    onShareInvite: (String) -> Boolean = { false },
+    onPreviewRingtone: (NqrbRingtone) -> Unit = {},
+    onChoosePhoneRingtone: () -> Unit = {},
+    onNotificationPermissionNeeded: () -> Unit = {},
+    notificationsEnabled: Boolean = true,
+    onOpenNotificationSettings: () -> Unit = {},
+    callTime: (String, String) -> NqrbCallTime = ::basicCallTime,
 ) {
     val locale by appState.locale.state.collectAsState()
     val appearance by appState.appearance.state.collectAsState()
     val backStack by appState.navigation.backStack.collectAsState()
     val authentication by appState.identity.state.collectAsState()
     val startupState by appState.startupState.collectAsState()
-    val contacts by appState.contacts.state.collectAsState()
+    val contactBook by appState.contactBook.state.collectAsState()
     val call by appState.calling.state.collectAsState()
     val callingDirectory by appState.callingDirectory.state.collectAsState()
     val callActivity by appState.callActivity.state.collectAsState()
@@ -128,6 +165,11 @@ fun NqrbApp(
     LaunchedEffect(appState) {
         appState.startup()
     }
+    LaunchedEffect(authentication) {
+        if (authentication is FederatedAuthenticationState.SignedIn) {
+            onNotificationPermissionNeeded()
+        }
+    }
     SideEffect {
         onResolvedAppearanceChanged(appearance.resolved)
     }
@@ -141,16 +183,23 @@ fun NqrbApp(
             NqrbShell(
                 destination = backStack.last(),
                 strings = strings,
+                languageTag = locale.languageTag,
                 appState = appState,
                 layoutDirection = layoutDirection,
                 authentication = authentication,
                 startupState = startupState,
-                contacts = contacts,
+                contactBook = contactBook,
                 call = call,
                 callingDirectory = callingDirectory,
                 callActivity = callActivity,
                 microphoneExplanation = microphoneExplanation,
                 microphoneBlocked = microphoneBlocked,
+                onShareInvite = onShareInvite,
+                onPreviewRingtone = onPreviewRingtone,
+                onChoosePhoneRingtone = onChoosePhoneRingtone,
+                notificationsEnabled = notificationsEnabled,
+                onOpenNotificationSettings = onOpenNotificationSettings,
+                callTime = callTime,
             )
         }
     }
@@ -160,16 +209,23 @@ fun NqrbApp(
 private fun NqrbShell(
     destination: NqrbDestination,
     strings: NqrbStrings,
+    languageTag: String,
     appState: NqrbAppState,
     layoutDirection: LayoutDirection,
     authentication: FederatedAuthenticationState,
     startupState: NqrbStartupState,
-    contacts: ContactsSnapshot,
+    contactBook: NqrbContactBookSnapshot,
     call: CallSessionSnapshot,
     callingDirectory: CallingDirectorySnapshot,
     callActivity: CallActivitySnapshot,
     microphoneExplanation: Boolean,
     microphoneBlocked: Boolean,
+    onShareInvite: (String) -> Boolean,
+    onPreviewRingtone: (NqrbRingtone) -> Unit,
+    onChoosePhoneRingtone: () -> Unit,
+    notificationsEnabled: Boolean,
+    onOpenNotificationSettings: () -> Unit,
+    callTime: (String, String) -> NqrbCallTime,
 ) {
     val colors = LocalNqrbColors.current
     Scaffold(
@@ -192,7 +248,7 @@ private fun NqrbShell(
         ) {
             when {
                 microphoneExplanation -> MicrophoneExplanationScreen(strings, appState)
-                call.state in VisibleCallStates -> InCallScreen(strings, call, appState)
+                call.state in VisibleCallStates -> InCallScreen(strings, call, contactBook, appState)
                 showsRestoringSession(startupState, call.state) -> RestoringSessionScreen(strings, appState)
                 else -> AnimatedContent(destination) { current -> when (current) {
                     NqrbDestination.SignIn -> if (showsGoogleSignIn(startupState, current)) {
@@ -200,22 +256,28 @@ private fun NqrbShell(
                     } else {
                         RestoringSessionScreen(strings, appState)
                     }
-                    NqrbDestination.ContactsOnboarding -> ContactsOnboardingScreen(strings, appState)
                     NqrbDestination.Home -> HomeScreen(
                         strings,
                         appState,
                         callingDirectory,
+                        contactBook,
                         microphoneBlocked,
                     )
                     NqrbDestination.Settings -> SettingsScreen(
                         strings = strings,
+                        languageTag = languageTag,
                         appState = appState,
                         layoutDirection = layoutDirection,
                         activity = callActivity,
+                        onPreviewRingtone = onPreviewRingtone,
+                        onChoosePhoneRingtone = onChoosePhoneRingtone,
+                        notificationsEnabled = notificationsEnabled,
+                        onOpenNotificationSettings = onOpenNotificationSettings,
+                        callTime = callTime,
                     )
-                    NqrbDestination.History -> CallHistoryScreen(strings, appState, callActivity)
-                    NqrbDestination.People -> PeopleScreen(strings, contacts, appState)
-                    NqrbDestination.Profile -> ProfileScreen(strings, appState)
+                    NqrbDestination.History -> CallHistoryScreen(strings, languageTag, appState, callActivity, contactBook, callingDirectory, callTime)
+                    NqrbDestination.People -> PeopleScreen(strings, languageTag, contactBook, callingDirectory, appState, onShareInvite, callTime)
+                    NqrbDestination.Profile -> ProfileScreen(strings, appState, contactBook)
                 } }
             }
         }
@@ -280,24 +342,6 @@ private fun SignInScreen(
 }
 
 @Composable
-private fun ContactsOnboardingScreen(strings: NqrbStrings, appState: NqrbAppState) {
-    val scope = rememberCoroutineScope()
-    BrandedFlowFrame(strings, appState::openSettings) {
-        FlowHero(NqrbGlyph.People, strings.contactsOnboardingTitle, strings.contactsOnboardingBody)
-        InfoNote(strings.contactsStayLocal)
-        Button(
-            modifier = Modifier.fillMaxWidth().height(54.dp),
-            onClick = { scope.launch { appState.allowContacts() } },
-        ) {
-            Text(strings.allowContacts)
-        }
-        TextButton(onClick = appState::skipContacts, modifier = Modifier.fillMaxWidth()) {
-            Text(strings.notNow)
-        }
-    }
-}
-
-@Composable
 private fun BrandedFlowFrame(
     strings: NqrbStrings,
     onSettings: () -> Unit,
@@ -354,94 +398,731 @@ private fun InfoNote(text: String) {
 }
 
 @Composable
-private fun PeopleScreen(strings: NqrbStrings, snapshot: ContactsSnapshot, appState: NqrbAppState) {
-    val scope = rememberCoroutineScope()
+private fun PeopleScreen(
+    strings: NqrbStrings,
+    languageTag: String,
+    contactBook: NqrbContactBookSnapshot,
+    directory: CallingDirectorySnapshot,
+    appState: NqrbAppState,
+    onShareInvite: (String) -> Boolean,
+    callTime: (String, String) -> NqrbCallTime,
+) {
     val colors = LocalNqrbColors.current
+    val inviteRequester = remember { BringIntoViewRequester() }
+    var query by remember { mutableStateOf(contactBook.searchQuery) }
+    var editingContact by remember { mutableStateOf<NqrbContact?>(null) }
+    var nicknameDraft by remember { mutableStateOf("") }
+    var nicknameSaving by remember { mutableStateOf(false) }
+    var nicknameSaveFailed by remember { mutableStateOf(false) }
+    var blockingMembershipId by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(query, appState) {
+        delay(350)
+        appState.searchNqrbUsers(query)
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
         verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
     ) {
         ProductHeader(strings, appState::openSettings)
-        Text(strings.peopleTitle, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
-        when (snapshot.status) {
-            ContactsStatus.Available -> snapshot.contacts.forEach { ContactCard(it) }
-            ContactsStatus.Empty -> InfoNote(strings.contactsEmpty)
-            ContactsStatus.Denied -> ContactsPermissionState(strings.contactsDenied, strings.allowContacts) {
-                scope.launch { appState.requestContactsFromPeople() }
-            }
-            ContactsStatus.PermanentlyDenied -> InfoNote(strings.contactsPermanentlyDenied)
-            ContactsStatus.Unavailable -> InfoNote(strings.contactsDenied)
-            ContactsStatus.Loading -> InfoNote(strings.refreshContacts)
-            ContactsStatus.NotRequested -> ContactsPermissionState(strings.peopleBody, strings.allowContacts) {
-                scope.launch { appState.requestContactsFromPeople() }
+        TextButton(onClick = { scope.launch { inviteRequester.bringIntoView() } }) {
+            NqrbIcon(NqrbGlyph.Link, strings.shareInvite, colors.accent, Modifier.size(20.dp))
+            Spacer(Modifier.width(NqrbSpacing.Sm))
+            Text(strings.shareInvite)
+        }
+        Text(strings.searchNqrbUsers, style = MaterialTheme.typography.titleLarge, color = colors.textPrimary)
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = query,
+            onValueChange = { query = it },
+            singleLine = true,
+            label = { Text(strings.searchPlaceholder) },
+            leadingIcon = { NqrbIcon(NqrbGlyph.Search, strings.searchNqrbUsers, colors.textSecondary, Modifier.size(20.dp)) },
+            trailingIcon = if (query.isNotBlank()) ({
+                IconButton(onClick = { query = "" }) {
+                    NqrbIcon(NqrbGlyph.Close, strings.clearSearch, colors.textSecondary, Modifier.size(18.dp))
+                }
+            }) else null,
+        )
+        when (contactBook.searchState) {
+            NqrbContactSearchState.Idle -> Unit
+            NqrbContactSearchState.TooShort -> if (query.isNotBlank()) InfoNote(strings.contactSearchTooShort)
+            NqrbContactSearchState.Loading -> InfoNote(strings.callingDirectoryLoading)
+            NqrbContactSearchState.Empty -> InfoNote(strings.contactSearchEmpty)
+            NqrbContactSearchState.Error -> InfoNote(strings.contactSearchError)
+            NqrbContactSearchState.Ready -> contactBook.searchResults.forEach { contact ->
+                val alreadySaved = contactBook.contacts.any { it.membershipId == contact.membershipId }
+                val isBlocked = contactBook.blockedAccounts.any { it.membershipId == contact.membershipId }
+                NqrbServerContactCard(
+                    displayName = contact.displayName,
+                    statusLabel = if (isBlocked) strings.blockedLabel else null,
+                    actionLabel = if (isBlocked) strings.blockedLabel else if (alreadySaved) strings.selected else strings.addContact,
+                    actionEnabled = !isBlocked && !alreadySaved && contactBook.mutationState != NqrbContactMutationState.Saving,
+                    onAction = { appState.addNqrbContact(contact.membershipId) },
+                )
             }
         }
+        if (contactBook.searchHasMore) {
+            Button(
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                enabled = !contactBook.searchLoadingMore,
+                onClick = appState::loadMoreNqrbSearchResults,
+            ) {
+                Text(if (contactBook.searchLoadingMore) strings.callingDirectoryLoading else strings.loadMoreSearchResults)
+            }
+        }
+        Text(strings.savedContactsTitle, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
+        Text(strings.savedContactsBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+        InfoNote(strings.swipeToCallHint)
+        if (contactBook.contactsRefreshFailed) {
+            InfoNote(strings.savedContactsError)
+            DirectoryRefreshAction(strings.retry, appState::refreshContactBook)
+        }
+        when (contactBook.contactsState) {
+            NqrbContactBookLoadState.Idle,
+            NqrbContactBookLoadState.Loading,
+            -> InfoNote(strings.savedContactsLoading)
+            NqrbContactBookLoadState.Empty -> InfoNote(strings.savedContactsEmpty)
+            NqrbContactBookLoadState.Error -> {
+                InfoNote(strings.savedContactsError)
+                DirectoryRefreshAction(strings.retry, appState::refreshContactBook)
+            }
+            NqrbContactBookLoadState.Ready -> contactBook.contacts.forEach { contact ->
+                val participant = directory.participants.firstOrNull { it.membershipId == contact.membershipId }
+                val availability = participant?.availability
+                val isBlocked = contactBook.blockedAccounts.any { it.membershipId == contact.membershipId }
+                NqrbServerContactCard(
+                    displayName = contact.nickname ?: contact.displayName,
+                    secondaryLabel = contact.nickname?.let { strings.nicknameOriginal.replace("%s", contact.displayName) },
+                    statusLabel = if (isBlocked) strings.blockedLabel else when (availability) {
+                        CallingParticipantAvailability.Online -> strings.onlineNow
+                        CallingParticipantAvailability.Reachable -> strings.availableForCalls
+                        CallingParticipantAvailability.Offline, null -> strings.currentlyUnavailable
+                    },
+                    actionLabel = strings.removeContact,
+                    actionEnabled = contactBook.mutationState != NqrbContactMutationState.Removing,
+                    onAction = { appState.removeNqrbContact(contact.membershipId) },
+                    callLabel = strings.call,
+                    callEnabled = !isBlocked && availability?.let { it != CallingParticipantAvailability.Offline } == true,
+                    onCall = { participant?.let(appState::requestOutgoingCall) },
+                    overflowLabel = strings.contactActions,
+                    editNicknameLabel = strings.editContactNickname,
+                    onEditNickname = {
+                        editingContact = contact
+                        nicknameDraft = contact.nickname.orEmpty()
+                        nicknameSaveFailed = false
+                    },
+                    blockLabel = if (isBlocked) strings.unblockContact else strings.blockContact,
+                    onBlock = {
+                        if (isBlocked) appState.unblockNqrbAccount(contact.membershipId)
+                        else blockingMembershipId = contact.membershipId
+                    },
+                )
+            }
+        }
+        if (contactBook.contactsHasMore) {
+            Button(
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                enabled = !contactBook.contactsLoadingMore,
+                onClick = appState::loadMoreNqrbContacts,
+            ) {
+                Text(if (contactBook.contactsLoadingMore) strings.savedContactsLoading else strings.loadMoreContacts)
+            }
+        }
+        if (contactBook.contactsState == NqrbContactBookLoadState.Ready &&
+            directory.status != CallingDirectoryStatus.Error
+        ) {
+            DirectoryRefreshAction(strings.refreshCallingDirectory, appState::refreshCallingDirectory)
+        }
+        if (contactBook.blockedAccounts.isNotEmpty()) {
+            Text(strings.blockedTitle, style = MaterialTheme.typography.titleLarge, color = colors.textPrimary)
+            Text(strings.blockedBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            contactBook.blockedAccounts.forEach { blocked ->
+                NqrbServerContactCard(
+                    displayName = blocked.displayName,
+                    statusLabel = strings.blockedLabel,
+                    actionLabel = strings.unblockContact,
+                    actionEnabled = contactBook.blockState != NqrbBlockState.Working,
+                    onAction = { appState.unblockNqrbAccount(blocked.membershipId) },
+                )
+            }
+        }
+        if (contactBook.blockState == NqrbBlockState.Error) {
+            InfoNote(if (contactBook.blockErrorIsLoad) strings.blockedLoadError else strings.blockError)
+            DirectoryRefreshAction(strings.retry, appState::refreshBlockedAccounts)
+        }
+        NqrbInviteSection(strings, contactBook, appState, onShareInvite,
+            modifier = Modifier.bringIntoViewRequester(inviteRequester)) { utc ->
+            callTime(utc, languageTag).fullLabel
+        }
+    }
+    editingContact?.let { contact ->
+        AlertDialog(
+            onDismissRequest = { if (!nicknameSaving) editingContact = null },
+            title = { Text(strings.editContactNickname) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                    Text(strings.nicknameOriginal.replace("%s", contact.displayName))
+                    OutlinedTextField(
+                        value = nicknameDraft,
+                        onValueChange = { nicknameDraft = it.take(80); nicknameSaveFailed = false },
+                        label = { Text(strings.nicknameHint) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (nicknameSaveFailed) Text(strings.nicknameError, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !nicknameSaving,
+                    onClick = {
+                        nicknameSaving = true
+                        scope.launch {
+                            val saved = appState.updateNqrbContactNickname(contact.membershipId, nicknameDraft.trim().ifBlank { null })
+                            nicknameSaving = false
+                            if (saved) editingContact = null else nicknameSaveFailed = true
+                        }
+                    },
+                ) { Text(strings.saveNickname) }
+            },
+            dismissButton = {
+                TextButton(enabled = !nicknameSaving, onClick = { editingContact = null }) { Text(strings.cancel) }
+            },
+        )
+    }
+    blockingMembershipId?.let { membershipId ->
+        AlertDialog(
+            onDismissRequest = { blockingMembershipId = null },
+            title = { Text(strings.blockConfirmTitle) },
+            text = { Text(strings.blockConfirmBody) },
+            confirmButton = { TextButton(onClick = {
+                blockingMembershipId = null
+                appState.blockNqrbAccount(membershipId)
+            }) { Text(strings.blockContact) } },
+            dismissButton = { TextButton(onClick = { blockingMembershipId = null }) { Text(strings.cancel) } },
+        )
     }
 }
 
 @Composable
-private fun ContactsPermissionState(body: String, action: String, onAction: () -> Unit) {
-    InfoNote(body)
-    Button(onClick = onAction, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text(action) }
+private fun NqrbInviteSection(
+    strings: NqrbStrings,
+    contactBook: NqrbContactBookSnapshot,
+    appState: NqrbAppState,
+    onShareInvite: (String) -> Boolean,
+    modifier: Modifier = Modifier,
+    formatExpiry: (String) -> String,
+) {
+    val colors = LocalNqrbColors.current
+    val clipboard = LocalClipboardManager.current
+    var copied by remember(contactBook.createdInvite?.shareLink) { mutableStateOf(false) }
+    var guestCallCopied by remember(contactBook.createdGuestCallInvite?.shareLink) { mutableStateOf(false) }
+    var shareAfterCreate by remember { mutableStateOf(false) }
+    var shareUnavailable by remember { mutableStateOf(false) }
+    var guestCallShareUnavailable by remember { mutableStateOf(false) }
+    var showAccept by remember { mutableStateOf(false) }
+    var currentTime by remember { mutableStateOf(Clock.System.now()) }
+    val activeGuestInvite = contactBook.createdGuestCallInvite?.takeUnless {
+        isGuestCallInviteExpired(it.expiresAtUtc, currentTime)
+    }
+    LaunchedEffect(contactBook.createdGuestCallInvite?.expiresAtUtc) {
+        if (contactBook.createdGuestCallInvite != null) {
+            while (true) {
+                currentTime = Clock.System.now()
+                delay(15_000)
+            }
+        }
+    }
+    LaunchedEffect(contactBook.inviteCreateState, contactBook.createdInvite) {
+        if (shareAfterCreate && contactBook.inviteCreateState == NqrbContactInviteCreateState.Ready) {
+            contactBook.createdInvite?.let { invite ->
+                shareUnavailable = !onShareInvite(inviteShareMessage(strings, invite))
+                shareAfterCreate = false
+            }
+        } else if (contactBook.inviteCreateState == NqrbContactInviteCreateState.Error) {
+            shareAfterCreate = false
+        }
+    }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md)) {
+        Surface(
+            Modifier.fillMaxWidth(),
+            color = colors.accentSoft,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+        Column(Modifier.padding(NqrbSpacing.Lg), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                NqrbIcon(NqrbGlyph.Link, strings.inviteContactsTitle, colors.accent, Modifier.size(24.dp))
+                Text(strings.inviteContactsTitle, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+            }
+            Text(strings.inviteContactsBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            Button(
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                enabled = contactBook.inviteCreateState != NqrbContactInviteCreateState.Creating,
+                onClick = {
+                    shareUnavailable = false
+                    shareAfterCreate = true
+                    appState.createNqrbInvite()
+                },
+            ) {
+                Text(
+                    if (contactBook.inviteCreateState == NqrbContactInviteCreateState.Creating) {
+                        strings.creatingInvite
+                    } else {
+                        strings.shareInvite
+                    },
+                )
+            }
+            contactBook.createdInvite?.let { invite ->
+                TextButton(
+                    onClick = appState::toggleAccountInviteDetails,
+                    modifier = Modifier.fillMaxWidth().semantics {
+                        contentDescription = "${if (contactBook.accountInviteDetailsVisible) strings.hideDetails else strings.showDetails} ${strings.inviteContactsTitle}"
+                    },
+                ) { Text(if (contactBook.accountInviteDetailsVisible) strings.hideDetails else strings.showDetails) }
+                if (contactBook.accountInviteDetailsVisible) {
+                    InviteValueRow(strings.inviteCode, invite.code)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        TextButton(onClick = {
+                            clipboard.setText(AnnotatedString(invite.code))
+                            copied = true
+                        }) { Text(strings.copyInviteCode) }
+                        TextButton(onClick = {
+                            clipboard.setText(AnnotatedString(inviteShareMessage(strings, invite)))
+                            copied = true
+                        }) { Text(strings.copyInvite) }
+                    }
+                    if (copied) InfoNote(strings.inviteCopied)
+                    if (shareUnavailable) InfoNote(strings.shareInviteUnavailable)
+                }
+            }
+            if (contactBook.inviteCreateState == NqrbContactInviteCreateState.Error) {
+                InfoNote(strings.inviteError)
+            }
+        }
+        }
+        Surface(
+            Modifier.fillMaxWidth(),
+            color = colors.surface,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Column(Modifier.padding(NqrbSpacing.Lg), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+            Column(verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                    NqrbIcon(NqrbGlyph.Microphone, strings.guestCallLinkTitle, colors.accent, Modifier.size(22.dp))
+                    Text(strings.guestCallLinkTitle, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                }
+                Text(strings.guestCallLinkBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+                if (activeGuestInvite == null) {
+                    Button(
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        enabled = contactBook.guestCallInviteCreateState !in setOf(
+                            NqrbGuestCallInviteCreateState.Creating,
+                            NqrbGuestCallInviteCreateState.Revoking,
+                        ),
+                        onClick = {
+                            guestCallShareUnavailable = false
+                            appState.createNqrbGuestCallInvite()
+                        },
+                    ) {
+                        Text(
+                            if (contactBook.guestCallInviteCreateState == NqrbGuestCallInviteCreateState.Creating) {
+                                strings.creatingInvite
+                            } else {
+                                strings.guestCallCreate
+                            },
+                        )
+                    }
+                }
+                contactBook.createdGuestCallInvite?.let { invite ->
+                    if (isGuestCallInviteExpired(invite.expiresAtUtc, currentTime)) {
+                        InfoNote(strings.guestCallExpired)
+                    } else {
+                        InfoNote(strings.guestCallLinkReady)
+                        TextButton(
+                            onClick = appState::toggleGuestCallDetails,
+                            modifier = Modifier.fillMaxWidth().semantics {
+                                contentDescription = "${if (contactBook.guestCallDetailsVisible) strings.hideDetails else strings.showDetails} ${strings.guestCallLinkTitle}"
+                            },
+                        ) { Text(if (contactBook.guestCallDetailsVisible) strings.hideDetails else strings.showDetails) }
+                        if (contactBook.guestCallDetailsVisible) {
+                            GuestCallWaitingPanel(
+                                strings = strings,
+                                expiresAtLabel = formatExpiry(invite.expiresAtUtc),
+                                revoking = contactBook.guestCallInviteCreateState == NqrbGuestCallInviteCreateState.Revoking,
+                                onCopy = {
+                                    clipboard.setText(AnnotatedString(invite.shareLink))
+                                    guestCallCopied = true
+                                },
+                                onShare = { guestCallShareUnavailable = !onShareInvite(invite.shareLink) },
+                                onCancel = appState::revokeNqrbGuestCallInvite,
+                            )
+                            if (guestCallCopied) InfoNote(strings.inviteCopied)
+                            if (guestCallShareUnavailable) InfoNote(strings.guestCallShareUnavailable)
+                        }
+                    }
+                }
+                if (contactBook.guestCallInviteCreateState == NqrbGuestCallInviteCreateState.Error) {
+                    InfoNote(strings.inviteError)
+                }
+            }
+            }
+        }
+        Surface(
+            Modifier.fillMaxWidth(),
+            color = colors.surface,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Column(Modifier.padding(NqrbSpacing.Md), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+            TextButton(onClick = { showAccept = !showAccept }) { Text(strings.acceptInviteTitle) }
+            if (showAccept || contactBook.inviteCodeInput.isNotBlank() || contactBook.inviteAcceptState != NqrbContactInviteAcceptState.Idle) {
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = contactBook.inviteCodeInput,
+                    onValueChange = appState::updateNqrbInviteCodeInput,
+                    singleLine = true,
+                    label = { Text(strings.inviteCodePlaceholder) },
+                )
+                Button(
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    enabled = contactBook.inviteCodeInput.isNotBlank() &&
+                        contactBook.inviteAcceptState !in setOf(
+                            NqrbContactInviteAcceptState.Previewing,
+                            NqrbContactInviteAcceptState.Accepting,
+                        ),
+                    onClick = appState::previewNqrbInvite,
+                ) { Text(strings.previewInvite) }
+                InviteAcceptStatus(strings, contactBook, appState)
+            }
+        }
+    }
+    }
+}
+
+internal fun isGuestCallInviteExpired(expiresAtUtc: String, now: Instant): Boolean =
+    runCatching { Instant.parse(expiresAtUtc) <= now }.getOrDefault(true)
+
+internal fun inviteShareMessage(strings: NqrbStrings, invite: NqrbContactInvite): String =
+    strings.inviteShareMessage.replaceFirst("%s", invite.code).replaceFirst("%s", invite.shareLink)
+
+@Composable
+private fun InviteValueRow(label: String, value: String) {
+    val colors = LocalNqrbColors.current
+    Column(verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = colors.textSecondary)
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+    }
 }
 
 @Composable
-private fun ContactCard(contact: DeviceContact) {
+private fun GuestCallWaitingPanel(
+    strings: NqrbStrings,
+    expiresAtLabel: String,
+    revoking: Boolean,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onCancel: () -> Unit,
+) {
     val colors = LocalNqrbColors.current
-    Surface(
-        Modifier.fillMaxWidth(),
-        color = colors.surface,
-        shape = RoundedCornerShape(20.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
+    Column(
+        Modifier.fillMaxWidth().padding(top = NqrbSpacing.Sm),
+        verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
     ) {
-        Row(Modifier.padding(NqrbSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(46.dp).clip(CircleShape).background(colors.accentSoft),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(contact.displayName.trim().take(1).uppercase(), color = colors.accent, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.width(NqrbSpacing.Md))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
-                Text(contact.displayName, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-                contact.phoneNumbers.forEach { number ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                Box(Modifier.size(40.dp).clip(CircleShape).background(colors.accentSoft), contentAlignment = Alignment.Center) {
+                    NqrbIcon(NqrbGlyph.Microphone, strings.guestCallWaitingTitle, colors.accent, Modifier.size(22.dp))
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
+                    Text(strings.guestCallWaitingTitle, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
                     Text(
-                        "\u2066${number.displayValue}\u2069",
-                        style = MaterialTheme.typography.bodyMedium,
+                        strings.guestCallExpiresAt.replace("%s", expiresAtLabel),
+                        style = MaterialTheme.typography.labelMedium,
                         color = colors.textSecondary,
                     )
                 }
             }
+            Text(strings.guestCallWaitingInstruction, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            Text(strings.guestCallLinkReady, style = MaterialTheme.typography.labelLarge, color = colors.accent)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
+                TextButton(modifier = Modifier.weight(1f), onClick = onCopy) { Text(strings.guestCallCopyLink, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                TextButton(modifier = Modifier.weight(1f), onClick = onShare) { Text(strings.guestCallShare, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                TextButton(
+                    modifier = Modifier.weight(1f),
+                    enabled = !revoking,
+                    onClick = onCancel,
+                ) { Text(strings.cancel, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+    }
+}
+
+@Composable
+private fun InviteAcceptStatus(
+    strings: NqrbStrings,
+    contactBook: NqrbContactBookSnapshot,
+    appState: NqrbAppState,
+) {
+    when (contactBook.inviteAcceptState) {
+        NqrbContactInviteAcceptState.Idle -> Unit
+        NqrbContactInviteAcceptState.Previewing -> InfoNote(strings.callingDirectoryLoading)
+        NqrbContactInviteAcceptState.Confirming -> {
+            val name = contactBook.invitePreview?.issuerDisplayName.orEmpty()
+            InfoNote(strings.invitePreviewBody.replace("%s", name))
+            Button(
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                onClick = appState::acceptNqrbInvite,
+            ) { Text(strings.acceptInvite) }
+            TextButton(
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                onClick = appState::cancelNqrbInviteConfirmation,
+            ) { Text(strings.cancel) }
+        }
+        NqrbContactInviteAcceptState.Accepting -> InfoNote(strings.creatingInvite)
+        NqrbContactInviteAcceptState.Accepted -> InfoNote(strings.inviteAccepted)
+        NqrbContactInviteAcceptState.Invalid -> InfoNote(strings.inviteInvalid)
+        NqrbContactInviteAcceptState.Expired -> InfoNote(strings.inviteExpired)
+        NqrbContactInviteAcceptState.SelfInvite -> InfoNote(strings.inviteSelf)
+        NqrbContactInviteAcceptState.AlreadyClaimed -> InfoNote(strings.inviteClaimed)
+        NqrbContactInviteAcceptState.Error -> InfoNote(strings.inviteError)
+    }
+}
+
+@Composable
+private fun NqrbServerContactCard(
+    displayName: String,
+    secondaryLabel: String? = null,
+    statusLabel: String? = null,
+    actionLabel: String,
+    actionEnabled: Boolean,
+    onAction: () -> Unit,
+    callLabel: String? = null,
+    callEnabled: Boolean = false,
+    onCall: () -> Unit = {},
+    overflowLabel: String? = null,
+    editNicknameLabel: String? = null,
+    onEditNickname: () -> Unit = {},
+    blockLabel: String? = null,
+    onBlock: () -> Unit = {},
+) {
+    val colors = LocalNqrbColors.current
+    var actionsExpanded by remember { mutableStateOf(false) }
+    NqrbSwipeToCallBox(callLabel, callEnabled, onCall) { swipeModifier ->
+        Surface(
+            swipeModifier,
+            color = colors.surface,
+            shape = RoundedCornerShape(10.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
+        ) {
+        Row(
+            Modifier.padding(horizontal = NqrbSpacing.Sm, vertical = NqrbSpacing.Xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
+        ) {
+            ParticipantAvatar(displayName)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colors.textPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                secondaryLabel?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                statusLabel?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (callLabel != null) {
+                IconButton(
+                    modifier = Modifier.size(48.dp).clip(CircleShape).background(
+                        if (callEnabled) colors.accent else colors.accentSoft,
+                    ),
+                    enabled = callEnabled,
+                    onClick = onCall,
+                ) {
+                    NqrbIcon(
+                        NqrbGlyph.Call,
+                        callLabel,
+                        if (callEnabled) MaterialTheme.colorScheme.onPrimary else colors.textSecondary,
+                        Modifier.size(20.dp),
+                    )
+                }
+                Box {
+                    IconButton(
+                        modifier = Modifier.size(48.dp),
+                        enabled = actionEnabled,
+                        onClick = { actionsExpanded = true },
+                    ) {
+                        NqrbIcon(NqrbGlyph.More, overflowLabel ?: actionLabel, colors.textSecondary, Modifier.size(22.dp))
+                    }
+                    DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }) {
+                        editNicknameLabel?.let { label ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    actionsExpanded = false
+                                    onEditNickname()
+                                },
+                            )
+                        }
+                        blockLabel?.let { label ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = { actionsExpanded = false; onBlock() },
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text(actionLabel) },
+                            enabled = actionEnabled,
+                            onClick = {
+                                actionsExpanded = false
+                                onAction()
+                            },
+                        )
+                    }
+                }
+            } else {
+                TextButton(
+                    modifier = Modifier.widthIn(min = 76.dp),
+                    enabled = actionEnabled,
+                    onClick = onAction,
+                ) { Text(actionLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+        }
         }
     }
 }
 
 @Composable
-private fun ProfileScreen(strings: NqrbStrings, appState: NqrbAppState) {
+private fun NqrbSwipeToCallBox(
+    callLabel: String?,
+    callEnabled: Boolean,
+    onCall: () -> Unit,
+    content: @Composable (Modifier) -> Unit,
+) {
+    val colors = LocalNqrbColors.current
+    val layoutDirection = LocalLayoutDirection.current
+    var swipeOffsetPx by remember { mutableStateOf(0f) }
+    val swipeThreshold = 80.dp
+    val swipeModifier = if (callLabel != null && callEnabled) {
+        Modifier
+            .pointerInput(callEnabled, layoutDirection) {
+                val thresholdPx = swipeThreshold.toPx()
+                val maxRevealPx = 112.dp.toPx()
+                val direction = if (layoutDirection == LayoutDirection.Rtl) 1f else -1f
+                detectHorizontalDragGestures(
+                    onDragStart = { swipeOffsetPx = 0f },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        val progress = (swipeOffsetPx * direction + dragAmount * direction)
+                            .coerceIn(0f, maxRevealPx)
+                        swipeOffsetPx = progress * direction
+                    },
+                    onDragEnd = {
+                        val shouldCall = shouldStartCallFromSwipe(swipeOffsetPx, thresholdPx, layoutDirection)
+                        swipeOffsetPx = 0f
+                        if (shouldCall) onCall()
+                    },
+                    onDragCancel = { swipeOffsetPx = 0f },
+                )
+            }
+    } else {
+        Modifier
+    }
+    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(colors.accentSoft).then(swipeModifier)) {
+        if (callLabel != null && callEnabled) {
+            Row(
+                Modifier.align(Alignment.CenterEnd).padding(horizontal = NqrbSpacing.Sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs),
+            ) {
+                NqrbIcon(NqrbGlyph.Call, callLabel, colors.accent, Modifier.size(22.dp))
+                Text(callLabel, style = MaterialTheme.typography.labelMedium, color = colors.accent)
+            }
+        }
+        content(Modifier.fillMaxWidth().absoluteOffset { IntOffset(swipeOffsetPx.roundToInt(), 0) })
+    }
+}
+
+internal fun shouldStartCallFromSwipe(offsetPx: Float, thresholdPx: Float, layoutDirection: LayoutDirection): Boolean =
+    if (layoutDirection == LayoutDirection.Rtl) offsetPx >= thresholdPx else offsetPx <= -thresholdPx
+
+internal fun shouldShowHistoryContactAdd(
+    isGuestCall: Boolean,
+    isSavedContact: Boolean?,
+    canAddContact: Boolean,
+    addedLocally: Boolean,
+): Boolean = !isGuestCall && isSavedContact == false && canAddContact && !addedLocally
+
+internal fun callableHistoryParticipant(
+    item: CallHistoryItem,
+): CallableParticipant? {
+    val counterpartMembershipId = item.counterpartMembershipId ?: return null
+    if (item.isGuestCall || !(item.canRedial || item.isSavedContact == true) || counterpartMembershipId.isBlank()) return null
+    return CallableParticipant(
+        counterpartMembershipId,
+        item.participantDisplayName,
+        CallingParticipantAvailability.Reachable,
+    )
+}
+
+@Composable
+private fun ProfileScreen(strings: NqrbStrings, appState: NqrbAppState, contactBook: NqrbContactBookSnapshot) {
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
     val colors = LocalNqrbColors.current
     val accountAction by appState.accountActionState.collectAsState()
     val accountProfile by appState.accountProfileState.collectAsState()
+    val ringtone by appState.ringtone.selection.collectAsState()
     var deletionConfirmation by remember { mutableStateOf(NqrbDeletionConfirmation.Closed) }
+    var showAccountControls by remember { mutableStateOf(false) }
     val operationInProgress = accountAction in setOf(
         NqrbAccountActionState.SigningOut,
         NqrbAccountActionState.Deleting,
     )
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
-        verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Lg),
+        verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
     ) {
         ProductHeader(strings, appState::openSettings)
-        FlowHero(NqrbGlyph.Profile, strings.profileTitle, strings.profileBody)
-        AccountIdentityCard(strings, accountProfile, appState::refreshAccountProfile)
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = colors.elevatedSurface,
-            shape = RoundedCornerShape(16.dp),
-        ) {
+        ProfileHero(strings, accountProfile, contactBook, appState::refreshAccountProfile)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+            ProfileShortcut(strings.savedContactsTitle, NqrbGlyph.People, Modifier.weight(1f)) {
+                appState.selectTopLevel(NqrbDestination.People)
+            }
+            ProfileShortcut(strings.settings, NqrbGlyph.Settings, Modifier.weight(1f), appState::openSettings)
+        }
+        Surface(color = colors.surface, shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.padding(NqrbSpacing.Md), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                Text(strings.ringtoneTitle, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                Text(
+                    when (ringtone) {
+                        NqrbRingtone.Madar -> strings.ringtoneMadar
+                        NqrbRingtone.Gentle -> strings.ringtoneGentle
+                        NqrbRingtone.Classic -> strings.ringtoneClassic
+                        NqrbRingtone.Clear -> strings.ringtoneClear
+                        NqrbRingtone.Pulse -> strings.ringtonePulse
+                        NqrbRingtone.Device -> strings.ringtoneDevice
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textSecondary,
+                )
+                TextButton(onClick = appState::openSettings) { Text(strings.openSettings) }
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
+            Text(strings.privacyAndSupport, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+            Row(horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                TextButton(onClick = { uriHandler.openUri(NqrbPublicSite.PrivacyPolicyUrl) }) { Text(strings.privacyPolicy) }
+                TextButton(onClick = { uriHandler.openUri(NqrbPublicSite.SupportUrl) }) { Text(strings.support) }
+            }
+        }
+        TextButton(onClick = { showAccountControls = !showAccountControls }) {
+            Text(strings.accountInformation, color = colors.textSecondary)
+        }
+        if (showAccountControls) {
             Column(
-                Modifier.padding(NqrbSpacing.Md),
                 verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
             ) {
                 Text(strings.deleteAccount, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
@@ -482,12 +1163,14 @@ private fun ProfileScreen(strings: NqrbStrings, appState: NqrbAppState) {
             }
             else -> Unit
         }
-        TextButton(
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !operationInProgress,
-            onClick = { scope.launch { appState.logout() } },
-        ) {
-            Text(strings.logout, color = colors.destructive)
+        if (showAccountControls) {
+            TextButton(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !operationInProgress,
+                onClick = { scope.launch { appState.logout() } },
+            ) {
+                Text(strings.logout, color = colors.textSecondary)
+            }
         }
     }
 
@@ -542,6 +1225,64 @@ private fun ProfileScreen(strings: NqrbStrings, appState: NqrbAppState) {
                 ) { Text(strings.cancel) }
             },
         )
+    }
+}
+
+@Composable
+private fun ProfileHero(
+    strings: NqrbStrings,
+    state: NqrbAccountProfileState,
+    contactBook: NqrbContactBookSnapshot,
+    onRetry: () -> Unit,
+) {
+    val colors = LocalNqrbColors.current
+    val identity = accountIdentityPresentation(strings, state)
+    Box(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
+            .background(Brush.linearGradient(listOf(colors.elevatedSurface, colors.accentSoft)))
+            .padding(NqrbSpacing.Lg),
+    ) {
+        Canvas(Modifier.align(Alignment.TopEnd).size(136.dp)) {
+            drawCircle(colors.accent.copy(alpha = .3f), radius = size.minDimension * .47f, style = Stroke(1.dp.toPx()))
+            drawCircle(colors.accent.copy(alpha = .23f), radius = size.minDimension * .32f, style = Stroke(1.dp.toPx()))
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md)) {
+            Box(Modifier.size(74.dp).clip(CircleShape).background(colors.callActionSurface), contentAlignment = Alignment.Center) {
+                Text(identity?.displayName?.take(1)?.uppercase().orEmpty(), style = MaterialTheme.typography.headlineSmall, color = colors.callActionContent)
+            }
+            Text(identity?.displayName ?: strings.profileTitle, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
+            when (state) {
+                NqrbAccountProfileState.Loading -> Text(strings.accountIdentityLoading, color = colors.textSecondary)
+                NqrbAccountProfileState.Failed -> TextButton(onClick = onRetry) { Text(strings.retry) }
+                is NqrbAccountProfileState.Available -> Text(
+                    identity?.email.orEmpty().replace("@", "\u200B@"),
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                NqrbAccountProfileState.Hidden -> Unit
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                NqrbIcon(NqrbGlyph.Verified, strings.foundationStatus, colors.positive, Modifier.size(20.dp))
+                Text(strings.foundationStatus, style = MaterialTheme.typography.labelMedium, color = colors.textPrimary)
+            }
+            if (contactBook.contactsState in setOf(NqrbContactBookLoadState.Ready, NqrbContactBookLoadState.Empty)) {
+                Text("${strings.savedContactsTitle} · ${contactBook.contacts.size}", style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileShortcut(label: String, glyph: NqrbGlyph, modifier: Modifier, onClick: () -> Unit) {
+    val colors = LocalNqrbColors.current
+    Surface(modifier.clickable(onClick = onClick), color = colors.surface, shape = RoundedCornerShape(16.dp)) {
+        Row(Modifier.padding(NqrbSpacing.Md), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+            NqrbIcon(glyph, label, colors.accent, Modifier.size(22.dp))
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+        }
     }
 }
 
@@ -623,8 +1364,11 @@ private fun HomeScreen(
     strings: NqrbStrings,
     appState: NqrbAppState,
     directory: CallingDirectorySnapshot,
+    contactBook: NqrbContactBookSnapshot,
     microphoneBlocked: Boolean,
 ) {
+    val colors = LocalNqrbColors.current
+    val privateDirectory = privateCallingDirectory(directory, contactBook)
     Column(
         Modifier
             .fillMaxSize()
@@ -633,30 +1377,154 @@ private fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
     ) {
         ProductHeader(strings, appState::openSettings)
-        HeroCard(strings)
-        FoundationStatus(strings)
-        ConceptCard(
-            glyph = NqrbGlyph.Call,
-            title = strings.primaryCallTitle,
-            body = strings.primaryCallBody,
-            iconDescription = strings.call,
+        Text(
+            strings.madarGreeting,
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textSecondary,
         )
-        CallingDirectorySection(strings, directory, appState)
-        ConceptCard(
-            glyph = NqrbGlyph.History,
-            title = strings.historyTitle,
-            body = strings.historyBody,
-            iconDescription = strings.history,
-            onClick = { appState.selectTopLevel(NqrbDestination.History) },
-        )
+        if (privateDirectory.status == CallingDirectoryStatus.Ready && privateDirectory.participants.isNotEmpty()) {
+            MadarOrbit(strings, privateDirectory, contactBook, appState)
+        } else {
+            MadarEmptyCircle(strings, appState)
+        }
+        if (privateDirectory.status == CallingDirectoryStatus.Ready) Surface(
+            modifier = Modifier.fillMaxWidth().clickable { appState.selectTopLevel(NqrbDestination.People) },
+            color = colors.elevatedSurface,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Row(
+                Modifier.padding(NqrbSpacing.Md),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
+            ) {
+                Box(Modifier.size(50.dp).clip(RoundedCornerShape(13.dp)).background(colors.accentSoft), contentAlignment = Alignment.Center) {
+                    NqrbIcon(NqrbGlyph.People, strings.madarInviteTitle, colors.accent, Modifier.size(25.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(strings.madarInviteTitle, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                    Text(strings.madarInviteBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+                }
+            }
+        }
+        CallingDirectorySection(strings, privateDirectory, contactBook, appState)
         if (microphoneBlocked) InfoNote(strings.microphoneDenied)
-        ConceptCard(
-            glyph = NqrbGlyph.Link,
-            title = strings.createCallLinkTitle,
-            body = strings.createCallLinkBody,
-            iconDescription = strings.createCallLinkTitle,
-        )
         Spacer(Modifier.height(NqrbSpacing.Sm))
+    }
+}
+
+internal fun privateCallingDirectory(directory: CallingDirectorySnapshot, contactBook: NqrbContactBookSnapshot): CallingDirectorySnapshot {
+    val savedIds = contactBook.contacts.map { it.membershipId }.toSet()
+    val blockedIds = contactBook.blockedAccounts.map { it.membershipId }.toSet()
+    return when (contactBook.contactsState) {
+        NqrbContactBookLoadState.Ready -> directory.copy(
+            status = if (directory.status == CallingDirectoryStatus.Ready && directory.participants.none { it.membershipId in savedIds && it.membershipId !in blockedIds }) CallingDirectoryStatus.Empty else directory.status,
+            participants = directory.participants.filter { it.membershipId in savedIds && it.membershipId !in blockedIds },
+        )
+        NqrbContactBookLoadState.Empty -> CallingDirectorySnapshot(CallingDirectoryStatus.Empty)
+        NqrbContactBookLoadState.Error -> CallingDirectorySnapshot(CallingDirectoryStatus.Error)
+        else -> CallingDirectorySnapshot(CallingDirectoryStatus.Loading)
+    }
+}
+
+internal fun privateContactDisplayName(contactBook: NqrbContactBookSnapshot, membershipId: String, publicName: String): String =
+    (contactBook.contacts.firstOrNull { it.membershipId == membershipId }
+        ?: contactBook.resolvedCallContacts[membershipId])?.nickname?.takeIf(String::isNotBlank) ?: publicName
+
+
+@Composable
+private fun MadarEmptyCircle(strings: NqrbStrings, appState: NqrbAppState) {
+    val colors = LocalNqrbColors.current
+    Box(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
+            .background(Brush.linearGradient(listOf(colors.elevatedSurface, colors.accentSoft)))
+            .clickable { appState.selectTopLevel(NqrbDestination.People) }
+            .padding(NqrbSpacing.Lg),
+    ) {
+        Canvas(Modifier.align(Alignment.CenterEnd).size(130.dp)) {
+            drawCircle(colors.accent.copy(alpha = .32f), radius = size.minDimension * .46f, style = Stroke(1.dp.toPx()))
+            drawCircle(colors.accent.copy(alpha = .18f), radius = size.minDimension * .32f, style = Stroke(1.dp.toPx()))
+        }
+        Column(Modifier.fillMaxWidth(.68f), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+            NqrbIcon(NqrbGlyph.People, strings.madarInviteTitle, colors.accent, Modifier.size(32.dp))
+            Text(strings.madarInviteTitle, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+            Text(strings.madarInviteBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+        }
+    }
+}
+
+@Composable
+private fun MadarOrbit(strings: NqrbStrings, directory: CallingDirectorySnapshot, contactBook: NqrbContactBookSnapshot, appState: NqrbAppState) {
+    val colors = LocalNqrbColors.current
+    val people = if (directory.status == CallingDirectoryStatus.Ready) directory.participants.take(3) else emptyList()
+    Box(Modifier.fillMaxWidth().height(245.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(217.dp)) {
+            drawCircle(colors.border, radius = size.minDimension * .48f, style = Stroke(1.dp.toPx()))
+            drawCircle(colors.border.copy(alpha = .8f), radius = size.minDimension * .34f, style = Stroke(1.dp.toPx()))
+        }
+        Box(
+            Modifier.size(74.dp).clip(CircleShape).background(colors.callActionSurface)
+                .clickable { appState.selectTopLevel(NqrbDestination.People) }
+                .semantics { role = Role.Button },
+            contentAlignment = Alignment.Center,
+        ) {
+            NqrbIcon(NqrbGlyph.Call, strings.madarCircleHint, colors.callActionContent, Modifier.size(31.dp))
+        }
+        people.getOrNull(0)?.let { person -> OrbitPerson(
+            person, strings, contactBook, Modifier.align(Alignment.TopStart).padding(start = 7.dp, top = 67.dp),
+            onCall = { appState.requestOutgoingCall(person) },
+        ) }
+        people.getOrNull(1)?.let { person -> OrbitPerson(
+            person, strings, contactBook, Modifier.align(Alignment.TopEnd).padding(end = 8.dp, top = 22.dp),
+            onCall = { appState.requestOutgoingCall(person) },
+        ) }
+        people.getOrNull(2)?.let { person -> OrbitPerson(
+            person, strings, contactBook, Modifier.align(Alignment.BottomEnd).padding(end = 25.dp, bottom = 31.dp),
+            onCall = { appState.requestOutgoingCall(person) },
+        ) }
+        Text(
+            strings.madarCircleHint,
+            Modifier.align(Alignment.BottomCenter),
+            style = MaterialTheme.typography.labelMedium,
+            color = colors.textSecondary,
+        )
+    }
+}
+
+@Composable
+private fun OrbitPerson(
+    participant: CallableParticipant,
+    strings: NqrbStrings,
+    contactBook: NqrbContactBookSnapshot,
+    modifier: Modifier = Modifier,
+    onCall: () -> Unit,
+) {
+    val colors = LocalNqrbColors.current
+    val available = participant.availability != CallingParticipantAvailability.Offline
+    val displayName = privateContactDisplayName(contactBook, participant.membershipId, participant.displayName)
+    Column(
+        modifier.clickable(enabled = available, onClick = onCall).semantics {
+            role = Role.Button
+            contentDescription = "${strings.call}: $displayName"
+            if (!available) disabled()
+        },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier.size(48.dp).clip(CircleShape).background(colors.accentSoft),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                displayName.trim().take(1).uppercase(),
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.accent,
+            )
+        }
+        Text(
+            displayName.substringBefore(' ').take(10),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (available) colors.textPrimary else colors.textSecondary,
+            maxLines = 1,
+        )
     }
 }
 
@@ -664,6 +1532,7 @@ private fun HomeScreen(
 private fun CallingDirectorySection(
     strings: NqrbStrings,
     directory: CallingDirectorySnapshot,
+    contactBook: NqrbContactBookSnapshot,
     appState: NqrbAppState,
 ) {
     val colors = LocalNqrbColors.current
@@ -691,6 +1560,7 @@ private fun CallingDirectorySection(
             directory.participants.forEach { participant ->
                 CallableParticipantCard(
                     participant = participant,
+                    displayName = privateContactDisplayName(contactBook, participant.membershipId, participant.displayName),
                     status = when (participant.availability) {
                         CallingParticipantAvailability.Online -> strings.onlineNow
                         CallingParticipantAvailability.Reachable -> strings.availableForCalls
@@ -719,6 +1589,7 @@ private fun DirectoryRefreshAction(label: String, onClick: () -> Unit) {
 @Composable
 private fun CallableParticipantCard(
     participant: CallableParticipant,
+    displayName: String,
     status: String,
     callLabel: String,
     canCall: Boolean,
@@ -736,14 +1607,14 @@ private fun CallableParticipantCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
         ) {
-            ParticipantAvatar(participant.displayName)
+            ParticipantAvatar(displayName)
             Column(Modifier.weight(1f)) {
-                Text(participant.displayName, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                Text(displayName, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
                 Text(status, style = MaterialTheme.typography.bodySmall,
                     color = if (participant.availability == CallingParticipantAvailability.Online) colors.positive else colors.textSecondary)
             }
             Button(onClick = onCall, enabled = canCall) {
-                NqrbIcon(NqrbGlyph.Call, callLabel, Color.White, Modifier.size(20.dp))
+                NqrbIcon(NqrbGlyph.Call, callLabel, MaterialTheme.colorScheme.onPrimary, Modifier.size(20.dp))
                 Spacer(Modifier.width(NqrbSpacing.Xs))
                 Text(callLabel)
             }
@@ -766,8 +1637,9 @@ private fun MicrophoneExplanationScreen(strings: NqrbStrings, appState: NqrbAppS
 }
 
 @Composable
-private fun InCallScreen(strings: NqrbStrings, call: CallSessionSnapshot, appState: NqrbAppState) {
+private fun InCallScreen(strings: NqrbStrings, call: CallSessionSnapshot, contactBook: NqrbContactBookSnapshot, appState: NqrbAppState) {
     val colors = LocalNqrbColors.current
+    val displayName = call.participant?.let { privateContactDisplayName(contactBook, it.membershipId, it.displayName) }.orEmpty()
     val status = when (call.state) {
         CallState.Preparing, CallState.Connecting, CallState.Answering -> strings.connecting
         CallState.Ringing -> strings.ringing
@@ -786,10 +1658,10 @@ private fun InCallScreen(strings: NqrbStrings, call: CallSessionSnapshot, appSta
             Modifier.size(88.dp).clip(CircleShape).background(colors.accentSoft),
             contentAlignment = Alignment.Center,
         ) {
-            NqrbIcon(NqrbGlyph.Profile, call.participant?.displayName.orEmpty(), colors.accent, Modifier.size(46.dp))
+            NqrbIcon(NqrbGlyph.Profile, displayName, colors.accent, Modifier.size(46.dp))
         }
         Spacer(Modifier.height(NqrbSpacing.Lg))
-        Text(call.participant?.displayName.orEmpty(), style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
+        Text(displayName, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
         Text(status, style = MaterialTheme.typography.bodyLarge, color = colors.textSecondary)
         if (call.state == CallState.Active) {
             val minutes = call.elapsedSeconds / 60
@@ -1002,14 +1874,22 @@ private fun PlaceholderScreen(title: String, body: String, strings: NqrbStrings,
 @Composable
 private fun SettingsScreen(
     strings: NqrbStrings,
+    languageTag: String,
     appState: NqrbAppState,
     layoutDirection: LayoutDirection,
     activity: CallActivitySnapshot,
+    onPreviewRingtone: (NqrbRingtone) -> Unit,
+    onChoosePhoneRingtone: () -> Unit,
+    notificationsEnabled: Boolean,
+    onOpenNotificationSettings: () -> Unit,
+    callTime: (String, String) -> NqrbCallTime,
 ) {
     val colors = LocalNqrbColors.current
     val uriHandler = LocalUriHandler.current
     val locale by appState.locale.state.collectAsState()
     val appearance by appState.appearance.state.collectAsState()
+    val ringtone by appState.ringtone.selection.collectAsState()
+    val phoneRingtoneName by appState.ringtone.deviceToneName.collectAsState()
     var confirmingUsageReset by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
@@ -1047,6 +1927,40 @@ private fun SettingsScreen(
                 onSelect = appState.appearance::select,
             )
         }
+        SettingsGroup(strings.ringtoneTitle, NqrbGlyph.Ringtone, strings.ringtoneTitle) {
+            Text(strings.ringtoneBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            listOf(
+                NqrbRingtone.Madar to strings.ringtoneMadar,
+                NqrbRingtone.Gentle to strings.ringtoneGentle,
+                NqrbRingtone.Classic to strings.ringtoneClassic,
+                NqrbRingtone.Clear to strings.ringtoneClear,
+                NqrbRingtone.Pulse to strings.ringtonePulse,
+            ).forEach { (choice, label) ->
+                RingtoneChoice(
+                    label = label,
+                    selected = ringtone == choice,
+                    previewLabel = strings.previewRingtone,
+                    previewDescription = "${strings.previewRingtone}: $label",
+                    onSelect = { appState.ringtone.select(choice) },
+                    onPreview = { onPreviewRingtone(choice) },
+                )
+            }
+            RingtoneChoice(
+                label = if (ringtone == NqrbRingtone.Device) phoneRingtoneName ?: strings.ringtoneDevice
+                    else strings.choosePhoneRingtone,
+                selected = ringtone == NqrbRingtone.Device,
+                previewLabel = strings.previewRingtone,
+                previewDescription = "${strings.previewRingtone}: ${phoneRingtoneName ?: strings.ringtoneDevice}",
+                onSelect = onChoosePhoneRingtone,
+                onPreview = { onPreviewRingtone(NqrbRingtone.Device) },
+            )
+        }
+        if (!notificationsEnabled) SettingsGroup(strings.notificationsTitle, NqrbGlyph.Call, strings.notificationsTitle) {
+            Text(strings.notificationsDisabledBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+            Button(modifier = Modifier.fillMaxWidth().height(48.dp), onClick = onOpenNotificationSettings) {
+                Text(strings.openNotificationSettings)
+            }
+        }
         SettingsGroup(strings.privacyAndSupport, NqrbGlyph.Link, strings.privacyAndSupport) {
             nqrbPublicLinks(strings).forEach { link ->
                 TextButton(
@@ -1062,7 +1976,7 @@ private fun SettingsScreen(
                 CallActivityLoadState.Loading, CallActivityLoadState.Idle -> InfoNote(strings.historyLoading)
                 CallActivityLoadState.Error -> InfoNote(strings.historyError)
                 else -> activity.usage?.let { usage ->
-                    Text("${strings.from}: ${usage.startedAtUtc}", color = colors.textSecondary)
+                    Text("${strings.from}: ${callTime(usage.startedAtUtc, languageTag).fullLabel}", color = colors.textSecondary)
                     UsageLine(strings.sent, usage.bytesSent)
                     UsageLine(strings.received, usage.bytesReceived)
                     UsageLine(strings.total, usage.totalBytes)
@@ -1087,29 +2001,135 @@ private fun SettingsScreen(
 }
 
 @Composable
-private fun CallHistoryScreen(strings: NqrbStrings, appState: NqrbAppState, activity: CallActivitySnapshot) {
+private fun RingtoneChoice(
+    label: String,
+    selected: Boolean,
+    previewLabel: String,
+    previewDescription: String,
+    onSelect: () -> Unit,
+    onPreview: () -> Unit,
+) {
     val colors = LocalNqrbColors.current
-    activity.selected?.let { detail -> CallDetailScreen(strings, appState, detail); return }
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(if (selected) colors.accentSoft else colors.elevatedSurface)
+            .clickable(onClick = onSelect)
+            .padding(horizontal = NqrbSpacing.Sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+        TextButton(onClick = onPreview, modifier = Modifier.semantics { contentDescription = previewDescription }) {
+            Text(previewLabel)
+        }
+    }
+}
+
+@Composable
+private fun CallHistoryScreen(
+    strings: NqrbStrings,
+    languageTag: String,
+    appState: NqrbAppState,
+    activity: CallActivitySnapshot,
+    contactBook: NqrbContactBookSnapshot,
+    directory: CallingDirectorySnapshot,
+    callTime: (String, String) -> NqrbCallTime,
+) {
+    val colors = LocalNqrbColors.current
+    val addedFromHistory by appState.addedHistoryContactCalls.collectAsState()
+    activity.selected?.let { detail -> CallDetailScreen(strings, languageTag, appState, contactBook, detail, callTime); return }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
         verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md)) {
         ProductHeader(strings, appState::openSettings)
         Text(strings.historyTitle, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
+        Text(strings.historyBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+        HistoryFilterRow(strings, activity.historyFilter, appState::selectCallHistoryFilter)
+        if (activity.history.any { callableHistoryParticipant(it) != null }) InfoNote(strings.swipeToCallHint)
+        if (contactBook.mutationState == NqrbContactMutationState.Error) InfoNote(strings.contactAddUnavailable)
         when (activity.historyState) {
             CallActivityLoadState.Idle, CallActivityLoadState.Loading -> InfoNote(strings.historyLoading)
             CallActivityLoadState.Empty -> InfoNote(strings.historyEmpty)
             CallActivityLoadState.Error -> { InfoNote(strings.historyError); DirectoryRefreshAction(strings.retry, appState::refreshCallHistory) }
-            CallActivityLoadState.Ready -> activity.history.forEach { item ->
-                Surface(modifier = Modifier.fillMaxWidth().clickable { appState.openCallDetail(item.callId) },
-                    color = colors.surface, shape = RoundedCornerShape(20.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.border)) {
-                    Row(Modifier.padding(NqrbSpacing.Md), horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md)) {
-                        ParticipantAvatar(item.participantDisplayName)
-                        Column(Modifier.weight(1f)) {
-                            Text(item.participantDisplayName, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-                            Text("${directionLabel(strings, item.direction)} · ${outcomeLabel(strings, item.outcome)}", color = colors.textSecondary)
-                            Text(item.startedAtUtc, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
-                            item.connectedDurationSeconds?.let { Text(formatDuration(it), color = colors.textSecondary) }
-                            item.totalBytes?.let { Text("${strings.total}: ${humanBytes(it)}", color = colors.textSecondary) }
+            CallActivityLoadState.Ready -> {
+                var previousDay: String? = null
+                activity.history.forEach { item ->
+                    val callable = callableHistoryParticipant(item)?.takeUnless {
+                        contactBook.blockedAccounts.any { blocked -> blocked.membershipId == it.membershipId }
+                    }
+                    val addedLocally = item.callId in addedFromHistory ||
+                        item.counterpartMembershipId?.let { it in addedFromHistory } == true
+                    val whenLocal = callTime(item.startedAtUtc, languageTag)
+                    if (previousDay != whenLocal.dayKey) {
+                        Text(
+                            whenLocal.dayLabel,
+                            Modifier.padding(top = NqrbSpacing.Sm),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = colors.textSecondary,
+                        )
+                        previousDay = whenLocal.dayKey
+                    }
+                    NqrbSwipeToCallBox(strings.call, callable != null, { callable?.let(appState::requestOutgoingCall) }) { swipeModifier ->
+                        Surface(
+                            modifier = swipeModifier.clickable { appState.openCallDetail(item.callId) },
+                            color = colors.surface,
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                        Row(
+                            Modifier.padding(horizontal = NqrbSpacing.Sm, vertical = NqrbSpacing.Xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
+                        ) {
+                            ParticipantAvatar(item.participantDisplayName)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
+                                Text(
+                                    item.participantDisplayName,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = colors.textPrimary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (item.isGuestCall) Text(
+                                    strings.guestHistory,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = colors.accent,
+                                )
+                                val outcome = outcomeLabel(strings, item.outcome)
+                                Text(
+                                    "${directionLabel(strings, item.direction)} · $outcome",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (item.outcome.equals("missed", true) || item.outcome.equals("failed", true)) colors.destructive else colors.textSecondary,
+                                )
+                                val connectedSeconds = item.connectedDurationSeconds
+                                if (connectedSeconds != null && connectedSeconds > 0) {
+                                    Text("${strings.connectedDuration}: ${formatDuration(connectedSeconds)}", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                                }
+                            }
+                            Column(
+                                Modifier.widthIn(min = 112.dp, max = 148.dp),
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs),
+                            ) {
+                                Text(whenLocal.timeLabel, style = MaterialTheme.typography.labelMedium, color = colors.textSecondary)
+                                if (callable != null) IconButton(
+                                    modifier = Modifier.size(48.dp),
+                                    onClick = { appState.requestOutgoingCall(callable) },
+                                ) {
+                                    NqrbIcon(NqrbGlyph.Call, strings.call, colors.accent, Modifier.size(22.dp))
+                                }
+                                if (shouldShowHistoryContactAdd(item.isGuestCall, item.isSavedContact,
+                                        item.canAddContact, addedLocally)) TextButton(
+                                    enabled = contactBook.mutationState != NqrbContactMutationState.Saving,
+                                    onClick = { appState.addNqrbContactFromCallHistory(item.callId, item.counterpartMembershipId) },
+                                ) {
+                                    Text(
+                                        strings.addFromHistory,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = TextAlign.End,
+                                    )
+                                }
+                            }
+                        }
                         }
                     }
                 }
@@ -1121,8 +2141,53 @@ private fun CallHistoryScreen(strings: NqrbStrings, appState: NqrbAppState, acti
 }
 
 @Composable
-private fun CallDetailScreen(strings: NqrbStrings, appState: NqrbAppState, detail: CallHistoryDetail) {
+private fun HistoryFilterRow(
+    strings: NqrbStrings,
+    selected: CallHistoryFilter,
+    onSelect: (CallHistoryFilter) -> Unit,
+) {
+    val filters = listOf(
+        CallHistoryFilter.All to strings.allCalls,
+        CallHistoryFilter.Missed to strings.missed,
+        CallHistoryFilter.Incoming to strings.incoming,
+        CallHistoryFilter.Outgoing to strings.outgoing,
+    )
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
+        filters.forEach { (filter, label) ->
+            val isSelected = filter == selected
+            Surface(
+                modifier = Modifier.weight(1f).semantics {
+                    this.selected = isSelected
+                    role = Role.Button
+                },
+                color = if (isSelected) LocalNqrbColors.current.accentSoft else Color.Transparent,
+                shape = RoundedCornerShape(12.dp),
+                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, LocalNqrbColors.current.accent) else null,
+            ) {
+                TextButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onSelect(filter) },
+                    contentPadding = PaddingValues(horizontal = NqrbSpacing.Xs),
+                ) {
+                    Text(
+                        label,
+                        color = if (isSelected) LocalNqrbColors.current.accent else LocalNqrbColors.current.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CallDetailScreen(strings: NqrbStrings, languageTag: String, appState: NqrbAppState, contactBook: NqrbContactBookSnapshot, detail: CallHistoryDetail, callTime: (String, String) -> NqrbCallTime) {
     val colors = LocalNqrbColors.current
+    val addedFromHistory by appState.addedHistoryContactCalls.collectAsState()
+    var confirmBlock by remember { mutableStateOf(false) }
+    val counterpartId = detail.counterpartMembershipId
+    val isBlocked = counterpartId != null && contactBook.blockedAccounts.any { it.membershipId == counterpartId }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
         verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md)) {
         TextButton(onClick = appState::closeCallDetail) { Text(strings.back) }
@@ -1131,7 +2196,31 @@ private fun CallDetailScreen(strings: NqrbStrings, appState: NqrbAppState, detai
             Text(detail.participantDisplayNames.joinToString(), style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
         }
         Text("${directionLabel(strings, detail.direction)} · ${outcomeLabel(strings, detail.outcome)}", color = colors.textSecondary)
-        Text("${strings.callTime}: ${detail.startedAtUtc}", color = colors.textSecondary)
+        if (detail.isGuestCall) Text(strings.guestHistory, color = colors.accent,
+            style = MaterialTheme.typography.labelMedium)
+        val addedLocally = detail.callId in addedFromHistory ||
+            counterpartId?.let { it in addedFromHistory } == true
+        if (shouldShowHistoryContactAdd(detail.isGuestCall, detail.isSavedContact,
+                detail.canAddContact, addedLocally)) Button(
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            enabled = contactBook.mutationState != NqrbContactMutationState.Saving,
+            onClick = { appState.addNqrbContactFromCallHistory(detail.callId, counterpartId) },
+        ) { Text(strings.addFromHistory) }
+        if (!detail.isGuestCall && counterpartId != null) {
+            TextButton(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = contactBook.blockState != NqrbBlockState.Working,
+                onClick = {
+                    if (isBlocked) appState.unblockNqrbAccount(counterpartId)
+                    else confirmBlock = true
+                },
+            ) { Text(if (isBlocked) strings.unblockContact else strings.blockContact) }
+        }
+        if (contactBook.blockState == NqrbBlockState.Error) {
+            InfoNote(if (contactBook.blockErrorIsLoad) strings.blockedLoadError else strings.blockError)
+            DirectoryRefreshAction(strings.retry, appState::refreshBlockedAccounts)
+        }
+        Text("${strings.callTime}: ${callTime(detail.startedAtUtc, languageTag).fullLabel}", color = colors.textSecondary)
         detail.ringingDurationSeconds?.let { Text("${strings.ringingDuration}: ${formatDuration(it)}", color = colors.textSecondary) }
         detail.connectedDurationSeconds?.let { Text("${strings.connectedDuration}: ${formatDuration(it)}", color = colors.textSecondary) }
         UsageLine(strings.sent, detail.bytesSent ?: 0)
@@ -1142,6 +2231,16 @@ private fun CallDetailScreen(strings: NqrbStrings, appState: NqrbAppState, detai
         if (connectedSeconds != null && connectedSeconds > 0 && totalBytes != null)
             Text("${humanBytes(totalBytes * 60 / connectedSeconds)} ${strings.averagePerMinute}", color = colors.textSecondary)
     }
+    if (confirmBlock && counterpartId != null) AlertDialog(
+        onDismissRequest = { confirmBlock = false },
+        title = { Text(strings.blockConfirmTitle) },
+        text = { Text(strings.blockConfirmBody) },
+        confirmButton = { TextButton(onClick = {
+            confirmBlock = false
+            appState.blockNqrbAccount(counterpartId)
+        }) { Text(strings.blockContact) } },
+        dismissButton = { TextButton(onClick = { confirmBlock = false }) { Text(strings.cancel) } },
+    )
 }
 
 @Composable
@@ -1274,23 +2373,7 @@ private fun NqrbBottomBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            items.take(2).forEach { (destination, glyph, label) ->
-                BottomItem(destination, glyph, label, current == destination, colors, onSelect)
-            }
-            Box(
-                Modifier
-                    .size(58.dp)
-                    .clip(CircleShape)
-                    .background(colors.callActionSurface)
-                    .semantics {
-                        role = Role.Button
-                        disabled()
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                NqrbIcon(NqrbGlyph.Call, strings.call, colors.background, Modifier.size(30.dp))
-            }
-            items.drop(2).forEach { (destination, glyph, label) ->
+            items.forEach { (destination, glyph, label) ->
                 BottomItem(destination, glyph, label, current == destination, colors, onSelect)
             }
         }

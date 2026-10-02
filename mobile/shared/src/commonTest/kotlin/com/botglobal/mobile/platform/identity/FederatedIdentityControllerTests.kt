@@ -4,8 +4,13 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class FederatedIdentityControllerTests {
     @Test
     fun signedOutCanAuthenticateOnlyAfterAuthoritativeBackendSuccess() = runTest {
@@ -80,6 +85,45 @@ class FederatedIdentityControllerTests {
             FederatedAuthenticationState.AuthenticationError(FederatedAuthenticationError.NetworkFailure),
             controller.state.value,
         )
+    }
+
+    @Test
+    fun token_refresh_updates_the_session_without_reopening_google() = runTest {
+        val original = session()
+        val renewed = original.copy(accessToken = "renewed-access")
+        var restores = 0
+        val gateway = object : FederatedIdentityGateway {
+            override suspend fun restore(): MobileSession? = if (++restores == 1) original else renewed
+            override suspend fun authenticate(credential: FederatedCredential) = FederatedSignInResult.Failed
+            override suspend fun logout() = Unit
+        }
+        val controller = FederatedIdentityController(FakeCredentials(), gateway)
+        controller.restore()
+
+        assertEquals(renewed, controller.refreshSignedInSession())
+        assertEquals(renewed, (controller.state.value as FederatedAuthenticationState.SignedIn).session)
+        assertEquals(2, restores)
+    }
+
+    @Test
+    fun in_flight_refresh_cannot_sign_in_again_after_logout() = runTest {
+        val pendingRefresh = CompletableDeferred<MobileSession?>()
+        var restores = 0
+        val gateway = object : FederatedIdentityGateway {
+            override suspend fun restore(): MobileSession? = if (++restores == 1) session() else pendingRefresh.await()
+            override suspend fun authenticate(credential: FederatedCredential) = FederatedSignInResult.Failed
+            override suspend fun logout() = Unit
+        }
+        val controller = FederatedIdentityController(FakeCredentials(), gateway)
+        controller.restore()
+
+        backgroundScope.launch { controller.refreshSignedInSession() }
+        runCurrent()
+        controller.logout()
+        pendingRefresh.complete(session().copy(accessToken = "late-token"))
+        runCurrent()
+
+        assertEquals(FederatedAuthenticationState.SignedOut, controller.state.value)
     }
 
     private class FakeCredentials(

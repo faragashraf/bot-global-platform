@@ -3,18 +3,20 @@ package com.botglobal.nqrb.app.state
 import com.botglobal.mobile.platform.appearance.AppearanceController
 import com.botglobal.mobile.platform.calling.CallParticipant
 import com.botglobal.mobile.platform.calling.CallAudioRoute
+import com.botglobal.mobile.platform.calling.CallDirection
+import com.botglobal.mobile.platform.calling.CallSessionSnapshot
+import com.botglobal.mobile.platform.calling.CallState
 import com.botglobal.mobile.platform.calling.CallableParticipant
 import com.botglobal.mobile.platform.calling.CallingDirectoryController
 import com.botglobal.mobile.platform.calling.CallSessionController
 import com.botglobal.mobile.platform.calling.CallTerminationReason
 import com.botglobal.mobile.platform.calling.CallActivityController
+import com.botglobal.mobile.platform.calling.CallHistoryFilter
 import com.botglobal.mobile.platform.calling.FinalCallUsage
 import com.botglobal.mobile.platform.calling.UnavailableCallActivityGateway
 import com.botglobal.mobile.platform.calling.OutgoingCallRequest
 import com.botglobal.mobile.platform.calling.UnavailableCallPlatformLifecycle
 import com.botglobal.mobile.platform.calling.UnavailableCallingDirectory
-import com.botglobal.mobile.platform.contacts.ContactsController
-import com.botglobal.mobile.platform.contacts.UnavailableContactsGateway
 import com.botglobal.mobile.platform.device.UnavailablePermissionController
 import com.botglobal.mobile.platform.device.PermissionController
 import com.botglobal.mobile.platform.device.PermissionKind
@@ -44,18 +46,23 @@ import com.botglobal.mobile.platform.voice.VoiceMediaPeerFactory
 import com.botglobal.mobile.platform.voice.VoiceSignalingTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Instant
 
 enum class NqrbDestination {
     SignIn,
-    ContactsOnboarding,
     Home,
     History,
     People,
@@ -93,17 +100,15 @@ class NqrbAppState(
         UnavailableFederatedCredentialProvider,
         UnavailableFederatedIdentityGateway,
     ),
-    val contacts: ContactsController = ContactsController(
-        UnavailablePermissionController,
-        UnavailableContactsGateway,
-    ),
     val locale: LocaleController = LocaleController(DEFAULT_LANGUAGE),
     val appearance: AppearanceController = AppearanceController(),
+    val ringtone: NqrbRingtoneSettings = NqrbRingtoneSettings(),
     val navigation: BackStackNavigator<NqrbDestination> = BackStackNavigator(NqrbDestination.SignIn),
     val calling: CallSessionController = unavailableCalling(),
     val callingDirectory: CallingDirectoryController = CallingDirectoryController(
         UnavailableCallingDirectory,
     ),
+    val contactBook: NqrbContactBookController = NqrbContactBookController(),
     val callActivity: CallActivityController = CallActivityController(UnavailableCallActivityGateway),
     private val push: PushRegistrationLifecycle = UnavailablePushRegistrationLifecycle,
     private val accountDeletion: NqrbAccountDeletionGateway = UnavailableNqrbAccountDeletionGateway,
@@ -126,12 +131,20 @@ class NqrbAppState(
     private var accountProfileRequestGeneration = 0L
     private var pendingMicrophoneAction = PendingMicrophoneAction.Outgoing
     private var pendingOutgoingParticipant: CallableParticipant? = null
+    private var pendingInviteCode: String? = null
     private val submittedUsageCalls = mutableSetOf<String>()
+    private val requestedCallContacts = mutableSetOf<String>()
+    private val pendingHistoryContactAdds = mutableSetOf<String>()
+    private val mutableAddedHistoryContactCalls = MutableStateFlow<Set<String>>(emptySet())
+    val addedHistoryContactCalls = mutableAddedHistoryContactCalls.asStateFlow()
+    private val sessionRenewalMutex = Mutex()
+    private var foregroundRefreshJob: Job? = null
 
     init {
         callActionScope.launch {
             calling.state.collect { snapshot ->
                 val callId = snapshot.callId?.value ?: return@collect
+                queueIncomingContactLookup(snapshot)
                 val usage = snapshot.networkUsage
                 if (usage.isFinal && usage.measurementAvailable) {
                     val membershipId = (identity.state.value as? FederatedAuthenticationState.SignedIn)
@@ -155,9 +168,15 @@ class NqrbAppState(
                 if (authenticated != null) {
                     runCatching { push.activate() }
                     runCatching { calling.connectSignaling() }
+                    contactBook.load(authenticated.session)
+                    queueIncomingContactLookup(calling.state.value)
                     refreshCallingDirectory()
                     callActivity.flushPending(authenticated.session.identity.membershipId)
-                    NqrbDestination.Home
+                    if (processPendingInvite(authenticated.session)) {
+                        NqrbDestination.People
+                    } else {
+                        NqrbDestination.Home
+                    }
                 } else {
                     NqrbDestination.SignIn
                 },
@@ -176,27 +195,18 @@ class NqrbAppState(
             invalidateAccountProfileRequests(hideProfile = true)
             runCatching { push.activate() }
             runCatching { calling.connectSignaling() }
+            contactBook.load(authenticated.session)
+            queueIncomingContactLookup(calling.state.value)
             refreshCallingDirectory()
             callActivity.flushPending(authenticated.session.identity.membershipId)
-            navigation.reset(NqrbDestination.ContactsOnboarding)
+            navigation.reset(
+                if (processPendingInvite(authenticated.session)) {
+                    NqrbDestination.People
+                } else {
+                    NqrbDestination.Home
+                },
+            )
         }
-    }
-
-    suspend fun allowContacts() {
-        contacts.requestAndLoad()
-        navigation.reset(NqrbDestination.Home)
-    }
-
-    fun skipContacts() {
-        navigation.reset(NqrbDestination.Home)
-    }
-
-    suspend fun refreshContacts() {
-        contacts.refresh()
-    }
-
-    suspend fun requestContactsFromPeople() {
-        contacts.requestAndLoad()
     }
 
     suspend fun logout() {
@@ -223,10 +233,13 @@ class NqrbAppState(
         runCatching { calling.disconnectSignaling() }
         identity.logout()
         mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
-        contacts.clear()
         callingDirectory.clear()
+        contactBook.clear()
+        pendingInviteCode = null
         callActivity.clear()
         submittedUsageCalls.clear()
+        pendingHistoryContactAdds.clear()
+        mutableAddedHistoryContactCalls.value = emptySet()
         navigation.reset(NqrbDestination.SignIn)
         mutableAccountActionState.value = NqrbAccountActionState.Idle
     }
@@ -277,10 +290,13 @@ class NqrbAppState(
         runCatching { localAccountDataCleaner.clear() }
         identity.logout()
         mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
-        contacts.clear()
         callingDirectory.clear()
+        contactBook.clear()
+        pendingInviteCode = null
         callActivity.clear()
         submittedUsageCalls.clear()
+        pendingHistoryContactAdds.clear()
+        mutableAddedHistoryContactCalls.value = emptySet()
         navigation.reset(NqrbDestination.SignIn)
         mutableAccountActionState.value = NqrbAccountActionState.Idle
     }
@@ -295,7 +311,14 @@ class NqrbAppState(
         if (identity.state.value !is FederatedAuthenticationState.SignedIn) return false
         navigation.selectTopLevel(destination)
         if (destination == NqrbDestination.Home) refreshCallingDirectory()
-        if (destination == NqrbDestination.History) callActionScope.launch { callActivity.loadHistory() }
+        if (destination == NqrbDestination.People) {
+            refreshContactBook()
+            refreshCallingDirectory()
+        }
+        if (destination == NqrbDestination.History) {
+            refreshCallingDirectory()
+            refreshCallHistory()
+        }
         if (destination == NqrbDestination.Profile) refreshAccountProfile()
         return true
     }
@@ -370,24 +393,326 @@ class NqrbAppState(
 
     fun canUseHome(): Boolean = identity.state.value is FederatedAuthenticationState.SignedIn
 
+    private fun isCurrentSession(session: MobileSession): Boolean =
+        (identity.state.value as? FederatedAuthenticationState.SignedIn)?.session == session
+
+    private fun queueIncomingContactLookup(snapshot: CallSessionSnapshot) {
+        if (snapshot.direction != CallDirection.Incoming || snapshot.state != CallState.Ringing) return
+        val callId = snapshot.callId?.value ?: return
+        val membershipId = snapshot.participant?.membershipId?.takeIf(String::isNotBlank) ?: return
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn ?: return
+        if (!requestedCallContacts.add(callId)) return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            contactBook.resolveContactForCall(session, membershipId)
+        }
+    }
+
+    private suspend fun signedInSessionForAction(expected: MobileSession): MobileSession? {
+        val current = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return null
+        if (!current.session.sameAccountAs(expected)) return null
+        if (!current.session.accessExpiresSoon()) return current.session
+        return sessionRenewalMutex.withLock {
+            val latest = identity.state.value as? FederatedAuthenticationState.SignedIn
+                ?: return@withLock null
+            if (!latest.session.sameAccountAs(expected)) return@withLock null
+            if (!latest.session.accessExpiresSoon()) return@withLock latest.session
+            val refreshed = identity.refreshSignedInSession()
+            val afterRefresh = identity.state.value as? FederatedAuthenticationState.SignedIn
+            if (afterRefresh == null) {
+                contactBook.clear()
+                navigation.reset(NqrbDestination.SignIn)
+                return@withLock null
+            }
+            if (!afterRefresh.session.sameAccountAs(expected)) return@withLock null
+            (refreshed ?: afterRefresh.session).takeUnless(MobileSession::accessExpiresSoon)
+        }
+    }
+
+    fun onForeground() {
+        foregroundRefreshJob?.cancel()
+        foregroundRefreshJob = callActionScope.launch {
+            while (isActive) {
+                if (startupState.value == NqrbStartupState.Ready &&
+                    identity.state.value is FederatedAuthenticationState.SignedIn
+                ) {
+                    runCatching { calling.connectSignaling() }
+                }
+                refreshVisibleData()
+                delay(5 * 60 * 1000L)
+            }
+        }
+    }
+
+    fun onBackground() {
+        foregroundRefreshJob?.cancel()
+        foregroundRefreshJob = null
+    }
+
+    private suspend fun refreshVisibleData() {
+        if (startupState.value != NqrbStartupState.Ready) return
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn ?: return
+        val session = signedInSessionForAction(signedIn.session) ?: return
+        when (navigation.current) {
+            NqrbDestination.Home, NqrbDestination.People -> {
+                contactBook.load(session)
+                contactBook.loadBlockedAccounts(session)
+                refreshCallingDirectory()
+            }
+            NqrbDestination.History -> {
+                callActivity.loadHistory()
+                refreshCallingDirectory()
+            }
+            NqrbDestination.Profile -> loadAccountProfileForCurrentSession()
+            else -> Unit
+        }
+    }
+
     fun refreshCallingDirectory() {
         val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
             ?: return
         callActionScope.launch {
+            if (!isCurrentSession(signedIn.session)) return@launch
             callingDirectory.refresh(signedIn.session.identity.membershipId)
         }
     }
 
-    fun refreshCallHistory() { callActionScope.launch { callActivity.loadHistory() } }
-    fun loadMoreCallHistory() { callActionScope.launch { callActivity.loadNextHistoryPage() } }
-    fun openCallDetail(callId: String) { callActionScope.launch { callActivity.loadDetail(callId) } }
+    fun refreshContactBook() {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            contactBook.load(session)
+            contactBook.loadBlockedAccounts(session)
+        }
+    }
+
+    fun refreshBlockedAccounts() {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            contactBook.loadBlockedAccounts(session)
+        }
+    }
+
+    fun blockNqrbAccount(membershipId: String) {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            if (contactBook.block(session, membershipId)) refreshCallingDirectory()
+        }
+    }
+
+    fun unblockNqrbAccount(membershipId: String) {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            if (contactBook.unblock(session, membershipId)) refreshCallingDirectory()
+        }
+    }
+
+    fun loadMoreNqrbContacts() {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            contactBook.loadMoreContacts(session)
+        }
+    }
+
+    fun searchNqrbUsers(query: String) {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        if (query.trim().length < 2) {
+            callActionScope.launch {
+                if (isCurrentSession(signedIn.session)) contactBook.search(signedIn.session, query)
+            }
+            return
+        }
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            contactBook.search(session, query)
+        }
+    }
+
+    fun loadMoreNqrbSearchResults() {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            contactBook.loadMoreSearchResults(session)
+        }
+    }
+
+    fun addNqrbContact(membershipId: String) {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            if (contactBook.add(session, membershipId)) {
+                refreshCallingDirectory()
+            }
+        }
+    }
+
+    fun addNqrbContactFromCallHistory(callId: String, counterpartMembershipId: String? = null) {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        val contactKey = counterpartMembershipId?.takeIf { it.isNotBlank() } ?: callId
+        if (contactKey in mutableAddedHistoryContactCalls.value || !pendingHistoryContactAdds.add(contactKey)) return
+        callActionScope.launch {
+            try {
+                val session = signedInSessionForAction(signedIn.session) ?: return@launch
+                if (contactBook.addFromCallHistory(session, callId)) {
+                    mutableAddedHistoryContactCalls.value = mutableAddedHistoryContactCalls.value + contactKey
+                    refreshCallingDirectory()
+                    callActivity.loadHistory()
+                    if (callActivity.state.value.selected?.callId == callId) callActivity.loadDetail(callId)
+                }
+            } finally {
+                pendingHistoryContactAdds.remove(contactKey)
+            }
+        }
+    }
+
+    fun selectCallHistoryFilter(filter: CallHistoryFilter) {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        callActionScope.launch {
+            if (signedInSessionForAction(signedIn.session) != null) callActivity.loadHistory(filter)
+        }
+    }
+
+    fun removeNqrbContact(membershipId: String) {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            if (contactBook.remove(session, membershipId)) {
+                mutableAddedHistoryContactCalls.value = mutableAddedHistoryContactCalls.value - membershipId
+                refreshCallingDirectory()
+                callActivity.loadHistory()
+            }
+        }
+    }
+
+    suspend fun updateNqrbContactNickname(membershipId: String, nickname: String?): Boolean {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn ?: return false
+        val session = signedInSessionForAction(signedIn.session) ?: return false
+        return contactBook.updateNickname(session, membershipId, nickname)
+    }
+
+    fun createNqrbInvite() {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            contactBook.createInvite(session)
+        }
+    }
+
+    fun toggleAccountInviteDetails() = contactBook.toggleAccountInviteDetails()
+
+    fun toggleGuestCallDetails() = contactBook.toggleGuestCallDetails()
+
+    fun createNqrbGuestCallInvite() {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            contactBook.createGuestCallInvite(session)
+        }
+    }
+
+    fun revokeNqrbGuestCallInvite() {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            contactBook.revokeGuestCallInvite(session)
+        }
+    }
+
+    fun updateNqrbInviteCodeInput(value: String) {
+        contactBook.updateInviteCodeInput(value)
+    }
+
+    fun previewNqrbInvite() {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            if (contactBook.previewInvite(session)) {
+                pendingInviteCode = null
+            }
+        }
+    }
+
+    fun acceptNqrbInvite() {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+            ?: return
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            if (contactBook.acceptInvite(session)) {
+                pendingInviteCode = null
+                refreshCallingDirectory()
+            }
+        }
+    }
+
+    fun cancelNqrbInviteConfirmation() {
+        contactBook.clearInvitePreview()
+    }
+
+    fun handleNqrbInviteLink(codeOrLink: String) {
+        val normalized = normalizeInviteCode(codeOrLink)
+        if (normalized.isBlank()) return
+        pendingInviteCode = normalized
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+        if (signedIn == null) {
+            navigation.reset(NqrbDestination.SignIn)
+            contactBook.updateInviteCodeInput(normalized)
+            return
+        }
+
+        navigation.selectTopLevel(NqrbDestination.People)
+        contactBook.updateInviteCodeInput(normalized)
+        callActionScope.launch {
+            val session = signedInSessionForAction(signedIn.session) ?: return@launch
+            if (contactBook.previewInvite(session, normalized)) {
+                pendingInviteCode = null
+            }
+        }
+    }
+
+    private suspend fun processPendingInvite(session: MobileSession): Boolean {
+        val code = pendingInviteCode ?: return false
+        contactBook.updateInviteCodeInput(code)
+        if (contactBook.previewInvite(session, code)) {
+            pendingInviteCode = null
+        }
+        return true
+    }
+
+    fun refreshCallHistory() { withRenewedSession { callActivity.loadHistory() } }
+    fun loadMoreCallHistory() { withRenewedSession { callActivity.loadNextHistoryPage() } }
+    fun openCallDetail(callId: String) { withRenewedSession { callActivity.loadDetail(callId) } }
     fun closeCallDetail() = callActivity.clearDetail()
     fun resetUsage() { callActionScope.launch { callActivity.resetUsage() } }
+
+    private fun withRenewedSession(action: suspend () -> Unit) {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn ?: return
+        callActionScope.launch {
+            if (signedInSessionForAction(signedIn.session) != null) action()
+        }
+    }
 
     fun requestOutgoingCall(participant: CallableParticipant) {
         val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
             ?: return
         if (participant.membershipId == signedIn.session.identity.membershipId) return
+        if (contactBook.state.value.blockedAccounts.any { it.membershipId == participant.membershipId }) return
         pendingOutgoingParticipant = participant
         callActionScope.launch { requestOutgoingCallInternal(participant) }
     }
@@ -514,3 +839,11 @@ private data class AccountProfileInvalidation(
     val session: MobileSession?,
     val wasLoading: Boolean,
 )
+
+private fun MobileSession.sameAccountAs(other: MobileSession): Boolean =
+    identity.membershipId == other.identity.membershipId &&
+        identity.applicationKey == other.identity.applicationKey
+
+private fun MobileSession.accessExpiresSoon(): Boolean = runCatching {
+    Instant.parse(accessExpiresAtUtc) <= Clock.System.now() + 1.minutes
+}.getOrDefault(true)
