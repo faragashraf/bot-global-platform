@@ -1,6 +1,7 @@
 package com.botglobal.nqrb.app.data
 
 import com.botglobal.mobile.platform.calling.FinalCallUsage
+import com.botglobal.mobile.platform.calling.CallHistoryFilter
 import com.botglobal.mobile.platform.identity.ApplicationIdentity
 import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
@@ -22,7 +23,9 @@ import kotlinx.coroutines.test.runTest
 class NqrbCallActivityApiTests {
     @Test
     fun maps_paged_user_relative_history_contract() = runTest {
+        lateinit var captured: HttpRequestData
         val api = NqrbCallActivityApi(HttpClient(MockEngine { request ->
+            captured = request
             assertEquals("/api/mobile/calling/history", request.url.encodedPath)
             assertEquals("2", request.url.parameters["page"])
             assertEquals("Bearer access", request.headers[HttpHeaders.Authorization])
@@ -30,11 +33,59 @@ class NqrbCallActivityApiTests {
                 HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
         }), "https://api.example", FixedSessionVault())
 
-        val page = api.history(2, 20)
+        val page = api.history(2, 20, CallHistoryFilter.Missed)
 
         assertEquals(2, page.page)
+        assertEquals("missed", captured.url.parameters["filter"])
         assertEquals(true, page.hasMore)
         assertEquals("missed", page.items.single().outcome)
+        assertFalse(page.items.single().isGuestCall)
+        assertEquals(null, page.items.single().isSavedContact)
+        assertEquals(null, page.items.single().counterpartMembershipId)
+        assertFalse(page.items.single().canRedial)
+        assertFalse(page.items.single().canAddContact)
+    }
+
+    @Test
+    fun contact_and_call_capabilities_are_read_from_the_server_for_each_history_entry_and_detail() = runTest {
+        val api = NqrbCallActivityApi(HttpClient(MockEngine { request ->
+            val body = if (request.url.encodedPath.endsWith("/history"))
+                """{"items":[{"callId":"saved","direction":"incoming","participantDisplayName":"Friend","startedAtUtc":"2026-10-02T12:00:00Z","isSavedContact":true,"counterpartMembershipId":"member-friend","canRedial":true,"canAddContact":false},{"callId":"new","direction":"incoming","participantDisplayName":"Bero Ashraf","startedAtUtc":"2026-10-02T12:01:00Z","isSavedContact":false,"counterpartMembershipId":"member-bero","canRedial":true,"canAddContact":true}],"page":1,"pageSize":20,"hasMore":false}"""
+            else
+                """{"callId":"saved","direction":"incoming","participantDisplayNames":["Friend"],"startedAtUtc":"2026-10-02T12:00:00Z","isSavedContact":true,"counterpartMembershipId":"member-friend","canRedial":true,"canAddContact":false}"""
+            respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        }), "https://api.example", FixedSessionVault())
+
+        val page = api.history(1, 20, CallHistoryFilter.All)
+
+        assertEquals(true, page.items.first().isSavedContact)
+        assertEquals("member-friend", page.items.first().counterpartMembershipId)
+        assertEquals(false, page.items.last().isSavedContact)
+        assertEquals("member-bero", page.items.last().counterpartMembershipId)
+        assertEquals(true, page.items.last().canRedial)
+        assertEquals(true, page.items.last().canAddContact)
+        assertEquals(true, api.detail("saved")?.isSavedContact)
+        assertEquals("member-friend", api.detail("saved")?.counterpartMembershipId)
+        assertEquals(true, api.detail("saved")?.canRedial)
+        assertEquals(false, api.detail("saved")?.canAddContact)
+    }
+
+    @Test
+    fun guest_call_history_and_detail_keep_the_guest_marker() = runTest {
+        val api = NqrbCallActivityApi(HttpClient(MockEngine { request ->
+            val body = if (request.url.encodedPath.endsWith("/history"))
+                """{"items":[{"callId":"guest-1","direction":"incoming","participantDisplayName":"Browser guest","outcome":"completed","startedAtUtc":"2026-10-02T12:00:00Z","isGuestCall":true}],"page":1,"pageSize":20,"hasMore":false}"""
+            else
+                """{"callId":"guest-1","direction":"incoming","participantDisplayNames":["Browser guest"],"outcome":"completed","startedAtUtc":"2026-10-02T12:00:00Z","isGuestCall":true}"""
+            respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        }), "https://api.example", FixedSessionVault())
+
+        val item = api.history(1, 20, CallHistoryFilter.All).items.single()
+        val detail = api.detail(item.callId)
+
+        assertEquals("Browser guest", item.participantDisplayName)
+        assertEquals(true, item.isGuestCall)
+        assertEquals(true, detail?.isGuestCall)
     }
 
     @Test

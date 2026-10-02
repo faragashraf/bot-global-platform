@@ -29,6 +29,7 @@ data class NqrbColors(
     val positive: Color,
     val destructive: Color,
     val callActionSurface: Color,
+    val callActionContent: Color,
 )
 
 object NqrbSpacing {
@@ -40,33 +41,35 @@ object NqrbSpacing {
 }
 
 private val LightTokens = NqrbColors(
-    background = Color(0xFFF4F7F3),
-    backgroundGlow = Color(0xFFE0F5E9),
+    background = Color(0xFFF7FAF8),
+    backgroundGlow = Color(0xFFE8F4ED),
     surface = Color(0xFFFFFFFF),
-    elevatedSurface = Color(0xFFF0F5F1),
-    textPrimary = Color(0xFF12201A),
-    textSecondary = Color(0xFF5D6B64),
-    border = Color(0xFFD6E0D9),
-    accent = Color(0xFF087F5B),
-    accentSoft = Color(0xFFD5F3E4),
-    positive = Color(0xFF15835B),
-    destructive = Color(0xFFC63C4A),
-    callActionSurface = Color(0xFF0A8F67),
+    elevatedSurface = Color(0xFFF0F6F2),
+    textPrimary = Color(0xFF182B22),
+    textSecondary = Color(0xFF4D6457),
+    border = Color(0xFFDCE9E0),
+    accent = Color(0xFF167347),
+    accentSoft = Color(0xFFE1F3E8),
+    positive = Color(0xFF167347),
+    destructive = Color(0xFFB23B48),
+    callActionSurface = Color(0xFF167347),
+    callActionContent = Color.White,
 )
 
 private val DarkTokens = NqrbColors(
-    background = Color(0xFF07120E),
-    backgroundGlow = Color(0xFF10352A),
-    surface = Color(0xFF101F19),
-    elevatedSurface = Color(0xFF172A22),
-    textPrimary = Color(0xFFF1F8F4),
-    textSecondary = Color(0xFFAABBB2),
-    border = Color(0xFF294138),
-    accent = Color(0xFF62D8AA),
-    accentSoft = Color(0xFF173F31),
-    positive = Color(0xFF6BE0AF),
-    destructive = Color(0xFFFF8690),
-    callActionSurface = Color(0xFF36C893),
+    background = Color(0xFF0D1B15),
+    backgroundGlow = Color(0xFF173627),
+    surface = Color(0xFF16291E),
+    elevatedSurface = Color(0xFF1E3528),
+    textPrimary = Color(0xFFF1FAF4),
+    textSecondary = Color(0xFFC4DACB),
+    border = Color(0xFF355542),
+    accent = Color(0xFF90E7AC),
+    accentSoft = Color(0xFF254632),
+    positive = Color(0xFF90E7AC),
+    destructive = Color(0xFFFFA9AE),
+    callActionSurface = Color(0xFF90E7AC),
+    callActionContent = Color(0xFF0D1B15),
 )
 
 val LocalNqrbColors = staticCompositionLocalOf { DarkTokens }

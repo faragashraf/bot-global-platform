@@ -8,18 +8,21 @@ public enum UsagePeriodResetReason { Initial = 1, Manual = 2, Scheduled = 3 }
 public sealed class CallRecord
 {
     private CallRecord() { }
-    public CallRecord(Guid callId, Guid applicationId, string applicationKey, DateTimeOffset createdAtUtc)
+    public CallRecord(Guid callId, Guid applicationId, string applicationKey, DateTimeOffset createdAtUtc,
+        bool isGuestCall = false)
     {
         if (callId == Guid.Empty || applicationId == Guid.Empty) throw new ArgumentException("Call and application identifiers are required.");
         Id = callId;
         ApplicationId = applicationId;
         ApplicationKey = applicationKey.Trim().ToLowerInvariant();
         CreatedAtUtc = createdAtUtc;
+        IsGuestCall = isGuestCall;
     }
     public Guid Id { get; private set; }
     public Guid ApplicationId { get; private set; }
     public string ApplicationKey { get; private set; } = string.Empty;
     public DateTimeOffset CreatedAtUtc { get; private set; }
+    public bool IsGuestCall { get; private set; }
     public DateTimeOffset? AnsweredAtUtc { get; private set; }
     public DateTimeOffset? EndedAtUtc { get; private set; }
     public DurableCallState State { get; private set; } = DurableCallState.Ringing;

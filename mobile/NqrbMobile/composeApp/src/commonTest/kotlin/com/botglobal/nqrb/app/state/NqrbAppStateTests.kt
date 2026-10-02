@@ -18,14 +18,13 @@ import com.botglobal.mobile.platform.calling.CallTerminationReason
 import com.botglobal.mobile.platform.calling.CallActivityController
 import com.botglobal.mobile.platform.calling.CallActivityGateway
 import com.botglobal.mobile.platform.calling.CallHistoryDetail
+import com.botglobal.mobile.platform.calling.CallHistoryFilter
 import com.botglobal.mobile.platform.calling.CallHistoryPage
 import com.botglobal.mobile.platform.calling.FinalCallUsage
 import com.botglobal.mobile.platform.calling.PendingCallUsageStore
 import com.botglobal.mobile.platform.calling.UsagePeriod
 import com.botglobal.mobile.platform.calling.OutgoingCallRequest
 import com.botglobal.mobile.platform.calling.StartedCall
-import com.botglobal.mobile.platform.contacts.ContactsController
-import com.botglobal.mobile.platform.contacts.ContactsGateway
 import com.botglobal.mobile.platform.device.PermissionController
 import com.botglobal.mobile.platform.device.PermissionKind
 import com.botglobal.mobile.platform.device.PermissionState
@@ -46,6 +45,18 @@ import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
 import com.botglobal.mobile.platform.notifications.PushRegistrationOutcome
 import com.botglobal.nqrb.app.data.NqrbAccountDeletionGateway
 import com.botglobal.nqrb.app.data.NqrbAccountDeletionOutcome
+import com.botglobal.nqrb.app.data.NqrbContact
+import com.botglobal.nqrb.app.data.NqrbContactBookGateway
+import com.botglobal.nqrb.app.data.NqrbContactBookResult
+import com.botglobal.nqrb.app.data.NqrbContactInvite
+import com.botglobal.nqrb.app.data.NqrbContactInviteAcceptResult
+import com.botglobal.nqrb.app.data.NqrbContactInviteCreateResult
+import com.botglobal.nqrb.app.data.NqrbContactInvitePreviewResult
+import com.botglobal.nqrb.app.data.NqrbContactMutationResult
+import com.botglobal.nqrb.app.data.NqrbContactPage
+import com.botglobal.nqrb.app.data.NqrbGuestCallInvite
+import com.botglobal.nqrb.app.data.NqrbGuestCallInviteCreateResult
+import com.botglobal.nqrb.app.data.NqrbGuestCallInviteRevokeResult
 import com.botglobal.mobile.platform.voice.VoiceRoomController
 import com.botglobal.mobile.platform.voice.VoiceRoomSnapshot
 import com.botglobal.mobile.platform.voice.VoiceRoomState
@@ -56,6 +67,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -152,25 +164,20 @@ class NqrbAppStateTests {
     }
 
     @Test
-    fun authoritativeSignInContinuesToOptionalContactsThenHome() = runTest {
+    fun authoritativeSignInContinuesDirectlyToContactFirstHome() = runTest {
         val state = state(signIn = FederatedSignInResult.Authenticated(session()))
         state.startup()
         state.signInWithGoogle()
-        assertEquals(NqrbDestination.ContactsOnboarding, state.navigation.current)
-        assertTrue(state.canUseHome())
-
-        state.skipContacts()
         assertEquals(NqrbDestination.Home, state.navigation.current)
+        assertTrue(state.canUseHome())
     }
 
     @Test
-    fun deniedContactsNeverBlocksAuthenticatedHome() = runTest {
+    fun phoneContactsAreNotPartOfAuthenticatedHome() = runTest {
         val state = state(
             restored = session(),
-            permission = PermissionState.Denied,
         )
         state.startup()
-        state.allowContacts()
 
         assertEquals(NqrbDestination.Home, state.navigation.current)
         assertTrue(state.canUseHome())
@@ -312,7 +319,6 @@ class NqrbAppStateTests {
     fun microphone_is_explained_just_in_time_before_android_permission() = runTest {
         val state = NqrbAppState(
             identity = FederatedIdentityController(FixedCredentials, FixedIdentityGateway(session(), FederatedSignInResult.Rejected)),
-            contacts = ContactsController(FixedPermission(PermissionState.Denied), EmptyContacts),
             permissions = FixedPermission(PermissionState.Denied),
             callActionScope = backgroundScope,
         )
@@ -388,7 +394,7 @@ class NqrbAppStateTests {
     }
 
     @Test
-    fun returning_to_home_refreshes_the_authenticated_directory_without_polling() = runTest {
+    fun returning_to_people_and_home_refreshes_the_authenticated_directory_without_polling() = runTest {
         val directory = RecordingDirectory(emptyList())
         val state = NqrbAppState(
             identity = FederatedIdentityController(
@@ -404,11 +410,11 @@ class NqrbAppStateTests {
 
         assertTrue(state.selectTopLevel(NqrbDestination.People))
         runCurrent()
-        assertEquals(1, directory.loads)
+        assertEquals(2, directory.loads)
 
         assertTrue(state.selectTopLevel(NqrbDestination.Home))
         runCurrent()
-        assertEquals(2, directory.loads)
+        assertEquals(3, directory.loads)
     }
 
     @Test
@@ -494,7 +500,8 @@ class NqrbAppStateTests {
         assertEquals(0, signaling.ends)
         assertEquals(0, signaling.answers)
         assertEquals(0, voice.joins)
-        assertEquals(1, platform.starts)
+        assertEquals(1, platform.presentations)
+        assertEquals(0, platform.starts)
         assertEquals(listOf(CallTerminationReason.Rejected), platform.endReasons)
     }
 
@@ -536,6 +543,126 @@ class NqrbAppStateTests {
         assertEquals(emptyList(), pending.load())
     }
 
+    @Test
+    fun adding_contact_from_history_is_single_session_feedback_and_duplicate_suppressed() = runTest {
+        val response = CompletableDeferred<NqrbContactMutationResult>()
+        val contactGateway = RecordingContactBookGateway(response)
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, FixedIdentityGateway(session(), FederatedSignInResult.Rejected)),
+            contactBook = NqrbContactBookController(contactGateway),
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+
+        state.addNqrbContactFromCallHistory("call-1", "remote")
+        state.addNqrbContactFromCallHistory("call-2", "remote")
+        runCurrent()
+
+        assertEquals(1, contactGateway.historyAdds)
+        response.complete(NqrbContactMutationResult.Saved(NqrbContact("remote", "Remote")))
+        runCurrent()
+
+        assertEquals(setOf("remote"), state.addedHistoryContactCalls.value)
+        state.addNqrbContactFromCallHistory("call-2", "remote")
+        runCurrent()
+        assertEquals(1, contactGateway.historyAdds)
+
+        state.removeNqrbContact("remote")
+        runCurrent()
+        assertTrue(state.addedHistoryContactCalls.value.isEmpty())
+
+        state.addNqrbContactFromCallHistory("call-2", "remote")
+        runCurrent()
+        assertEquals(2, contactGateway.historyAdds)
+    }
+
+    @Test
+    fun guest_button_renews_an_expired_session_without_restarting_the_app() = runTest {
+        val expired = session().copy(accessExpiresAtUtc = "2000-01-01T00:00:00Z")
+        val renewed = session().copy(accessToken = "renewed-access", refreshToken = "renewed-refresh")
+        var restores = 0
+        val identityGateway = object : FederatedIdentityGateway {
+            override suspend fun restore(): MobileSession? = if (++restores == 1) expired else renewed
+            override suspend fun authenticate(credential: FederatedCredential) = FederatedSignInResult.Failed
+            override suspend fun logout() = Unit
+        }
+        val contacts = RecordingContactBookGateway(CompletableDeferred())
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, identityGateway),
+            contactBook = NqrbContactBookController(contacts),
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+
+        state.createNqrbGuestCallInvite()
+        runCurrent()
+
+        assertEquals(2, restores)
+        assertEquals(listOf(renewed), contacts.guestInviteSessions)
+        assertEquals(NqrbGuestCallInviteCreateState.Ready, state.contactBook.state.value.guestCallInviteCreateState)
+    }
+
+    @Test
+    fun foreground_retries_transient_session_refresh_without_restarting_or_using_expired_token() = runTest {
+        val expired = session().copy(accessExpiresAtUtc = "2000-01-01T00:00:00Z")
+        val renewed = session().copy(accessToken = "renewed-access", refreshToken = "renewed-refresh")
+        var restores = 0
+        val identityGateway = object : FederatedIdentityGateway {
+            override suspend fun restore(): MobileSession? = when (++restores) {
+                1 -> expired
+                2 -> throw IllegalStateException("temporary network failure")
+                else -> renewed
+            }
+            override suspend fun authenticate(credential: FederatedCredential) = FederatedSignInResult.Failed
+            override suspend fun logout() = Unit
+        }
+        val requestedSessions = mutableListOf<MobileSession>()
+        val contacts = object : NqrbContactBookGateway by RecordingContactBookGateway(CompletableDeferred()) {
+            override suspend fun listContacts(session: MobileSession, page: Int): NqrbContactBookResult {
+                requestedSessions += session
+                return NqrbContactBookResult.Available(NqrbContactPage(emptyList(), page, 20, false))
+            }
+        }
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, identityGateway),
+            contactBook = NqrbContactBookController(contacts),
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+
+        state.onForeground()
+        runCurrent()
+        assertEquals(listOf(expired), requestedSessions)
+        assertTrue(state.canUseHome())
+
+        advanceTimeBy(5 * 60 * 1000L)
+        runCurrent()
+        assertEquals(listOf(expired, renewed), requestedSessions)
+        assertEquals(3, restores)
+    }
+
+    @Test
+    fun returning_to_foreground_restores_call_signaling_after_a_network_interruption() = runTest {
+        val signaling = RecordingCallSignaling()
+        val calling = CallSessionController(backgroundScope, signaling, RecordingVoiceRoom(), RecordingCallPlatform())
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, FixedIdentityGateway(session(), FederatedSignInResult.Rejected)),
+            calling = calling,
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+        assertEquals(1, signaling.connects)
+
+        state.onForeground()
+        runCurrent()
+        assertEquals(2, signaling.connects)
+
+        state.onBackground()
+        state.onForeground()
+        runCurrent()
+        assertEquals(3, signaling.connects)
+    }
+
     private fun state(
         restored: MobileSession? = null,
         signIn: FederatedSignInResult = FederatedSignInResult.Rejected,
@@ -550,7 +677,6 @@ class NqrbAppStateTests {
             credentials = FixedCredentials,
             gateway = FixedIdentityGateway(restored, signIn),
         ),
-        contacts = ContactsController(FixedPermission(permission), EmptyContacts),
         push = push,
         accountDeletion = accountDeletion,
         localAccountDataCleaner = localCleaner,
@@ -596,9 +722,6 @@ class NqrbAppStateTests {
         override suspend fun requestAfterExplanation(permission: PermissionKind) = result
     }
 
-    private object EmptyContacts : ContactsGateway {
-        override suspend fun readLocalContacts() = emptyList<com.botglobal.mobile.platform.contacts.DeviceContact>()
-    }
 
     private class RecordingPushLifecycle(
         private val deactivationOutcome: PushRegistrationOutcome = PushRegistrationOutcome.Unregistered,
@@ -652,7 +775,12 @@ class NqrbAppStateTests {
         var answers = 0
         var rejects = 0
         var ends = 0
+        var connects = 0
         val startedRequests = mutableListOf<OutgoingCallRequest>()
+
+        override suspend fun connect() {
+            connects++
+        }
 
         override suspend fun startOutgoing(request: OutgoingCallRequest): StartedCall {
             startedRequests += request
@@ -699,7 +827,7 @@ class NqrbAppStateTests {
 
     private class RecordingCallActivityGateway : CallActivityGateway {
         val finalized = mutableListOf<FinalCallUsage>()
-        override suspend fun history(page: Int, pageSize: Int) = CallHistoryPage(emptyList(), page, pageSize, false)
+        override suspend fun history(page: Int, pageSize: Int, filter: CallHistoryFilter) = CallHistoryPage(emptyList(), page, pageSize, false)
         override suspend fun detail(callId: String): CallHistoryDetail? = null
         override suspend fun finalizeUsage(usage: FinalCallUsage) { finalized += usage }
         override suspend fun currentUsage() = UsagePeriod("period", "2026-09-01T00:00:00Z", null, 0, 0, null, null)
@@ -709,8 +837,13 @@ class NqrbAppStateTests {
 
     private class RecordingCallPlatform : CallPlatformLifecycle {
         override val actions = MutableSharedFlow<CallPlatformAction>(extraBufferCapacity = 2)
+        var presentations = 0
         var starts = 0
         val endReasons = mutableListOf<CallTerminationReason>()
+
+        override suspend fun presentIncoming(callId: CallId, participant: CallParticipant) {
+            presentations++
+        }
 
         override suspend fun start(callId: CallId, participant: CallParticipant, direction: CallDirection) {
             starts++
@@ -721,6 +854,38 @@ class NqrbAppStateTests {
         override suspend fun end(reason: CallTerminationReason) {
             endReasons += reason
         }
+    }
+
+    private class RecordingContactBookGateway(
+        private val historyAddResult: CompletableDeferred<NqrbContactMutationResult>,
+    ) : NqrbContactBookGateway {
+        var historyAdds = 0
+        val guestInviteSessions = mutableListOf<MobileSession>()
+        override suspend fun listContacts(session: MobileSession, page: Int) =
+            NqrbContactBookResult.Available(NqrbContactPage(emptyList(), page, 20, false))
+        override suspend fun searchUsers(session: MobileSession, query: String, page: Int) =
+            NqrbContactBookResult.Available(NqrbContactPage(emptyList(), page, 20, false))
+        override suspend fun addContact(session: MobileSession, membershipId: String) =
+            NqrbContactMutationResult.Saved(NqrbContact(membershipId, "Saved"))
+        override suspend fun addContactFromCallHistory(session: MobileSession, callId: String): NqrbContactMutationResult {
+            historyAdds++
+            return historyAddResult.await()
+        }
+        override suspend fun removeContact(session: MobileSession, membershipId: String) = NqrbContactMutationResult.Removed
+        override suspend fun updateContactNickname(session: MobileSession, membershipId: String, nickname: String?) =
+            NqrbContactMutationResult.Saved(NqrbContact(membershipId, "Saved", nickname))
+        override suspend fun createInvite(session: MobileSession) =
+            NqrbContactInviteCreateResult.Created(NqrbContactInvite("code", "nqrb://invite/code", "2099-01-01T00:00:00Z"))
+        override suspend fun createGuestCallInvite(session: MobileSession): NqrbGuestCallInviteCreateResult {
+            guestInviteSessions += session
+            return NqrbGuestCallInviteCreateResult.Created(
+                NqrbGuestCallInvite("invite", "https://example.test", "2099-01-01T00:00:00Z"),
+            )
+        }
+        override suspend fun revokeGuestCallInvite(session: MobileSession, inviteId: String) =
+            NqrbGuestCallInviteRevokeResult.Revoked
+        override suspend fun previewInvite(session: MobileSession, code: String) = NqrbContactInvitePreviewResult.Invalid
+        override suspend fun acceptInvite(session: MobileSession, code: String) = NqrbContactInviteAcceptResult.Invalid
     }
 
     private fun session() = MobileSession(

@@ -2,14 +2,19 @@ namespace BotGlobal.Calling.Application;
 
 public sealed record CallHistoryPage(IReadOnlyList<CallHistoryItem> Items, int Page, int PageSize, bool HasMore);
 public sealed record CallHistoryItem(Guid CallId, string Direction, string ParticipantDisplayName,
-    string? Outcome, DateTimeOffset StartedAtUtc, long? ConnectedDurationSeconds, long? TotalBytes);
+    string? Outcome, DateTimeOffset StartedAtUtc, long? ConnectedDurationSeconds, long? TotalBytes,
+    bool IsGuestCall = false, bool? IsSavedContact = null, Guid? CounterpartMembershipId = null,
+    bool CanRedial = false, bool CanAddContact = false);
 public sealed record CallHistoryDetail(Guid CallId, string Direction, IReadOnlyList<string> ParticipantDisplayNames,
     string? Outcome, string? EndReason, DateTimeOffset StartedAtUtc, DateTimeOffset? AnsweredAtUtc,
-    DateTimeOffset? EndedAtUtc, long? RingingDurationSeconds, long? ConnectedDurationSeconds, long? BytesSent, long? BytesReceived);
+    DateTimeOffset? EndedAtUtc, long? RingingDurationSeconds, long? ConnectedDurationSeconds, long? BytesSent, long? BytesReceived,
+    bool IsGuestCall = false, bool? IsSavedContact = null, Guid? CounterpartMembershipId = null,
+    bool CanRedial = false, bool CanAddContact = false);
 public sealed record UsageSummary(long BytesSent, long BytesReceived, long ConnectedDurationSeconds);
 public sealed record UsagePeriodView(Guid PeriodId, DateTimeOffset StartedAtUtc, DateTimeOffset? EndedAtUtc,
     long BytesSent, long BytesReceived, DateTimeOffset? ScheduledResetAtUtc, string? ScheduledTimeZoneId);
 public sealed record FinalizeUsageResult(bool Accepted, bool AlreadyFinalized, bool Conflict, string? Error);
+public enum CallHistoryFilter { All, Missed, Incoming, Outgoing }
 
 public interface ICallActivityService
 {
@@ -17,7 +22,7 @@ public interface ICallActivityService
     Task AnswerAsync(Realtime.CallSessionRegistry.Session session, DateTimeOffset at, CancellationToken cancellationToken);
     Task JoinedAsync(Realtime.CallSessionRegistry.Session session, Guid membershipId, DateTimeOffset at, CancellationToken cancellationToken);
     Task FinishAsync(Realtime.CallSessionRegistry.Session session, DateTimeOffset at, CancellationToken cancellationToken);
-    Task<CallHistoryPage> ListAsync(string applicationKey, Guid membershipId, int page, int pageSize, CancellationToken cancellationToken);
+    Task<CallHistoryPage> ListAsync(string applicationKey, Guid membershipId, int page, int pageSize, CallHistoryFilter filter, CancellationToken cancellationToken);
     Task<CallHistoryDetail?> DetailAsync(string applicationKey, Guid membershipId, Guid callId, CancellationToken cancellationToken);
     Task<FinalizeUsageResult> FinalizeUsageAsync(string applicationKey, Guid membershipId, Guid callId, UsageSummary usage, CancellationToken cancellationToken);
     Task<UsagePeriodView> CurrentPeriodAsync(string applicationKey, Guid membershipId, CancellationToken cancellationToken);

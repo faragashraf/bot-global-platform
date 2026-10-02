@@ -9,6 +9,11 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -30,11 +35,15 @@ import com.botglobal.mobile.platform.calling.CallTerminationReason
 import com.botglobal.nqrb.MainActivity
 import com.botglobal.nqrb.NqrbApplication
 import com.botglobal.nqrb.R
+import com.botglobal.nqrb.app.state.NqrbRingtoneSettings
+import com.botglobal.mobile.platform.preferences.AndroidPreferenceStore
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
@@ -53,6 +62,10 @@ class AndroidCallPlatformLifecycle(
     private var callsManager: CallsManager? = null
     private var endpointSnapshot: List<CallEndpointCompat> = emptyList()
     private var currentRouteSnapshot = CallAudioRoute.System
+    private val incomingRingtone = NqrbRingtonePlayer(application)
+    private var ringbackPlayer: MediaPlayer? = null
+    private var currentDirection: CallDirection? = null
+    private var connectedFeedbackGiven = false
 
     init {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -71,14 +84,64 @@ class AndroidCallPlatformLifecycle(
         }
     }
 
-    private suspend fun startPlatformCall(participant: CallParticipant, direction: CallDirection) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            throw UnsupportedOperationException("NQRB calls require Android 8.0 or newer.")
+    override suspend fun presentIncoming(callId: CallId, participant: CallParticipant) {
+        try {
+            currentDirection = CallDirection.Incoming
+            connectedFeedbackGiven = false
+            ended.set(false)
+            val notificationVisible = runCatching {
+                NqrbIncomingCallNotification.show(application, callId, participant.displayName)
+            }.onFailure { error ->
+                Log.w(LogTag, "incoming notification skipped type=${error::class.simpleName}")
+            }.getOrDefault(false)
+            if (notificationVisible) {
+                val setting = NqrbRingtoneSettings(AndroidPreferenceStore(application, NqrbOngoingCallService.RingtonePreferences))
+                runCatching {
+                    incomingRingtone.play(setting.selection.value, looping = true, deviceToneUri = setting.deviceToneUri)
+                }.onFailure { error ->
+                    Log.w(LogTag, "incoming ringtone skipped type=${error::class.simpleName}")
+                }
+            }
+            registerOptionalTelecomCall(participant, CallDirection.Incoming)
+        } catch (error: Throwable) {
+            Log.e(LogTag, "Android incoming call presentation failed type=${error::class.simpleName}", error)
+            incomingRingtone.stop()
+            NqrbIncomingCallNotification.clear(application)
+            throw error
         }
+    }
+
+    private suspend fun startPlatformCall(participant: CallParticipant, direction: CallDirection) {
         ended.set(false)
-        NqrbOngoingCallService.start(application, participant.displayName, direction)
+        currentDirection = direction
+        connectedFeedbackGiven = false
+        setRingback(false)
+        incomingRingtone.stop()
+        NqrbOngoingCallService.start(application, participant.displayName)
+        NqrbIncomingCallNotification.clear(application)
+        if (direction == CallDirection.Incoming && control != null) return
+        registerOptionalTelecomCall(participant, direction)
+    }
+
+    private suspend fun registerOptionalTelecomCall(participant: CallParticipant, direction: CallDirection) {
+        try {
+            startTelecomCall(participant, direction)
+        } catch (timeout: TimeoutCancellationException) {
+            Log.w(LogTag, "telecom ${direction.name.lowercase()} call timed out; in-app call remains available")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            // The foreground service, notification and in-app answer work without Telecom.
+            Log.w(LogTag, "telecom ${direction.name.lowercase()} call unavailable type=${error::class.simpleName}")
+        }
+    }
+
+    private suspend fun startTelecomCall(participant: CallParticipant, direction: CallDirection) {
+        // API 24/25 has no self-managed Telecom call API. The foreground call service
+        // and the NQRB signaling controller still support a basic voice call.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val ready = CompletableDeferred<Unit>()
-        scope.launch {
+        val telecomJob = scope.launch {
             runCatching {
                 Log.i(LogTag, "telecom registration requested direction=${direction.name.lowercase()}")
                 requireNotNull(callsManager).addCall(
@@ -130,12 +193,52 @@ class AndroidCallPlatformLifecycle(
                 if (!ready.isCompleted) ready.completeExceptionally(error)
             }
         }
-        withTimeout(5_000) { ready.await() }
+        try {
+            withTimeout(5_000) { ready.await() }
+        } catch (error: Throwable) {
+            telecomJob.cancel()
+            throw error
+        }
     }
 
     override suspend fun markActive() {
+        if (ended.get()) return
+        setRingback(false)
+        if (currentDirection == CallDirection.Outgoing && !connectedFeedbackGiven) {
+            connectedFeedbackGiven = true
+            runCatching {
+                val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    application.getSystemService(VibratorManager::class.java)?.defaultVibrator
+                } else {
+                    @Suppress("DEPRECATION")
+                    application.getSystemService(Vibrator::class.java)
+                }
+                vibrator?.vibrate(VibrationEffect.createOneShot(90, VibrationEffect.DEFAULT_AMPLITUDE))
+            }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) control?.setActive()
         NqrbOngoingCallService.markActive(application)
+    }
+
+    override fun setRingback(active: Boolean) {
+        if (!active) {
+            ringbackPlayer?.runCatching { stop() }
+            ringbackPlayer?.release()
+            ringbackPlayer = null
+            return
+        }
+        if (ended.get() || ringbackPlayer != null) return
+        runCatching {
+            val attributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION_SIGNALLING)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+            MediaPlayer.create(application, R.raw.nqrb_ringback, attributes, 0)?.also {
+                it.isLooping = true
+                it.start()
+                ringbackPlayer = it
+            }
+        }.onFailure { Log.w(LogTag, "ringback unavailable type=${it::class.simpleName}") }
     }
 
     override suspend fun requestRoute(route: CallAudioRoute): CallAudioRoute {
@@ -158,7 +261,9 @@ class AndroidCallPlatformLifecycle(
     }
 
     override suspend fun end(reason: CallTerminationReason) {
+        setRingback(false)
         if (!ended.compareAndSet(false, true)) return
+        incomingRingtone.stop()
         Log.i(LogTag, "telecom disconnect requested reason=${reason.name.lowercase()}")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val cause = when (reason) {
@@ -174,7 +279,9 @@ class AndroidCallPlatformLifecycle(
         control = null
         endpointSnapshot = emptyList()
         currentRouteSnapshot = CallAudioRoute.System
+        currentDirection = null
         mutableActions.tryEmit(CallPlatformAction.AvailableRoutesChanged(emptySet()))
+        NqrbIncomingCallNotification.clear(application)
         NqrbOngoingCallService.stop(application)
     }
 
@@ -192,8 +299,90 @@ class AndroidCallPlatformLifecycle(
     }
 }
 
+private object NqrbIncomingCallNotification {
+    fun show(context: Context, callId: CallId, displayName: String): Boolean {
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        createNotificationChannel(context, notificationManager)
+        if (!notificationManager.areNotificationsEnabled() ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                notificationManager.getNotificationChannel(NqrbOngoingCallService.IncomingChannelId)?.importance == NotificationManager.IMPORTANCE_NONE)
+        ) return false
+        notificationManager.notify(
+            NqrbOngoingCallService.IncomingNotificationId,
+            incomingNotification(context, callId, displayName),
+        )
+        return true
+    }
+
+    fun clear(context: Context) {
+        context.getSystemService(NotificationManager::class.java)
+            .cancel(NqrbOngoingCallService.IncomingNotificationId)
+    }
+
+    private fun incomingNotification(context: Context, callId: CallId, displayName: String): Notification {
+        val openIntent = PendingIntent.getActivity(
+            context,
+            10,
+            Intent(context, MainActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP,
+            ),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val answer = callAction(context, NqrbOngoingCallService.ActionAnswerCall, callId, 11)
+        val reject = callAction(context, NqrbOngoingCallService.ActionRejectCall, callId, 12)
+        val builder = notificationBuilder(context, NqrbOngoingCallService.IncomingChannelId)
+            .setSmallIcon(R.drawable.ic_nqrb_launcher)
+            .setContentTitle(context.getString(R.string.incoming_call_title))
+            .setContentText(displayName)
+            .setContentIntent(openIntent)
+            .setCategory(Notification.CATEGORY_CALL)
+            .setOngoing(true)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setPriority(Notification.PRIORITY_MAX)
+            .setShowWhen(true)
+            .setWhen(System.currentTimeMillis())
+            .addAction(Notification.Action.Builder(null, context.getString(R.string.reject_call), reject).build())
+            .addAction(Notification.Action.Builder(null, context.getString(R.string.answer_call), answer).build())
+        return builder.build()
+    }
+
+    private fun callAction(context: Context, action: String, callId: CallId, requestCode: Int) = PendingIntent.getBroadcast(
+        context,
+        requestCode,
+        Intent(context, NqrbCallActionReceiver::class.java)
+            .setAction(action)
+            .putExtra(NqrbOngoingCallService.ExtraCallId, callId.value),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    @Suppress("DEPRECATION")
+    private fun notificationBuilder(context: Context, channelId: String): Notification.Builder =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(context, channelId)
+        } else {
+            Notification.Builder(context)
+        }
+
+    private fun createNotificationChannel(context: Context, notificationManager: NotificationManager) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            notificationManager.createNotificationChannel(
+                NotificationChannel(
+                    NqrbOngoingCallService.IncomingChannelId,
+                    context.getString(R.string.incoming_call_channel),
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply {
+                    description = context.getString(R.string.incoming_call_channel_description)
+                    setSound(null, null)
+                    enableVibration(true)
+                },
+            )
+        }
+    }
+}
+
 class NqrbOngoingCallService : Service() {
     private val notificationManager by lazy { getSystemService(NotificationManager::class.java) }
+    private val ringtonePlayer by lazy { NqrbRingtonePlayer(this) }
 
     override fun onCreate() {
         super.onCreate()
@@ -212,12 +401,22 @@ class NqrbOngoingCallService : Service() {
         getSharedPreferences(Preferences, MODE_PRIVATE).edit().putString(ExtraDisplayName, displayName).apply()
         val incoming = intent?.getBooleanExtra(ExtraIncoming, false) == true && action == ActionStart
         startForeground(NotificationId, if (incoming) incomingNotification(displayName) else ongoingNotification(displayName))
+        if (incoming && notificationManager.areNotificationsEnabled() &&
+            (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+                notificationManager.getNotificationChannel(IncomingChannelId)?.importance != NotificationManager.IMPORTANCE_NONE)
+        ) {
+            val setting = NqrbRingtoneSettings(AndroidPreferenceStore(this, RingtonePreferences))
+            ringtonePlayer.play(setting.selection.value, looping = true, deviceToneUri = setting.deviceToneUri)
+        } else {
+            ringtonePlayer.stop()
+        }
         return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        ringtonePlayer.stop()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -314,6 +513,7 @@ class NqrbOngoingCallService : Service() {
             notificationManager.createNotificationChannel(NotificationChannel(
                 IncomingChannelId, getString(R.string.incoming_call_channel), NotificationManager.IMPORTANCE_HIGH).apply {
                 description = getString(R.string.incoming_call_channel_description)
+                setSound(null, null)
                 enableVibration(true)
             })
         }
@@ -322,23 +522,26 @@ class NqrbOngoingCallService : Service() {
     companion object {
         const val ChannelId = "nqrb_ongoing_calls"
         const val NotificationId = 2101
+        const val IncomingNotificationId = 2102
         const val ActionEndCall = "com.botglobal.nqrb.action.END_CALL"
         const val ActionAnswerCall = "com.botglobal.nqrb.action.ANSWER_CALL"
         const val ActionRejectCall = "com.botglobal.nqrb.action.REJECT_CALL"
-        const val IncomingChannelId = "nqrb_incoming_calls"
+        const val IncomingChannelId = "nqrb_incoming_calls_app_tone"
+        const val ExtraCallId = "call_id"
+        const val RingtonePreferences = "nqrb_ringtone"
         private const val ActionStart = "com.botglobal.nqrb.action.START_ONGOING_CALL"
         private const val ActionActive = "com.botglobal.nqrb.action.ACTIVE_CALL"
         private const val ExtraDisplayName = "display_name"
         private const val ExtraIncoming = "incoming"
         private const val Preferences = "nqrb_call_presentation"
 
-        fun start(context: Context, displayName: String, direction: CallDirection) {
+        fun start(context: Context, displayName: String) {
             ContextCompat.startForegroundService(
                 context,
                 Intent(context, NqrbOngoingCallService::class.java)
                     .setAction(ActionStart)
                     .putExtra(ExtraDisplayName, displayName)
-                    .putExtra(ExtraIncoming, direction == CallDirection.Incoming),
+                    .putExtra(ExtraIncoming, false),
             )
         }
 

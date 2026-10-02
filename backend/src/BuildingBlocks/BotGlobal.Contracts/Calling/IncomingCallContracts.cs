@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace BotGlobal.Contracts.Calling;
 
 public sealed record CallingParticipantDescriptor(
@@ -32,6 +34,38 @@ public interface ICallingParticipantDirectory
     Task<CallingParticipantDescriptor?> FindAsync(
         string applicationKey,
         Guid membershipId,
+        CancellationToken cancellationToken);
+}
+
+public sealed record CallingAccountDescriptor(
+    Guid MembershipId,
+    string DisplayName,
+    [property: JsonIgnore] string SubjectId = "");
+
+public sealed record CallingAccountSearchPage(
+    IReadOnlyList<CallingAccountDescriptor> Items,
+    int Page,
+    int PageSize,
+    bool HasMore);
+
+public interface ICallingAccountDirectory
+{
+    Task<CallingAccountDescriptor?> FindActiveNonGuestAsync(
+        string applicationKey,
+        Guid membershipId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<CallingAccountDescriptor>> FindActiveNonGuestAsync(
+        string applicationKey,
+        IReadOnlyCollection<Guid> membershipIds,
+        CancellationToken cancellationToken);
+
+    Task<CallingAccountSearchPage> SearchActiveNonGuestsAsync(
+        string applicationKey,
+        Guid currentMembershipId,
+        string query,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken);
 }
 

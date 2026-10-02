@@ -11,6 +11,7 @@ import com.botglobal.mobile.platform.identity.SessionVault
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.accept
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
@@ -24,20 +25,27 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 
 class NqrbIdentityApi(
     platformClient: HttpClient,
     private val apiBaseUrl: String,
     private val vault: SessionVault,
+    private val diagnostic: (String) -> Unit = {},
 ) : FederatedIdentityGateway, NqrbAccountProfileGateway {
     private val restoreMutex = Mutex()
     private val client = platformClient.config {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 15_000
+            connectTimeoutMillis = 10_000
+            socketTimeoutMillis = 15_000
+        }
     }
 
     override suspend fun restore(): MobileSession? = restoreMutex.withLock {
-        val saved = vault.restore() ?: return null
-        return try {
+        val saved = vault.restore() ?: return@withLock null
+        return@withLock try {
             val refreshed = client.post(endpoint("/api/mobile/nqrb/identity/refresh")) {
                 jsonRequest()
                 setBody(RefreshRequest(saved.refreshToken))
@@ -50,16 +58,19 @@ class NqrbIdentityApi(
             } else {
                 throw NqrbIdentityNetworkException()
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: NqrbIdentityNetworkException) {
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            diagnostic("session restore failed: ${error::class.simpleName}")
             throw NqrbIdentityNetworkException()
         }
     }
 
-    override suspend fun authenticate(credential: FederatedCredential): FederatedSignInResult {
-        if (credential.provider != FederatedIdentityProvider.Google) return FederatedSignInResult.Rejected
-        return try {
+    override suspend fun authenticate(credential: FederatedCredential): FederatedSignInResult = restoreMutex.withLock {
+        if (credential.provider != FederatedIdentityProvider.Google) return@withLock FederatedSignInResult.Rejected
+        return@withLock try {
             val response = client.post(endpoint("/api/mobile/nqrb/identity/federated")) {
                 jsonRequest()
                 setBody(FederatedRequest("google", credential.value))
@@ -75,12 +86,13 @@ class NqrbIdentityApi(
                 response.status == HttpStatusCode.Conflict -> FederatedSignInResult.AccountLinkRequired
                 else -> FederatedSignInResult.Failed
             }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            diagnostic("Google sign-in request failed: ${error::class.simpleName}")
             FederatedSignInResult.NetworkFailure
         }
     }
 
-    override suspend fun logout() {
+    override suspend fun logout() = restoreMutex.withLock {
         val session = vault.restore()
         if (session != null) {
             runCatching {

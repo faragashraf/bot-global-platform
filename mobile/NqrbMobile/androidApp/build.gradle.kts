@@ -32,6 +32,8 @@ dependencies {
     implementation(libs.androidx.core.telecom)
     implementation(libs.compose.uiToolingPreview)
     implementation("com.microsoft.signalr:signalr:7.0.0")
+    testImplementation(kotlin("test-junit"))
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 android {
@@ -42,8 +44,8 @@ android {
         applicationId = "com.botglobal.nqrb"
         minSdk = maxOf(24, libs.versions.android.minSdk.get().toInt())
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 5
+        versionName = "0.2.1"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", googleServerClientId.asBuildConfigString())
     }

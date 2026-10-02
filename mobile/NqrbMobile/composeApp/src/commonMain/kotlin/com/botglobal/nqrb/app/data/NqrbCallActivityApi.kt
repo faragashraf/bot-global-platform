@@ -18,8 +18,8 @@ class NqrbCallActivityApi(
     private val sessionVault: SessionVault,
 ) : CallActivityGateway {
     private val client = platformClient.config { install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) } }
-    override suspend fun history(page: Int, pageSize: Int): CallHistoryPage = authorizedGet<HistoryPageDto>(
-        "/api/mobile/calling/history?page=$page&pageSize=$pageSize").toDomain()
+    override suspend fun history(page: Int, pageSize: Int, filter: CallHistoryFilter): CallHistoryPage = authorizedGet<HistoryPageDto>(
+        "/api/mobile/calling/history?page=$page&pageSize=$pageSize&filter=${filter.name.lowercase()}").toDomain()
     override suspend fun detail(callId: String): CallHistoryDetail? = authorizedGet<HistoryDetailDto>(
         "/api/mobile/calling/history/$callId").toDomain()
     override suspend fun finalizeUsage(usage: FinalCallUsage) {
@@ -56,15 +56,23 @@ class NqrbCallActivityApi(
     fun toDomain() = CallHistoryPage(items.map(HistoryItemDto::toDomain), page, pageSize, hasMore)
 }
 @Serializable private data class HistoryItemDto(val callId: String, val direction: String, val participantDisplayName: String,
-    val outcome: String? = null, val startedAtUtc: String, val connectedDurationSeconds: Long? = null, val totalBytes: Long? = null) {
-    fun toDomain() = CallHistoryItem(callId, direction, participantDisplayName, outcome, startedAtUtc, connectedDurationSeconds, totalBytes)
+    val outcome: String? = null, val startedAtUtc: String, val connectedDurationSeconds: Long? = null,
+    val totalBytes: Long? = null, val isGuestCall: Boolean = false, val isSavedContact: Boolean? = null,
+    val counterpartMembershipId: String? = null, val canRedial: Boolean = false,
+    val canAddContact: Boolean = false) {
+    fun toDomain() = CallHistoryItem(callId, direction, participantDisplayName, outcome, startedAtUtc,
+        connectedDurationSeconds, totalBytes, isGuestCall, isSavedContact, counterpartMembershipId,
+        canRedial, canAddContact)
 }
 @Serializable private data class HistoryDetailDto(val callId: String, val direction: String, val participantDisplayNames: List<String>,
     val outcome: String? = null, val endReason: String? = null, val startedAtUtc: String, val answeredAtUtc: String? = null,
     val endedAtUtc: String? = null, val ringingDurationSeconds: Long? = null, val connectedDurationSeconds: Long? = null,
-    val bytesSent: Long? = null, val bytesReceived: Long? = null) {
+    val bytesSent: Long? = null, val bytesReceived: Long? = null, val isGuestCall: Boolean = false,
+    val isSavedContact: Boolean? = null, val counterpartMembershipId: String? = null,
+    val canRedial: Boolean = false, val canAddContact: Boolean = false) {
     fun toDomain() = CallHistoryDetail(callId, direction, participantDisplayNames, outcome, endReason, startedAtUtc,
-        answeredAtUtc, endedAtUtc, ringingDurationSeconds, connectedDurationSeconds, bytesSent, bytesReceived)
+        answeredAtUtc, endedAtUtc, ringingDurationSeconds, connectedDurationSeconds, bytesSent, bytesReceived,
+        isGuestCall, isSavedContact, counterpartMembershipId, canRedial, canAddContact)
 }
 @Serializable private data class UsagePeriodDto(val periodId: String, val startedAtUtc: String, val endedAtUtc: String? = null,
     val bytesSent: Long, val bytesReceived: Long, val scheduledResetAtUtc: String? = null, val scheduledTimeZoneId: String? = null) {

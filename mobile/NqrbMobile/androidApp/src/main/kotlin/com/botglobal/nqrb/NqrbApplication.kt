@@ -1,16 +1,19 @@
 package com.botglobal.nqrb
 
 import android.app.Application
+import android.util.Log
 import com.botglobal.mobile.platform.identity.AndroidSecureSessionVault
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.notifications.PushRegistrationController
 import com.botglobal.mobile.platform.notifications.firebase.AndroidFirebaseMessagingRuntime
 import com.botglobal.mobile.platform.notifications.firebase.AndroidPushDeviceInstallation
+import com.botglobal.mobile.platform.notifications.firebase.FirebaseMessageDeliveryPolicy
 import com.botglobal.mobile.platform.notifications.firebase.AndroidSecureMobileDeviceCredentialVault
 import com.botglobal.mobile.platform.notifications.firebase.FirebaseMessagingRuntimeOwner
 import com.botglobal.nqrb.app.data.NqrbPushRegistrationApi
 import com.botglobal.nqrb.app.data.NqrbIdentityApi
 import com.botglobal.nqrb.app.data.NqrbCallingDirectoryApi
+import com.botglobal.nqrb.app.data.NqrbContactBookApi
 import com.botglobal.nqrb.app.data.createNqrbHttpClient
 import com.botglobal.nqrb.calling.NqrbCallRuntime
 import com.botglobal.nqrb.calling.NqrbPushMessageHandler
@@ -33,6 +36,8 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
         private set
     lateinit var callingDirectoryApi: NqrbCallingDirectoryApi
         private set
+    lateinit var contactBookApi: NqrbContactBookApi
+        private set
     lateinit var callActivity: CallActivityController
         private set
     lateinit var accountDeletionApi: NqrbAccountDeletionApi
@@ -45,13 +50,20 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
     override fun onCreate() {
         super.onCreate()
         sessionVault = AndroidSecureSessionVault(this, "nqrb")
-        identityApi = NqrbIdentityApi(createNqrbHttpClient(), BuildConfig.API_BASE_URL, sessionVault)
+        identityApi = NqrbIdentityApi(createNqrbHttpClient(), BuildConfig.API_BASE_URL, sessionVault) {
+            Log.w("NqrbIdentity", it)
+        }
         accountDeletionApi = NqrbAccountDeletionApi(
             createNqrbHttpClient(),
             BuildConfig.API_BASE_URL,
             sessionVault,
         )
         callingDirectoryApi = NqrbCallingDirectoryApi(
+            createNqrbHttpClient(),
+            BuildConfig.API_BASE_URL,
+            sessionVault,
+        )
+        contactBookApi = NqrbContactBookApi(
             createNqrbHttpClient(),
             BuildConfig.API_BASE_URL,
             sessionVault,
@@ -86,6 +98,7 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
             context = this,
             registrationController = PushRegistrationController(pushRegistration),
             messageHandler = NqrbPushMessageHandler(callRuntime),
+            messageDeliveryPolicy = FirebaseMessageDeliveryPolicy(blockOnMessage = true),
         )
         localAccountDataCleaner = NqrbLocalAccountDataCleaner {
             runCatching { sessionVault.clear() }

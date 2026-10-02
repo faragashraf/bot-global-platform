@@ -8,6 +8,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -27,6 +28,10 @@ enum class NqrbGlyph {
     Appearance,
     Microphone,
     Speaker,
+    Search,
+    Ringtone,
+    More,
+    Close,
 }
 
 @Composable
@@ -40,6 +45,10 @@ fun NqrbIcon(
         val stroke = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
         val center = Offset(size.width / 2f, size.height / 2f)
         when (glyph) {
+            NqrbGlyph.Close -> {
+                drawLine(tint, Offset(size.width * .24f, size.height * .24f), Offset(size.width * .76f, size.height * .76f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .76f, size.height * .24f), Offset(size.width * .24f, size.height * .76f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
             NqrbGlyph.Home -> {
                 val path = Path().apply {
                     moveTo(size.width * .18f, size.height * .48f)
@@ -82,19 +91,30 @@ fun NqrbIcon(
                 drawArc(tint, 190f, 160f, false, Offset(size.width * .2f, size.height * .48f), Size(size.width * .6f, size.height * .36f), style = stroke)
             }
             NqrbGlyph.Settings -> {
-                drawCircle(tint, size.minDimension * .13f, center, style = stroke)
+                val gearStroke = Stroke(width = 1.65.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                val radius = size.minDimension
+                val toothStep = kotlin.math.PI.toFloat() / 4f
+                val gearOutline = Path()
                 repeat(8) { index ->
-                    val angle = index * kotlin.math.PI.toFloat() / 4f
-                    val inner = size.minDimension * .28f
-                    val outer = size.minDimension * .39f
-                    drawLine(
-                        tint,
-                        Offset(center.x + kotlin.math.cos(angle) * inner, center.y + kotlin.math.sin(angle) * inner),
-                        Offset(center.x + kotlin.math.cos(angle) * outer, center.y + kotlin.math.sin(angle) * outer),
-                        strokeWidth = stroke.width,
-                        cap = StrokeCap.Round,
+                    val angle = -kotlin.math.PI.toFloat() / 2f + index * toothStep
+                    val points = listOf(
+                        angle - toothStep * .32f to radius * .30f,
+                        angle - toothStep * .17f to radius * .40f,
+                        angle + toothStep * .17f to radius * .40f,
+                        angle + toothStep * .32f to radius * .30f,
                     )
+                    points.forEachIndexed { pointIndex, (pointAngle, pointRadius) ->
+                        val point = Offset(
+                            center.x + kotlin.math.cos(pointAngle) * pointRadius,
+                            center.y + kotlin.math.sin(pointAngle) * pointRadius,
+                        )
+                        if (index == 0 && pointIndex == 0) gearOutline.moveTo(point.x, point.y)
+                        else gearOutline.lineTo(point.x, point.y)
+                    }
                 }
+                gearOutline.close()
+                drawPath(gearOutline, tint, style = gearStroke)
+                drawCircle(tint, radius * .105f, center, style = gearStroke)
             }
             NqrbGlyph.Link -> {
                 drawArc(tint, 120f, 240f, false, Offset(size.width * .11f, size.height * .28f), Size(size.width * .45f, size.height * .38f), style = stroke)
@@ -147,6 +167,22 @@ fun NqrbIcon(
                 }
                 drawPath(path, tint, style = stroke)
                 drawArc(tint, -48f, 96f, false, Offset(size.width * .5f, size.height * .3f), Size(size.width * .3f, size.height * .4f), style = stroke)
+            }
+            NqrbGlyph.Search -> {
+                drawCircle(tint, size.minDimension * .23f, Offset(size.width * .42f, size.height * .42f), style = stroke)
+                drawLine(tint, Offset(size.width * .59f, size.height * .59f), Offset(size.width * .82f, size.height * .82f), stroke.width, StrokeCap.Round)
+            }
+            NqrbGlyph.Ringtone -> {
+                drawArc(tint, 205f, 130f, false, Offset(size.width * .27f, size.height * .22f), Size(size.width * .46f, size.height * .43f), style = stroke)
+                drawLine(tint, Offset(size.width * .31f, size.height * .55f), Offset(size.width * .21f, size.height * .76f), stroke.width, StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .69f, size.height * .55f), Offset(size.width * .79f, size.height * .76f), stroke.width, StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .21f, size.height * .76f), Offset(size.width * .79f, size.height * .76f), stroke.width, StrokeCap.Round)
+                drawCircle(tint, size.minDimension * .04f, Offset(center.x, size.height * .82f))
+            }
+            NqrbGlyph.More -> {
+                drawCircle(tint, size.minDimension * .055f, Offset(size.width * .3f, center.y))
+                drawCircle(tint, size.minDimension * .055f, center)
+                drawCircle(tint, size.minDimension * .055f, Offset(size.width * .7f, center.y))
             }
         }
     }

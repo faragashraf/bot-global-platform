@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 enum class CallActivityLoadState { Idle, Loading, Ready, Empty, Error }
 
+enum class CallHistoryFilter { All, Missed, Incoming, Outgoing }
+
 data class CallHistoryItem(
     val callId: String,
     val direction: String,
@@ -13,6 +15,11 @@ data class CallHistoryItem(
     val startedAtUtc: String,
     val connectedDurationSeconds: Long?,
     val totalBytes: Long?,
+    val isGuestCall: Boolean = false,
+    val isSavedContact: Boolean? = null,
+    val counterpartMembershipId: String? = null,
+    val canRedial: Boolean = false,
+    val canAddContact: Boolean = false,
 )
 
 data class CallHistoryPage(
@@ -35,6 +42,11 @@ data class CallHistoryDetail(
     val connectedDurationSeconds: Long?,
     val bytesSent: Long?,
     val bytesReceived: Long?,
+    val isGuestCall: Boolean = false,
+    val isSavedContact: Boolean? = null,
+    val counterpartMembershipId: String? = null,
+    val canRedial: Boolean = false,
+    val canAddContact: Boolean = false,
 ) { val totalBytes: Long? get() = bytesSent?.plus(bytesReceived ?: 0) }
 
 data class UsagePeriod(
@@ -58,7 +70,7 @@ data class FinalCallUsage(
 )
 
 interface CallActivityGateway {
-    suspend fun history(page: Int = 1, pageSize: Int = 20): CallHistoryPage
+    suspend fun history(page: Int = 1, pageSize: Int = 20, filter: CallHistoryFilter = CallHistoryFilter.All): CallHistoryPage
     suspend fun detail(callId: String): CallHistoryDetail?
     suspend fun finalizeUsage(usage: FinalCallUsage)
     suspend fun currentUsage(): UsagePeriod
@@ -69,7 +81,7 @@ interface CallActivityGateway {
 class CallActivityRequestException(val statusCode: Int) : Exception("Call activity request failed with status $statusCode")
 
 object UnavailableCallActivityGateway : CallActivityGateway {
-    override suspend fun history(page: Int, pageSize: Int) = CallHistoryPage(emptyList(), page, pageSize, false)
+    override suspend fun history(page: Int, pageSize: Int, filter: CallHistoryFilter) = CallHistoryPage(emptyList(), page, pageSize, false)
     override suspend fun detail(callId: String): CallHistoryDetail? = null
     override suspend fun finalizeUsage(usage: FinalCallUsage) = Unit
     override suspend fun currentUsage(): UsagePeriod = error("Call activity is unavailable")
@@ -94,6 +106,7 @@ data class CallActivitySnapshot(
     val history: List<CallHistoryItem> = emptyList(),
     val historyPage: Int = 0,
     val historyHasMore: Boolean = false,
+    val historyFilter: CallHistoryFilter = CallHistoryFilter.All,
     val selected: CallHistoryDetail? = null,
     val usageState: CallActivityLoadState = CallActivityLoadState.Idle,
     val usage: UsagePeriod? = null,
@@ -105,29 +118,55 @@ class CallActivityController(
 ) {
     private val mutableState = MutableStateFlow(CallActivitySnapshot())
     val state = mutableState.asStateFlow()
+    private var historyRequestGeneration = 0L
 
-    suspend fun loadHistory() {
-        mutableState.value = mutableState.value.copy(historyState = CallActivityLoadState.Loading)
-        runCatching { gateway.history() }.fold(
-            onSuccess = { page -> mutableState.value = mutableState.value.copy(
-                historyState = if (page.items.isEmpty()) CallActivityLoadState.Empty else CallActivityLoadState.Ready,
-                history = page.items, historyPage = page.page, historyHasMore = page.hasMore) },
-            onFailure = { mutableState.value = mutableState.value.copy(historyState = CallActivityLoadState.Error) },
+    suspend fun loadHistory(filter: CallHistoryFilter = mutableState.value.historyFilter) {
+        val requestGeneration = ++historyRequestGeneration
+        mutableState.value = mutableState.value.copy(
+            historyState = CallActivityLoadState.Loading,
+            history = emptyList(),
+            historyPage = 0,
+            historyHasMore = false,
+            historyFilter = filter,
+        )
+        runCatching { gateway.history(filter = filter) }.fold(
+            onSuccess = { page ->
+                if (requestGeneration == historyRequestGeneration) {
+                    mutableState.value = mutableState.value.copy(
+                        historyState = if (page.items.isEmpty()) CallActivityLoadState.Empty else CallActivityLoadState.Ready,
+                        history = page.items, historyPage = page.page, historyHasMore = page.hasMore,
+                    )
+                }
+            },
+            onFailure = {
+                if (requestGeneration == historyRequestGeneration) {
+                    mutableState.value = mutableState.value.copy(historyState = CallActivityLoadState.Error)
+                }
+            },
         )
     }
     suspend fun loadNextHistoryPage() {
         val current = mutableState.value
         if (current.historyState != CallActivityLoadState.Ready || !current.historyHasMore) return
-        runCatching { gateway.history(current.historyPage + 1) }.onSuccess { page ->
-            mutableState.value = current.copy(history = current.history + page.items,
-                historyPage = page.page, historyHasMore = page.hasMore)
+        val requestGeneration = ++historyRequestGeneration
+        runCatching { gateway.history(current.historyPage + 1, filter = current.historyFilter) }.onSuccess { page ->
+            if (requestGeneration == historyRequestGeneration) {
+                mutableState.value = current.copy(
+                    history = current.history + page.items,
+                    historyPage = page.page,
+                    historyHasMore = page.hasMore,
+                )
+            }
         }
     }
     suspend fun loadDetail(callId: String) {
         mutableState.value = mutableState.value.copy(selected = runCatching { gateway.detail(callId) }.getOrNull())
     }
     fun clearDetail() { mutableState.value = mutableState.value.copy(selected = null) }
-    fun clear() { mutableState.value = CallActivitySnapshot() }
+    fun clear() {
+        historyRequestGeneration++
+        mutableState.value = CallActivitySnapshot()
+    }
     suspend fun loadUsage() {
         mutableState.value = mutableState.value.copy(usageState = CallActivityLoadState.Loading)
         runCatching { gateway.currentUsage() }.fold(

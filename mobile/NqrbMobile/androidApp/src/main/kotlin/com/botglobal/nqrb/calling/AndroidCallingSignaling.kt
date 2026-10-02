@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -44,6 +45,8 @@ class AndroidCallingSignaling(
     override val signals = mutableSignals.asSharedFlow()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @Volatile private var disconnectRequested = false
+    @Volatile private var recoveryPending = false
+    private var reconnectJob: Job? = null
     private val subscriptions = mutableListOf<Subscription>()
     private val hub: HubConnection = HubConnectionBuilder
         .create("${apiBaseUrl.trimEnd('/')}/hubs/calling")
@@ -66,6 +69,8 @@ class AndroidCallingSignaling(
 
     override suspend fun disconnect() = connectionMutex.withLock {
         disconnectRequested = true
+        recoveryPending = false
+        reconnectJob?.cancel()
         if (hub.connectionState != HubConnectionState.DISCONNECTED) io {
             hub.stop().timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingAwait()
         }
@@ -140,6 +145,10 @@ class AndroidCallingSignaling(
             if (!restoreSession()) throw IllegalStateException("Mobile session is unavailable.")
             io { hub.start().timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingAwait() }
             Log.i(LogTag, "calling realtime connected")
+            if (recoveryPending) {
+                recoveryPending = false
+                mutableEvents.tryEmit(CallSignalingEvent.Recovered)
+            }
         }
     }
 
@@ -178,13 +187,15 @@ class AndroidCallingSignaling(
         connection.onClosed { error ->
             Log.i(LogTag, "calling realtime closed error=${error?.javaClass?.simpleName ?: "none"}")
             if (!disconnectRequested) {
+                recoveryPending = true
                 mutableEvents.tryEmit(CallSignalingEvent.Interrupted)
-                scope.launch {
-                    for (attempt in 1..5) {
-                        delay(attempt * 1_000L)
-                        if (runCatching { ensureConnected() }.isSuccess) {
-                            mutableEvents.emit(CallSignalingEvent.Recovered)
-                            break
+                synchronized(this) {
+                    if (reconnectJob?.isActive != true) reconnectJob = scope.launch {
+                        var retryDelayMs = 1_000L
+                        while (!disconnectRequested) {
+                            delay(retryDelayMs)
+                            if (disconnectRequested || runCatching { ensureConnected() }.isSuccess) break
+                            retryDelayMs = (retryDelayMs * 2).coerceAtMost(60_000L)
                         }
                     }
                 }

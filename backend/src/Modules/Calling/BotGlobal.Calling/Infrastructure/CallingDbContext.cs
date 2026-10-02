@@ -9,6 +9,9 @@ public sealed class CallingDbContext(DbContextOptions<CallingDbContext> options)
     public DbSet<CallParticipantRecord> Participants => Set<CallParticipantRecord>();
     public DbSet<CallUsageReport> UsageReports => Set<CallUsageReport>();
     public DbSet<UsageCounterPeriod> UsagePeriods => Set<UsageCounterPeriod>();
+    public DbSet<NqrbContactEdge> NqrbContactEdges => Set<NqrbContactEdge>();
+    public DbSet<NqrbContactInvite> NqrbContactInvites => Set<NqrbContactInvite>();
+    public DbSet<NqrbBlockedAccount> NqrbBlockedAccounts => Set<NqrbBlockedAccount>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -17,6 +20,7 @@ public sealed class CallingDbContext(DbContextOptions<CallingDbContext> options)
         calls.HasKey(x => x.Id);
         calls.Property(x => x.ApplicationKey).HasMaxLength(80).IsUnicode(false).IsRequired();
         calls.Property(x => x.CreatedAtUtc).HasColumnType("datetimeoffset");
+        calls.Property(x => x.IsGuestCall).HasDefaultValue(false);
         calls.Property(x => x.AnsweredAtUtc).HasColumnType("datetimeoffset");
         calls.Property(x => x.EndedAtUtc).HasColumnType("datetimeoffset");
         calls.Property(x => x.State).HasConversion<string>().HasMaxLength(16).IsUnicode(false);
@@ -62,5 +66,32 @@ public sealed class CallingDbContext(DbContextOptions<CallingDbContext> options)
         periods.HasIndex(x => new { x.ApplicationId, x.MembershipId, x.StartedAtUtc });
         periods.HasIndex(x => new { x.ApplicationId, x.MembershipId })
             .IsUnique().HasFilter("[EndedAtUtc] IS NULL");
+
+        var contacts = model.Entity<NqrbContactEdge>();
+        contacts.ToTable("NqrbContactEdges", CallingModule.DatabaseSchema);
+        contacts.HasKey(x => new { x.ApplicationKey, x.OwnerMembershipId, x.ContactMembershipId });
+        contacts.Property(x => x.ApplicationKey).HasMaxLength(80).IsUnicode(false).IsRequired();
+        contacts.Property(x => x.CreatedAtUtc).HasColumnType("datetimeoffset");
+        contacts.Property(x => x.Nickname).HasMaxLength(80).IsUnicode();
+        contacts.HasIndex(x => new { x.ApplicationKey, x.OwnerMembershipId, x.CreatedAtUtc, x.ContactMembershipId });
+        contacts.HasIndex(x => new { x.ApplicationKey, x.ContactMembershipId });
+
+        var blocked = model.Entity<NqrbBlockedAccount>();
+        blocked.ToTable("NqrbBlockedAccounts", CallingModule.DatabaseSchema);
+        blocked.HasKey(x => new { x.ApplicationKey, x.OwnerMembershipId, x.BlockedMembershipId });
+        blocked.Property(x => x.ApplicationKey).HasMaxLength(80).IsUnicode(false).IsRequired();
+        blocked.Property(x => x.CreatedAtUtc).HasColumnType("datetimeoffset");
+        blocked.HasIndex(x => new { x.ApplicationKey, x.BlockedMembershipId });
+
+        var invites = model.Entity<NqrbContactInvite>();
+        invites.ToTable("NqrbContactInvites", CallingModule.DatabaseSchema);
+        invites.HasKey(x => new { x.ApplicationKey, x.CodeHash });
+        invites.Property(x => x.ApplicationKey).HasMaxLength(80).IsUnicode(false).IsRequired();
+        invites.Property(x => x.CodeHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        invites.Property(x => x.CreatedAtUtc).HasColumnType("datetimeoffset");
+        invites.Property(x => x.ExpiresAtUtc).HasColumnType("datetimeoffset");
+        invites.Property(x => x.ClaimedAtUtc).HasColumnType("datetimeoffset");
+        invites.HasIndex(x => new { x.ApplicationKey, x.IssuerMembershipId, x.ExpiresAtUtc });
+        invites.HasIndex(x => new { x.ApplicationKey, x.ClaimedByMembershipId });
     }
 }

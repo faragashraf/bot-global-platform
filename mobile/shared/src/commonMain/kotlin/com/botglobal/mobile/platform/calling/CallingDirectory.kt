@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -35,11 +36,14 @@ class CallingDirectoryController(
     private val directory: CallingDirectory,
 ) {
     private val refreshMutex = Mutex()
+    private val generation = MutableStateFlow(0L)
     private val mutableState = MutableStateFlow(CallingDirectorySnapshot())
     val state: StateFlow<CallingDirectorySnapshot> = mutableState.asStateFlow()
 
-    suspend fun refresh(currentMembershipId: String): CallingDirectorySnapshot =
-        refreshMutex.withLock {
+    suspend fun refresh(currentMembershipId: String): CallingDirectorySnapshot {
+        val requestGeneration = generation.value
+        return refreshMutex.withLock {
+            if (requestGeneration != generation.value) return@withLock mutableState.value
             mutableState.value = CallingDirectorySnapshot(CallingDirectoryStatus.Loading)
             try {
                 val participants = directory.loadCallableParticipants()
@@ -62,16 +66,18 @@ class CallingDirectoryController(
                         CallingDirectoryStatus.Ready
                     },
                     participants = participants,
-                ).also { mutableState.value = it }
+                ).also { if (requestGeneration == generation.value) mutableState.value = it }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 CallingDirectorySnapshot(CallingDirectoryStatus.Error)
-                    .also { mutableState.value = it }
+                    .also { if (requestGeneration == generation.value) mutableState.value = it }
             }
         }
+    }
 
     fun clear() {
+        generation.update { it + 1 }
         mutableState.value = CallingDirectorySnapshot()
     }
 }

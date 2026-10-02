@@ -20,9 +20,9 @@ public sealed class CallingPersistenceModelTests : IDisposable
             .OrderBy(table => table.Item2, StringComparer.Ordinal)
             .ToArray();
 
-        Assert.Equal(4, tables.Length);
+        Assert.Equal(7, tables.Length);
         Assert.All(tables, table => Assert.Equal(CallingModule.DatabaseSchema, table.Item1));
-        Assert.Equal(["CallParticipants", "CallUsageReports", "Calls", "UsageCounterPeriods"],
+        Assert.Equal(["CallParticipants", "CallUsageReports", "Calls", "NqrbBlockedAccounts", "NqrbContactEdges", "NqrbContactInvites", "UsageCounterPeriods"],
             tables.Select(table => table.Item2!).ToArray());
     }
 
@@ -60,8 +60,23 @@ public sealed class CallingPersistenceModelTests : IDisposable
     public void Persistence_contains_no_tokens_contacts_audio_or_provider_subjects()
     {
         var names = context.Model.GetEntityTypes().SelectMany(entity => entity.GetProperties()).Select(property => property.Name).ToArray();
-        foreach (var forbidden in new[] { "Token", "Credential", "ExternalSubject", "Phone", "Contact", "Audio", "Sdp", "Ice", "LastSeen" })
+        foreach (var forbidden in new[] { "Token", "Credential", "ExternalSubject", "Phone", "Audio", "Sdp", "Ice", "LastSeen" })
             Assert.DoesNotContain(names, name => name.Contains(forbidden, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Contact_book_stores_directional_membership_edges_only()
+    {
+        var contacts = context.Model.FindEntityType(typeof(NqrbContactEdge))!;
+
+        Assert.Equal(
+            ["ApplicationKey", "OwnerMembershipId", "ContactMembershipId"],
+            contacts.FindPrimaryKey()!.Properties.Select(property => property.Name).ToArray());
+        Assert.DoesNotContain(
+            contacts.GetProperties().Select(property => property.Name),
+            name => name.Contains("Phone", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Email", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Subject", StringComparison.OrdinalIgnoreCase));
     }
 
     public void Dispose() => context.Dispose();

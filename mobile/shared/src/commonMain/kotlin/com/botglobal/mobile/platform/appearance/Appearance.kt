@@ -30,11 +30,13 @@ data class AppearanceState(
 class AppearanceController(
     initialPreference: AppearancePreference = AppearancePreference.System,
     initialSystemIsDark: Boolean = false,
+    private val onPreferenceSelected: (AppearancePreference) -> Unit = {},
 ) {
     private val mutableState = MutableStateFlow(AppearanceState(initialPreference, initialSystemIsDark))
     val state: StateFlow<AppearanceState> = mutableState.asStateFlow()
 
     fun select(preference: AppearancePreference) {
+        onPreferenceSelected(preference)
         mutableState.value = mutableState.value.copy(preference = preference)
     }
 

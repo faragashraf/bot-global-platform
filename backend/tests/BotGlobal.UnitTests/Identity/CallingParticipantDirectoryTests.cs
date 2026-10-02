@@ -115,6 +115,66 @@ public sealed class CallingParticipantDirectoryTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public async Task Search_returns_only_active_non_guest_same_application_accounts_without_private_identifiers()
+    {
+        await using var db = CreateDbContext();
+        var current = Membership("nqrb", "Alpha Current");
+        var match = Membership("nqrb", "Alpha Contact");
+        var inactive = Membership("nqrb", "Alpha Inactive");
+        inactive.Deactivate();
+        var guest = new ApplicationMembership(
+            Guid.NewGuid(),
+            "nqrb",
+            $"subject-{Guid.NewGuid():N}",
+            "Alpha Guest",
+            null,
+            true,
+            DateTimeOffset.Parse("2026-08-31T12:00:00Z"));
+        var foreign = Membership("family-games", "Alpha Foreign");
+        db.ApplicationMemberships.AddRange(current, match, inactive, guest, foreign);
+        await db.SaveChangesAsync();
+        var directory = new CallingAccountDirectory(db);
+
+        var result = await directory.SearchActiveNonGuestsAsync(
+            "NQRB",
+            current.Id,
+            "Alpha",
+            1,
+            10,
+            CancellationToken.None);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal(match.Id, item.MembershipId);
+        Assert.Equal("Alpha Contact", item.DisplayName);
+    }
+
+    [Fact]
+    public async Task Lookup_rejects_guest_inactive_and_foreign_memberships()
+    {
+        await using var db = CreateDbContext();
+        var active = Membership("nqrb", "Active");
+        var inactive = Membership("nqrb", "Inactive");
+        inactive.Deactivate();
+        var guest = new ApplicationMembership(
+            Guid.NewGuid(),
+            "nqrb",
+            $"subject-{Guid.NewGuid():N}",
+            "Guest",
+            null,
+            true,
+            DateTimeOffset.Parse("2026-08-31T12:00:00Z"));
+        var foreign = Membership("family-games", "Foreign");
+        db.ApplicationMemberships.AddRange(active, inactive, guest, foreign);
+        await db.SaveChangesAsync();
+        var directory = new CallingAccountDirectory(db);
+
+        Assert.NotNull(await directory.FindActiveNonGuestAsync("nqrb", active.Id, CancellationToken.None));
+        Assert.Null(await directory.FindActiveNonGuestAsync("nqrb", inactive.Id, CancellationToken.None));
+        Assert.Null(await directory.FindActiveNonGuestAsync("nqrb", guest.Id, CancellationToken.None));
+        Assert.Null(await directory.FindActiveNonGuestAsync("nqrb", foreign.Id, CancellationToken.None));
+    }
+
     private static IdentityDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<IdentityDbContext>()

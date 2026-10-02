@@ -2,6 +2,7 @@ using BotGlobal.Calling.Application;
 using BotGlobal.Calling.Domain;
 using BotGlobal.Calling.Infrastructure;
 using BotGlobal.Calling.Realtime;
+using BotGlobal.Contracts.Calling;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Notifications;
 using Microsoft.EntityFrameworkCore;
@@ -24,8 +25,8 @@ public sealed class CallActivityServiceTests
         session.Status = CallSessionRegistry.CallStatus.Ended;
         await fixture.Service.FinishAsync(session, fixture.Now.AddMinutes(2), default);
 
-        var callerHistory = await fixture.Service.ListAsync("nqrb", fixture.CallerId, 1, 20, default);
-        var calleeHistory = await fixture.Service.ListAsync("nqrb", fixture.CalleeId, 1, 20, default);
+        var callerHistory = await fixture.Service.ListAsync("nqrb", fixture.CallerId, 1, 20, CallHistoryFilter.All, default);
+        var calleeHistory = await fixture.Service.ListAsync("nqrb", fixture.CalleeId, 1, 20, CallHistoryFilter.All, default);
         var caller = Assert.Single(callerHistory.Items);
         var callee = Assert.Single(calleeHistory.Items);
         Assert.Equal(session.CallId, caller.CallId);
@@ -35,7 +36,101 @@ public sealed class CallActivityServiceTests
         Assert.Equal("Caller", callee.ParticipantDisplayName);
         Assert.Equal("completed", caller.Outcome);
         Assert.Equal(4, (await fixture.Service.DetailAsync("nqrb", fixture.CallerId, session.CallId, default))!.RingingDurationSeconds);
-        Assert.Empty((await fixture.Service.ListAsync("other-app", fixture.CallerId, 1, 20, default)).Items);
+        Assert.Empty((await fixture.Service.ListAsync("other-app", fixture.CallerId, 1, 20, CallHistoryFilter.All, default)).Items);
+        Assert.Empty((await fixture.Service.ListAsync("nqrb", fixture.CallerId, 1, 20, CallHistoryFilter.Incoming, default)).Items);
+        Assert.Equal(session.CallId, Assert.Single((await fixture.Service.ListAsync("nqrb", fixture.CallerId, 1, 20, CallHistoryFilter.Outgoing, default)).Items).CallId);
+    }
+
+    [Fact]
+    public async Task History_reports_saved_status_for_the_viewing_account_even_before_contacts_are_loaded()
+    {
+        await using var fixture = new Fixture();
+        var session = fixture.NewSession();
+        await fixture.Service.StartAsync(session, default);
+
+        var before = Assert.Single((await fixture.Service.ListAsync(
+            "nqrb", fixture.CallerId, 1, 20, CallHistoryFilter.All, default)).Items);
+        Assert.False(before.IsSavedContact);
+        Assert.Equal(fixture.CalleeId, before.CounterpartMembershipId);
+        Assert.False(before.CanRedial);
+        Assert.False(before.CanAddContact);
+
+        var edge = new NqrbContactEdge("nqrb", fixture.CallerId, fixture.CalleeId, fixture.Now);
+        fixture.Db.NqrbContactEdges.Add(edge);
+        await fixture.Db.SaveChangesAsync();
+
+        var caller = Assert.Single((await fixture.Service.ListAsync(
+            "nqrb", fixture.CallerId, 1, 20, CallHistoryFilter.All, default)).Items);
+        var callee = Assert.Single((await fixture.Service.ListAsync(
+            "nqrb", fixture.CalleeId, 1, 20, CallHistoryFilter.All, default)).Items);
+        Assert.True(caller.IsSavedContact);
+        Assert.Equal(fixture.CalleeId, caller.CounterpartMembershipId);
+        Assert.True(caller.CanRedial);
+        Assert.False(caller.CanAddContact);
+        Assert.False(callee.IsSavedContact);
+        Assert.Equal(fixture.CallerId, callee.CounterpartMembershipId);
+        Assert.False(callee.CanRedial);
+        Assert.False(callee.CanAddContact);
+        Assert.True((await fixture.Service.DetailAsync("nqrb", fixture.CallerId, session.CallId, default))!.IsSavedContact);
+        Assert.Equal(fixture.CalleeId, (await fixture.Service.DetailAsync("nqrb", fixture.CallerId, session.CallId, default))!.CounterpartMembershipId);
+
+        fixture.Db.NqrbContactEdges.Remove(edge);
+        await fixture.Db.SaveChangesAsync();
+        Assert.False((await fixture.Service.DetailAsync("nqrb", fixture.CallerId, session.CallId, default))!.IsSavedContact);
+    }
+
+    [Fact]
+    public async Task Terminal_unsaved_nqrb_history_reports_redial_and_add_capabilities()
+    {
+        await using var fixture = new Fixture();
+        var session = await fixture.CompletedSessionAsync();
+
+        var caller = Assert.Single((await fixture.Service.ListAsync(
+            "nqrb", fixture.CallerId, 1, 20, CallHistoryFilter.All, default)).Items);
+        var detail = await fixture.Service.DetailAsync("nqrb", fixture.CallerId, session.CallId, default);
+
+        Assert.Equal(fixture.CalleeId, caller.CounterpartMembershipId);
+        Assert.False(caller.IsSavedContact);
+        Assert.True(caller.CanRedial);
+        Assert.True(caller.CanAddContact);
+        Assert.True(detail!.CanRedial);
+        Assert.True(detail.CanAddContact);
+    }
+
+    [Fact]
+    public async Task Guest_call_is_recorded_for_the_host_without_a_guest_usage_period_and_erased_with_the_host()
+    {
+        var guestId = Guid.NewGuid();
+        await using var fixture = new Fixture(inactiveMembershipId: guestId);
+        var session = new CallSessionRegistry.Session(
+            Guid.NewGuid(), "nqrb", guestId, fixture.CalleeId,
+            "guest-call:private", "host-subject", "Browser guest", "Host",
+            fixture.Now, fixture.Now.AddSeconds(45), isGuestCall: true, guestInviteId: Guid.NewGuid());
+
+        await fixture.Service.StartAsync(session, default);
+        session.Status = CallSessionRegistry.CallStatus.Answered;
+        await fixture.Service.AnswerAsync(session, fixture.Now.AddSeconds(4), default);
+        await fixture.Service.JoinedAsync(session, guestId, fixture.Now.AddSeconds(5), default);
+        await fixture.Service.JoinedAsync(session, fixture.CalleeId, fixture.Now.AddSeconds(5), default);
+        session.Status = CallSessionRegistry.CallStatus.Ended;
+        session.TerminationReason = "local";
+        await fixture.Service.FinishAsync(session, fixture.Now.AddMinutes(1), default);
+
+        var item = Assert.Single((await fixture.Service.ListAsync(
+            "nqrb", fixture.CalleeId, 1, 20, CallHistoryFilter.All, default)).Items);
+        Assert.Equal("Browser guest", item.ParticipantDisplayName);
+        Assert.Equal("incoming", item.Direction);
+        Assert.Equal("completed", item.Outcome);
+        Assert.True(item.IsGuestCall);
+        Assert.Null(item.IsSavedContact);
+        Assert.Null(item.CounterpartMembershipId);
+        Assert.True((await fixture.Service.DetailAsync("nqrb", fixture.CalleeId, session.CallId, default))!.IsGuestCall);
+        Assert.DoesNotContain(fixture.Db.UsagePeriods, period => period.MembershipId == guestId);
+        Assert.Empty((await fixture.Service.ListAsync("nqrb", Guid.NewGuid(), 1, 20, CallHistoryFilter.All, default)).Items);
+
+        await new CallingAccountDataEraser(fixture.Db).DeleteAsync("nqrb", fixture.CalleeId, default);
+        Assert.Empty(fixture.Db.Calls);
+        Assert.Empty(fixture.Db.Participants);
     }
 
     [Fact]
@@ -180,7 +275,7 @@ public sealed class CallActivityServiceTests
         public readonly CallingDbContext Db;
         public readonly CallActivityService Service;
 
-        public Fixture(bool inactiveMembership = false)
+        public Fixture(bool inactiveMembership = false, Guid? inactiveMembershipId = null)
         {
             Clock = new MutableTimeProvider(Now);
             Db = new CallingDbContext(new DbContextOptionsBuilder<CallingDbContext>()
@@ -188,7 +283,11 @@ public sealed class CallActivityServiceTests
             Service = new CallActivityService(
                 Db,
                 new Applications(ApplicationId),
-                new MembershipActivityReader(inactiveMembership ? CallerId : null),
+                new MembershipActivityReader(inactiveMembershipId ?? (inactiveMembership ? CallerId : null)),
+                new NqrbCallEligibilityService(
+                    Db,
+                    new Applications(ApplicationId),
+                    new AccountDirectory([CallerId, CalleeId], inactiveMembershipId ?? (inactiveMembership ? CallerId : null))),
                 new CallingAccountDataEraser(Db),
                 Clock);
         }
@@ -228,6 +327,42 @@ public sealed class CallActivityServiceTests
             string applicationKey,
             CancellationToken cancellationToken) =>
             Task.FromResult(membershipId != inactiveMembership);
+    }
+
+    private sealed class AccountDirectory(
+        IReadOnlyCollection<Guid> activeMemberships,
+        Guid? inactiveMembership) : ICallingAccountDirectory
+    {
+        public Task<CallingAccountDescriptor?> FindActiveNonGuestAsync(
+            string applicationKey,
+            Guid membershipId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<CallingAccountDescriptor?>(IsActive(applicationKey, membershipId)
+                ? new(membershipId, membershipId == activeMemberships.First() ? "Caller" : "Callee")
+                : null);
+
+        public Task<IReadOnlyList<CallingAccountDescriptor>> FindActiveNonGuestAsync(
+            string applicationKey,
+            IReadOnlyCollection<Guid> membershipIds,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<CallingAccountDescriptor>>(membershipIds
+                .Where(id => IsActive(applicationKey, id))
+                .Select(id => new CallingAccountDescriptor(id, id == activeMemberships.First() ? "Caller" : "Callee"))
+                .ToArray());
+
+        public Task<CallingAccountSearchPage> SearchActiveNonGuestsAsync(
+            string applicationKey,
+            Guid currentMembershipId,
+            string query,
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        private bool IsActive(string applicationKey, Guid membershipId) =>
+            applicationKey == "nqrb" &&
+            membershipId != inactiveMembership &&
+            activeMemberships.Contains(membershipId);
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
