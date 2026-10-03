@@ -89,7 +89,7 @@ android {
 
     defaultConfig {
         applicationId = "com.botglobal.lamma"
-        minSdk = libs.versions.android.minSdk.get().toInt()
+        minSdk = maxOf(24, libs.versions.android.minSdk.get().toInt())
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = libs.versions.lamma.versionCode.get().toInt()
         versionName = libs.versions.lamma.versionName.get()
