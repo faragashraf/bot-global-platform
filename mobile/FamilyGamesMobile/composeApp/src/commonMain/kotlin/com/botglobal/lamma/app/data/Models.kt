@@ -14,7 +14,16 @@ data class IdentityDto(
     val displayName: String,
     val isGuest: Boolean,
     val applicationKey: String,
-)
+) {
+    fun toDomain(fallbackKind: IdentityKind = if (isGuest) IdentityKind.Guest else IdentityKind.Registered) =
+        ApplicationIdentity(
+            membershipId,
+            subjectId,
+            displayName,
+            if (isGuest) IdentityKind.Guest else fallbackKind,
+            applicationKey,
+        )
+}
 
 @Serializable
 data class MobileSessionDto(
@@ -29,13 +38,7 @@ data class MobileSessionDto(
         accessExpiresAtUtc,
         refreshToken,
         refreshExpiresAtUtc,
-        ApplicationIdentity(
-            identity.membershipId,
-            identity.subjectId,
-            identity.displayName,
-            if (identity.isGuest) IdentityKind.Guest else IdentityKind.Registered,
-            identity.applicationKey,
-        ),
+        identity.toDomain(),
     )
 
     companion object {
@@ -64,6 +67,8 @@ data class MobileSessionDto(
     val password: String,
 )
 @Serializable data class RefreshRequest(val refreshToken: String)
+@Serializable data class FederatedIdentityRequest(val provider: String, val idToken: String)
+@Serializable data class ProfileUpdateRequest(val displayName: String)
 @Serializable data class CreateSessionRequest(val rulesetKey: String)
 @Serializable
 data class AppVersionPolicyDto(

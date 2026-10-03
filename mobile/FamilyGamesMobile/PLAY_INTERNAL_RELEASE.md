@@ -13,9 +13,15 @@ Version code `1` was used for the first Internal Testing upload. This corrected 
 
 ## Release connectivity
 
-Debug builds keep their isolated local endpoint override through `familyGamesDebugApiBaseUrl`. Release builds use the approved canonical Bot Global API base `https://botglobalservice.com/backend`; the build validates that it is public HTTPS rather than localhost, an emulator address, or a private/LAN address.
+Debug builds keep their isolated local endpoint override through `familyGamesDebugApiBaseUrl`. Release builds use the approved canonical Bot Global API base `https://www.botglobalservice.com/backend`; the build validates that it is public HTTPS rather than localhost, an emulator address, or a private/LAN address.
 
 HTTP APIs, invitation resolution, and the `/hubs/games` SignalR route are composed from the same normalized environment base. Release does not enable cleartext traffic.
+
+## Identity and OAuth status
+
+Lamma supports Google sign-in, existing username/password sign-in, account creation, and guest play. Google sign-in requires an explicit Lamma web server client id supplied as `LAMMA_GOOGLE_SERVER_CLIENT_ID` or `familyGamesGoogleServerClientId`; it must not reuse NQRB OAuth configuration. Release builds fail before packaging when this Lamma OAuth value is absent. Debug builds may run without it and show a recoverable in-app "not configured" state.
+
+The owner still needs to provision and review the Google Cloud OAuth client set for `com.botglobal.lamma`, including the debug signing SHA and the final Google Play app-signing SHA after Play App Signing is active. Do not infer those values from local credentials or another product.
 
 ### Android 6 TLS compatibility blocker
 
@@ -64,9 +70,15 @@ Consent-gated, two-player WebRTC voice, mute/unmute, and cleanup are operational
 
 The Android application has no Firebase SDK/plugin dependency and no `google-services.json`; the release build does not require Firebase. Generic notification capability exists elsewhere in the platform, but Lamma Android push registration/delivery is not configured. If push notifications are enabled later, register a distinct Firebase Android app for `com.botglobal.lamma` and supply its approved configuration without committing private service-account material.
 
+## Play review status
+
+Lamma uses the shared Google Play in-app review coordinator. The only automatic Lamma trigger is an authoritative completed round result, any outcome, keyed by game session and match number, and delivery remains pending until the result UI is visible with no active voice, consent, invitation, deletion, camera, or busy modal. The default shared policy requires at least three genuine completions over at least three days and applies a 90-day cooldown only when a real native Play review launch is about to happen. Missing/stale activity state, busy UI, or non-Android no-op launchers do not consume cooldown.
+
+Manual rating actions, if added later, may open the Store listing directly. Automatic review must not fall back to the Store listing and must not claim a rating was completed. Final proof requires a Google Play test track/runtime pass owned by the release operator because Play controls prompt quota and UI display.
+
 ## Data Safety evidence
 
-- Identity: guests send a display name; registered flows send display name, username, email, and password to the central identity API. Session access/refresh credentials are encrypted locally with a non-exportable Android Keystore key.
+- Identity: Google sign-in sends a Google ID token to the central identity API for Lamma-scoped validation; existing username/password flows send display name, username, email, and password; guests send a display name. Session access/refresh credentials are encrypted locally with a non-exportable Android Keystore key.
 - Gameplay: the backend receives application-scoped identity, session/join/invitation actions, readiness, moves, and rematch commands.
 - Notifications: shared semantic contracts exist, but this Android application has no notification permission, FCM configuration, registration, or push-delivery integration.
 - Microphone/voice: after an explicit opponent request/accept flow and local Just-In-Time permission, microphone audio is transmitted to the other game participant through WebRTC. Audio frames are not carried by the Bot Global API or SignalR and are not recorded or stored by the application. Signaling and session/participant identifiers pass through the backend.

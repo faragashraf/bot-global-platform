@@ -18,6 +18,10 @@ import com.botglobal.mobile.platform.device.PermissionState
 import com.botglobal.mobile.platform.device.UnavailablePermissionController
 import com.botglobal.mobile.platform.device.SemanticHaptics
 import com.botglobal.mobile.platform.identity.MobileSession
+import com.botglobal.mobile.platform.identity.FederatedCredentialProvider
+import com.botglobal.mobile.platform.identity.FederatedCredentialResult
+import com.botglobal.mobile.platform.identity.FederatedIdentityProvider
+import com.botglobal.mobile.platform.identity.UnavailableFederatedCredentialProvider
 import com.botglobal.mobile.platform.invitations.GameInvitation
 import com.botglobal.mobile.platform.invitations.InvitationLinkCodec
 import com.botglobal.mobile.platform.invitations.InvitationLinkResult
@@ -33,6 +37,9 @@ import com.botglobal.mobile.platform.realtime.NetworkAvailability
 import com.botglobal.mobile.platform.realtime.UnavailableNetworkAvailability
 import com.botglobal.mobile.platform.update.UpdateMode
 import com.botglobal.mobile.platform.update.UpdatePolicyEngine
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
+import com.botglobal.mobile.platform.reviews.ReviewAttemptResult
+import com.botglobal.mobile.platform.reviews.ReviewTrigger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -61,6 +68,7 @@ enum class AppScreen {
     Welcome,
     SignIn,
     Register,
+    ProfileCompletion,
     Home,
     Ruleset,
     CreateOrJoin,
@@ -127,6 +135,8 @@ data class FamilyGamesUiState(
     val voice: VoiceRoomSnapshot = VoiceRoomSnapshot(VoiceRoomState.Unavailable),
     val voiceConsent: VoiceConsentSnapshot = VoiceConsentSnapshot(),
     val pendingInvitationToken: String? = null,
+    val profileDraft: String = "",
+    val profileCompletionRequired: Boolean = false,
 )
 
 class FamilyGamesCoordinator(
@@ -142,6 +152,8 @@ class FamilyGamesCoordinator(
     private val permissions: PermissionController = UnavailablePermissionController,
     networkAvailability: NetworkAvailability = UnavailableNetworkAvailability,
     private val languagePreferences: ApplicationLanguagePreferences = UnavailableApplicationLanguagePreferences,
+    private val federatedCredentials: FederatedCredentialProvider = UnavailableFederatedCredentialProvider,
+    private val reviews: ReviewCoordinator? = null,
     voiceMediaFactory: VoiceMediaPeerFactory? = null,
     private val accountDeletionTeardown: FamilyGamesAccountDeletionTeardown? = null,
 ) {
@@ -169,6 +181,7 @@ class FamilyGamesCoordinator(
     private var voiceStateJob: Job? = null
     private var voiceConsentStateJob: Job? = null
     private var handledAcceptedVoiceRequestId: String? = null
+    private var pendingReviewTrigger: ReviewTrigger? = null
 
     init {
         voiceStateJob = voice?.let { controller ->
@@ -275,6 +288,68 @@ class FamilyGamesCoordinator(
         resolvePendingInvitationIfAvailable()
     }
 
+    fun signInWithGoogle() = launchAction {
+        when (val acquired = federatedCredentials.acquire(FederatedIdentityProvider.Google)) {
+            is FederatedCredentialResult.Acquired -> {
+                val session = gateway.authenticateFederated(acquired.credential)
+                resetAcceptedDeletionCleanup()
+                mutableState.update {
+                    it.copy(
+                        mobileSession = session,
+                        screen = AppScreen.ProfileCompletion,
+                        profileDraft = session.identity.displayName,
+                        profileCompletionRequired = true,
+                        accountDeletionAcceptance = null,
+                        accountDeletionCleanup = null,
+                        accountDeletionConfirmation = null,
+                        accountDeletionFailed = false,
+                    )
+                }
+                haptics.perform(HapticEvent.Success)
+            }
+            FederatedCredentialResult.Cancelled -> mutableState.update { it.copy(errorCode = null) }
+            FederatedCredentialResult.ConfigurationMissing -> mutableState.update { it.copy(errorCode = "google_configuration_missing") }
+            FederatedCredentialResult.Unavailable -> mutableState.update { it.copy(errorCode = "google_unavailable") }
+            FederatedCredentialResult.Failed -> mutableState.update { it.copy(errorCode = "google_failed") }
+        }
+    }
+
+    fun updateProfileDraft(displayName: String) {
+        mutableState.update { it.copy(profileDraft = displayName.take(120), errorCode = null) }
+    }
+
+    fun completeProfile() = launchAction {
+        val name = mutableState.value.profileDraft.trim()
+        if (name.isBlank()) {
+            mutableState.update { it.copy(errorCode = "display_name_required") }
+            haptics.perform(HapticEvent.Warning)
+            return@launchAction
+        }
+        val session = gateway.updateProfile(name)
+        mutableState.update {
+            it.copy(
+                mobileSession = session,
+                profileDraft = session.identity.displayName,
+                profileCompletionRequired = false,
+            )
+        }
+        if (resolvePendingInvitationIfAvailable()) return@launchAction
+        mutableState.update { it.copy(screen = AppScreen.Home) }
+    }
+
+    fun editProfile() {
+        val identity = mutableState.value.mobileSession?.identity ?: return
+        if (identity.kind != IdentityKind.Registered) return
+        mutableState.update {
+            it.copy(
+                screen = AppScreen.ProfileCompletion,
+                profileDraft = identity.displayName,
+                profileCompletionRequired = false,
+                errorCode = null,
+            )
+        }
+    }
+
     fun showSignIn() = navigate(AppScreen.SignIn)
     fun showRegister() = navigate(AppScreen.Register)
     fun showRuleset() = navigate(AppScreen.Ruleset)
@@ -316,6 +391,7 @@ class FamilyGamesCoordinator(
 
     fun dismissInvitation() {
         mutableState.update { it.copy(invitation = null) }
+        requestPendingReviewIfReady()
     }
 
     fun shareInvitation(gameName: String) {
@@ -346,6 +422,7 @@ class FamilyGamesCoordinator(
 
     fun dismissCameraExplanation() {
         mutableState.update { it.copy(cameraExplanationVisible = false) }
+        requestPendingReviewIfReady()
     }
 
     fun showVoiceExplanation() {
@@ -359,6 +436,7 @@ class FamilyGamesCoordinator(
 
     fun dismissVoiceExplanation() {
         mutableState.update { it.copy(voiceExplanationVisible = false) }
+        requestPendingReviewIfReady()
     }
 
     fun requestVoiceChat() = launchAction { voiceConsent?.request() }
@@ -516,6 +594,7 @@ class FamilyGamesCoordinator(
             -> Unit
             else -> restartRealtimeTransport(sessionId, RealtimeConnectSource.Foreground)
         }
+        requestReviewIfReady(ReviewTrigger.Foreground)
     }
 
     fun pauseForBackground() {
@@ -542,6 +621,7 @@ class FamilyGamesCoordinator(
                 voiceConsent = VoiceConsentSnapshot(),
             )
         }
+        requestReviewIfReady(ReviewTrigger.ExplicitExit)
     }
 
     fun beginAccountDeletion() {
@@ -561,6 +641,7 @@ class FamilyGamesCoordinator(
         if (mutableState.value.busy || actionJob?.isActive == true ||
             mutableState.value.accountDeletionAcceptance != null) return
         mutableState.update { it.copy(accountDeletionConfirmation = null, accountDeletionFailed = false) }
+        requestPendingReviewIfReady()
     }
 
     fun deleteAccount() {
@@ -1027,7 +1108,49 @@ class FamilyGamesCoordinator(
                 recoveredFromInterruption = recoveredFromInterruption,
             )
         }
+        if (current?.status != "completed" && snapshot.status == "completed") {
+            pendingReviewTrigger = ReviewTrigger.CompletedExperience
+            scope.launch {
+                reviews?.recordMeaningfulEvent("lamma:${snapshot.sessionId}:${snapshot.matchNumber}")
+                requestPendingReviewIfReady()
+            }
+        }
         return true
+    }
+
+    private fun requestReviewIfReady(trigger: ReviewTrigger) {
+        pendingReviewTrigger = trigger
+        requestPendingReviewIfReady()
+    }
+
+    private fun requestPendingReviewIfReady() {
+        val trigger = pendingReviewTrigger ?: return
+        if (!isReviewReadyForLaunch(trigger)) return
+        scope.launch {
+            when (reviews?.tryRequest(trigger) { isReviewReadyForLaunch(trigger) }) {
+                ReviewAttemptResult.Launched,
+                ReviewAttemptResult.Failed,
+                null,
+                -> pendingReviewTrigger = null
+                ReviewAttemptResult.AlreadyRunning,
+                ReviewAttemptResult.Deferred,
+                ReviewAttemptResult.NotEligible,
+                -> Unit
+            }
+        }
+    }
+
+    private fun isReviewReadyForLaunch(trigger: ReviewTrigger): Boolean {
+        val state = mutableState.value
+        if (state.screen != AppScreen.Result && trigger != ReviewTrigger.ExplicitExit) return false
+        return !state.busy &&
+            state.accountDeletionConfirmation == null &&
+            state.accountDeletionCleanup == null &&
+            state.invitation == null &&
+            !state.cameraExplanationVisible &&
+            !state.voiceExplanationVisible &&
+            state.voice.state in setOf(VoiceRoomState.Idle, VoiceRoomState.Unavailable, VoiceRoomState.Failed) &&
+            state.voiceConsent.state in setOf(VoiceConsentState.Idle, VoiceConsentState.Ended, VoiceConsentState.Unavailable)
     }
 
     private fun isOlderSessionRevision(
@@ -1071,6 +1194,7 @@ class FamilyGamesCoordinator(
                 haptics.perform(HapticEvent.Error)
             } finally {
                 mutableState.update { it.copy(busy = false) }
+                requestPendingReviewIfReady()
             }
         }
     }

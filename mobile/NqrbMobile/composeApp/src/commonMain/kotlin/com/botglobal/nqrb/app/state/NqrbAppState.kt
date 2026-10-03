@@ -32,6 +32,9 @@ import com.botglobal.mobile.platform.navigation.BackStackNavigator
 import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
 import com.botglobal.mobile.platform.notifications.UnavailablePushRegistrationLifecycle
 import com.botglobal.mobile.platform.notifications.PushRegistrationOutcome
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
+import com.botglobal.mobile.platform.reviews.ReviewAttemptResult
+import com.botglobal.mobile.platform.reviews.ReviewTrigger
 import com.botglobal.nqrb.app.data.NqrbAccountDeletionGateway
 import com.botglobal.nqrb.app.data.NqrbAccountDeletionOutcome
 import com.botglobal.nqrb.app.data.UnavailableNqrbAccountDeletionGateway
@@ -115,6 +118,7 @@ class NqrbAppState(
     private val accountProfile: NqrbAccountProfileGateway = UnavailableNqrbAccountProfileGateway,
     private val localAccountDataCleaner: NqrbLocalAccountDataCleaner = UnavailableNqrbLocalAccountDataCleaner,
     private val permissions: PermissionController = UnavailablePermissionController,
+    private val reviews: ReviewCoordinator? = null,
     private val callActionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     private val startupMutex = Mutex()
@@ -139,6 +143,9 @@ class NqrbAppState(
     val addedHistoryContactCalls = mutableAddedHistoryContactCalls.asStateFlow()
     private val sessionRenewalMutex = Mutex()
     private var foregroundRefreshJob: Job? = null
+    private var foreground = false
+    private var pendingReviewTrigger: ReviewTrigger? = null
+    private val reviewWorkflowBlockers = MutableStateFlow<Set<String>>(emptySet())
 
     init {
         callActionScope.launch {
@@ -152,6 +159,11 @@ class NqrbAppState(
                     if (!submittedUsageCalls.add(callId)) return@collect
                     callActivity.submit(FinalCallUsage(callId, usage.bytesSent, usage.bytesReceived,
                         usage.connectedDurationSeconds ?: 0), membershipId)
+                    if ((usage.connectedDurationSeconds ?: 0) >= 30) {
+                        pendingReviewTrigger = ReviewTrigger.CompletedExperience
+                        reviews?.recordMeaningfulEvent("nqrb:call:$callId")
+                        requestPendingReviewIfReady()
+                    }
                 }
             }
         }
@@ -239,6 +251,7 @@ class NqrbAppState(
         callActivity.clear()
         submittedUsageCalls.clear()
         pendingHistoryContactAdds.clear()
+        reviewWorkflowBlockers.value = emptySet()
         mutableAddedHistoryContactCalls.value = emptySet()
         navigation.reset(NqrbDestination.SignIn)
         mutableAccountActionState.value = NqrbAccountActionState.Idle
@@ -296,6 +309,7 @@ class NqrbAppState(
         callActivity.clear()
         submittedUsageCalls.clear()
         pendingHistoryContactAdds.clear()
+        reviewWorkflowBlockers.value = emptySet()
         mutableAddedHistoryContactCalls.value = emptySet()
         navigation.reset(NqrbDestination.SignIn)
         mutableAccountActionState.value = NqrbAccountActionState.Idle
@@ -320,6 +334,7 @@ class NqrbAppState(
             refreshCallHistory()
         }
         if (destination == NqrbDestination.Profile) refreshAccountProfile()
+        callActionScope.launch { requestPendingReviewIfReady() }
         return true
     }
 
@@ -431,8 +446,10 @@ class NqrbAppState(
     }
 
     fun onForeground() {
+        foreground = true
         foregroundRefreshJob?.cancel()
         foregroundRefreshJob = callActionScope.launch {
+            requestReviewIfReady(ReviewTrigger.Foreground)
             while (isActive) {
                 if (startupState.value == NqrbStartupState.Ready &&
                     identity.state.value is FederatedAuthenticationState.SignedIn
@@ -446,6 +463,7 @@ class NqrbAppState(
     }
 
     fun onBackground() {
+        foreground = false
         foregroundRefreshJob?.cancel()
         foregroundRefreshJob = null
     }
@@ -755,6 +773,7 @@ class NqrbAppState(
             } else {
                 microphonePermissionBlocked.value = true
             }
+            requestPendingReviewIfReady()
         }
     }
 
@@ -777,7 +796,48 @@ class NqrbAppState(
     fun cancelMicrophoneExplanation() {
         microphoneExplanationVisible.value = false
         pendingOutgoingParticipant = null
+        callActionScope.launch { requestPendingReviewIfReady() }
     }
+
+    fun setReviewWorkflowActive(key: String, active: Boolean) {
+        require(key.isNotBlank()) { "Review workflow key is required." }
+        reviewWorkflowBlockers.value = if (active) {
+            reviewWorkflowBlockers.value + key
+        } else {
+            reviewWorkflowBlockers.value - key
+        }
+        if (!active) callActionScope.launch { requestPendingReviewIfReady() }
+    }
+
+    private suspend fun requestReviewIfReady(trigger: ReviewTrigger) {
+        if (pendingReviewTrigger == null) pendingReviewTrigger = trigger
+        requestPendingReviewIfReady()
+    }
+
+    private suspend fun requestPendingReviewIfReady() {
+        val trigger = pendingReviewTrigger ?: return
+        if (!isReviewReadyForLaunch() || reviews == null) return
+        when (reviews.tryRequest(trigger, ::isReviewReadyForLaunch)) {
+            ReviewAttemptResult.Launched,
+            ReviewAttemptResult.Failed,
+            -> pendingReviewTrigger = null
+            ReviewAttemptResult.AlreadyRunning,
+            ReviewAttemptResult.Deferred,
+            ReviewAttemptResult.NotEligible,
+            -> Unit
+        }
+    }
+
+    private fun isReviewReadyForLaunch(): Boolean =
+        foreground &&
+            startupState.value == NqrbStartupState.Ready &&
+            identity.state.value is FederatedAuthenticationState.SignedIn &&
+            !microphoneExplanationVisible.value &&
+            !microphonePermissionBlocked.value &&
+            mutableAccountActionState.value == NqrbAccountActionState.Idle &&
+            mutableAccountProfileState.value != NqrbAccountProfileState.Loading &&
+            reviewWorkflowBlockers.value.isEmpty() &&
+            calling.state.value.state in ReviewReadyCallStates
 
     private suspend fun startSelectedCall(participant: CallableParticipant) {
         pendingOutgoingParticipant = null
@@ -799,6 +859,15 @@ class NqrbAppState(
             NqrbDestination.History,
             NqrbDestination.People,
             NqrbDestination.Profile,
+        )
+        private val ReviewReadyCallStates = setOf(
+            CallState.Idle,
+            CallState.Rejected,
+            CallState.Cancelled,
+            CallState.Missed,
+            CallState.Expired,
+            CallState.Ended,
+            CallState.Failed,
         )
 
         private fun unavailableCalling(): CallSessionController {

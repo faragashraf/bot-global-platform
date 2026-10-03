@@ -6,6 +6,9 @@ import com.botglobal.mobile.platform.localization.LocaleController
 import com.botglobal.mobile.platform.navigation.BackStackNavigator
 import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
 import com.botglobal.mobile.platform.preferences.PreferenceStore
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
+import com.botglobal.mobile.platform.reviews.ReviewAttemptResult
+import com.botglobal.mobile.platform.reviews.ReviewTrigger
 import com.botglobal.mobile.platform.startup.StartupOrchestrator
 import com.botglobal.mobile.platform.startup.StartupStage
 import com.botglobal.mobile.platform.startup.StartupStep
@@ -13,9 +16,13 @@ import com.enpo.connect.app.network.EnpoNetworkConfiguration
 import com.enpo.connect.app.notifications.EnpoNotificationSound
 import com.enpo.connect.app.pairing.EnpoPairingCoordinator
 import com.enpo.connect.app.pairing.EnpoPairingState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 enum class EnpoDestination {
     Pairing,
@@ -45,6 +52,8 @@ class EnpoAppState(
     private val deviceInfrastructure: EnpoDeviceInfrastructure = EmptyEnpoDeviceInfrastructure,
     val networkConfiguration: EnpoNetworkConfiguration? = null,
     private val pairingCoordinator: EnpoPairingCoordinator = EnpoPairingCoordinator(),
+    private val reviews: ReviewCoordinator? = null,
+    private val reviewScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     val locale = LocaleController(restoredLanguageTag())
     val appearance = AppearanceController(initialPreference = restoredAppearance())
@@ -55,6 +64,7 @@ class EnpoAppState(
     val bootstrapState: StateFlow<EnpoBootstrapState> = mutableBootstrapState.asStateFlow()
 
     private var bootstrapComplete = false
+    private var pendingReviewTrigger: ReviewTrigger? = null
     private val mutableSelectedNotificationId = MutableStateFlow<String?>(null)
     val selectedNotificationId: StateFlow<String?> = mutableSelectedNotificationId.asStateFlow()
     private val mutableNotificationsEnabled = MutableStateFlow(
@@ -95,6 +105,7 @@ class EnpoAppState(
             EnpoDeviceBootstrapResult.DeviceCredentialAvailable -> {
                 pairingCoordinator.initializePaired()
                 navigation.reset(EnpoDestination.Home)
+                requestReviewIfReady(ReviewTrigger.Foreground)
                 EnpoBootstrapState.DeviceCredentialAvailable
             }
             EnpoDeviceBootstrapResult.CredentialUnreadable -> {
@@ -111,14 +122,48 @@ class EnpoAppState(
         if (pairingCoordinator.state.value == EnpoPairingState.Paired) {
             mutableBootstrapState.value = EnpoBootstrapState.DeviceCredentialAvailable
             navigation.reset(EnpoDestination.PairingSuccess)
+            pendingReviewTrigger = ReviewTrigger.CompletedExperience
+            reviews?.recordMeaningfulEvent("enpo:pairing:device")
         }
     }
 
     fun enterPairedShell() {
         if (pairingCoordinator.state.value == EnpoPairingState.Paired) {
             navigation.reset(EnpoDestination.Home)
+            requestPendingReviewIfSettled()
         }
     }
+
+    fun onForeground() {
+        requestReviewIfReady(ReviewTrigger.Foreground)
+    }
+
+    private fun requestReviewIfReady(trigger: ReviewTrigger) {
+        pendingReviewTrigger = trigger
+        requestPendingReviewIfSettled()
+    }
+
+    private fun requestPendingReviewIfSettled() {
+        val trigger = pendingReviewTrigger ?: return
+        if (!isReviewReadyForLaunch() || reviews == null) return
+        reviewScope.launch {
+            when (reviews.tryRequest(trigger, ::isReviewReadyForLaunch)) {
+                ReviewAttemptResult.Launched,
+                ReviewAttemptResult.Failed,
+                -> pendingReviewTrigger = null
+                ReviewAttemptResult.AlreadyRunning,
+                ReviewAttemptResult.Deferred,
+                ReviewAttemptResult.NotEligible,
+                -> Unit
+            }
+        }
+    }
+
+    private fun isReviewReadyForLaunch(): Boolean =
+        navigation.current == EnpoDestination.Home &&
+            bootstrapState.value == EnpoBootstrapState.DeviceCredentialAvailable &&
+            pairingCoordinator.state.value == EnpoPairingState.Paired &&
+            selectedNotificationId.value == null
 
     fun open(destination: EnpoDestination) {
         require(destination !in RootDestinations) { "Root destinations cannot be pushed." }

@@ -6,6 +6,7 @@ data class FamilyGamesStrings(
     val appName: String,
     val tagline: String,
     val continueGuest: String,
+    val continueWithGoogle: String,
     val signIn: String,
     val createAccount: String,
     val displayName: String,
@@ -93,6 +94,11 @@ data class FamilyGamesStrings(
     val exit: String,
     val loading: String,
     val genericError: String,
+    val googleNotConfigured: String,
+    val googleUnavailable: String,
+    val googleFailed: String,
+    val displayNameRequired: String,
+    val displayNameTooLong: String,
     val sessionNotFound: String,
     val wrongTurn: String,
     val occupiedCell: String,
@@ -128,6 +134,10 @@ data class FamilyGamesStrings(
     val updateLater: String,
     val optionalUpdateMessage: String,
     val requiredUpdateMessage: String,
+    val profileCompletionTitle: String,
+    val profileCompletionBody: String,
+    val editProfile: String,
+    val saveProfile: String,
 )
 
 fun strings(language: AppLanguage): FamilyGamesStrings =
@@ -137,6 +147,7 @@ private val ArabicStrings = FamilyGamesStrings(
     appName = "لَمّة",
     tagline = "اللعب أحلى لما يجمعنا",
     continueGuest = "الدخول كضيف",
+    continueWithGoogle = "المتابعة باستخدام Google",
     signIn = "تسجيل الدخول",
     createAccount = "إنشاء حساب",
     displayName = "اسمك داخل اللعبة",
@@ -224,6 +235,11 @@ private val ArabicStrings = FamilyGamesStrings(
     exit = "الخروج للرئيسية",
     loading = "لحظة واحدة…",
     genericError = "حصلت مشكلة. جرّب مرة ثانية.",
+    googleNotConfigured = "تسجيل الدخول عبر Google غير مفعّل لهذا الإصدار بعد.",
+    googleUnavailable = "خدمة Google غير متاحة على هذا الجهاز حاليًا.",
+    googleFailed = "تعذّر تسجيل الدخول عبر Google. تأكد من الاتصال وحاول مرة ثانية.",
+    displayNameRequired = "اكتب اسمًا يظهر داخل لَمّة.",
+    displayNameTooLong = "الاسم طويل جدًا. الحد الأقصى ١٢٠ حرفًا.",
     sessionNotFound = "لم نجد اللعبة بهذا الكود.",
     wrongTurn = "استنى دورك.",
     occupiedCell = "المربع مستخدم بالفعل.",
@@ -259,12 +275,17 @@ private val ArabicStrings = FamilyGamesStrings(
     updateLater = "لاحقًا",
     optionalUpdateMessage = "نزّل أحدث إصدار لأفضل تجربة لعب.",
     requiredUpdateMessage = "لازم تحدّث التطبيق قبل ما تكمل اللعب.",
+    profileCompletionTitle = "اختار اسمك في لَمّة",
+    profileCompletionBody = "هذا الاسم سيظهر للاعبين داخل لَمّة فقط.",
+    editProfile = "تعديل الاسم",
+    saveProfile = "حفظ الاسم",
 )
 
 private val EnglishStrings = FamilyGamesStrings(
     appName = "Lamma",
     tagline = "Play is better together",
     continueGuest = "Continue as Guest",
+    continueWithGoogle = "Continue with Google",
     signIn = "Sign In",
     createAccount = "Create Account",
     displayName = "Your game name",
@@ -352,6 +373,11 @@ private val EnglishStrings = FamilyGamesStrings(
     exit = "Exit to home",
     loading = "One moment…",
     genericError = "Something went wrong. Please try again.",
+    googleNotConfigured = "Google sign-in is not configured for this build yet.",
+    googleUnavailable = "Google sign-in is unavailable on this device right now.",
+    googleFailed = "Google sign-in could not finish. Check your connection and try again.",
+    displayNameRequired = "Enter a name to show inside Lamma.",
+    displayNameTooLong = "That name is too long. Use 120 characters or fewer.",
     sessionNotFound = "No game was found with that code.",
     wrongTurn = "Wait for your turn.",
     occupiedCell = "That cell is already occupied.",
@@ -387,6 +413,10 @@ private val EnglishStrings = FamilyGamesStrings(
     updateLater = "Later",
     optionalUpdateMessage = "Install the latest version for the best game experience.",
     requiredUpdateMessage = "Update the app before continuing.",
+    profileCompletionTitle = "Choose your Lamma name",
+    profileCompletionBody = "This name is shown only to players inside Lamma.",
+    editProfile = "Edit name",
+    saveProfile = "Save name",
 )
 
 fun FamilyGamesStrings.error(code: String?): String = when (code) {
@@ -408,5 +438,10 @@ fun FamilyGamesStrings.error(code: String?): String = when (code) {
     "voice_unavailable", "voice_join_failed" -> voiceUnavailable
     "qr_scanner_unavailable" -> qrScannerUnavailable
     "share_unavailable" -> shareUnavailable
+    "google_configuration_missing" -> googleNotConfigured
+    "google_unavailable" -> googleUnavailable
+    "google_failed" -> googleFailed
+    "display_name_required" -> displayNameRequired
+    "display_name_too_long" -> displayNameTooLong
     else -> genericError
 }

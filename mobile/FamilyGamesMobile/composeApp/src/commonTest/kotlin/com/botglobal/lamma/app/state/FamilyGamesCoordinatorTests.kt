@@ -14,8 +14,18 @@ import com.botglobal.lamma.app.realtime.RealtimeConnectSource
 import com.botglobal.mobile.platform.device.HapticEvent
 import com.botglobal.mobile.platform.device.SemanticHaptics
 import com.botglobal.mobile.platform.identity.ApplicationIdentity
+import com.botglobal.mobile.platform.identity.FederatedCredential
+import com.botglobal.mobile.platform.identity.FederatedCredentialProvider
+import com.botglobal.mobile.platform.identity.FederatedCredentialResult
+import com.botglobal.mobile.platform.identity.FederatedCredentialType
+import com.botglobal.mobile.platform.identity.FederatedIdentityProvider
 import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
+import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
+import com.botglobal.mobile.platform.reviews.ReviewLaunchOutcome
+import com.botglobal.mobile.platform.reviews.ReviewPolicy
+import com.botglobal.mobile.platform.reviews.ReviewPromptLauncher
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
 import com.botglobal.mobile.platform.realtime.NetworkAvailabilitySnapshot
 import com.botglobal.mobile.platform.realtime.NetworkAvailabilityState
@@ -422,6 +432,123 @@ class FamilyGamesCoordinatorTests {
         assertEquals(4, gateway.lastMove?.expectedVersion)
         assertEquals(AppScreen.Result, coordinator.state.value.screen)
         assertContains(haptics.events, HapticEvent.Success)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun google_cancellation_returns_to_welcome_without_error_loop() = runTest {
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            federatedCredentials = FakeCredentials(FederatedCredentialResult.Cancelled),
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.signInWithGoogle()
+        advanceUntilIdle()
+
+        assertEquals(AppScreen.Welcome, coordinator.state.value.screen)
+        assertEquals(null, coordinator.state.value.errorCode)
+        assertEquals(null, coordinator.state.value.mobileSession)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun google_sign_in_requires_profile_completion_and_persists_name_before_home() = runTest {
+        val gateway = FakeGateway(
+            federatedSession = mobileSession.copy(
+                identity = mobileSession.identity.copy(kind = IdentityKind.Registered, displayName = "Google Name"),
+            ),
+        )
+        val coordinator = FamilyGamesCoordinator(
+            gateway,
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            federatedCredentials = FakeCredentials(),
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.signInWithGoogle()
+        advanceUntilIdle()
+        assertEquals(AppScreen.ProfileCompletion, coordinator.state.value.screen)
+
+        coordinator.updateProfileDraft("  Lamma Player  ")
+        coordinator.completeProfile()
+        advanceUntilIdle()
+
+        assertEquals("Lamma Player", gateway.savedProfileName)
+        assertEquals("Lamma Player", coordinator.state.value.mobileSession?.identity?.displayName)
+        assertEquals(AppScreen.Home, coordinator.state.value.screen)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun registered_home_profile_edit_saves_name_without_requiring_new_sign_in() = runTest {
+        val gateway = FakeGateway(
+            restored = mobileSession.copy(
+                identity = mobileSession.identity.copy(kind = IdentityKind.Registered, displayName = "Before"),
+            ),
+            federatedSession = mobileSession.copy(
+                identity = mobileSession.identity.copy(kind = IdentityKind.Registered, displayName = "Before"),
+            ),
+        )
+        val coordinator = FamilyGamesCoordinator(
+            gateway,
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.editProfile()
+        coordinator.updateProfileDraft("After")
+        coordinator.completeProfile()
+        advanceUntilIdle()
+
+        assertEquals("After", gateway.savedProfileName)
+        assertEquals("After", coordinator.state.value.mobileSession?.identity?.displayName)
+        assertEquals(AppScreen.Home, coordinator.state.value.screen)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun completed_round_counts_once_for_review_even_after_duplicate_snapshot() = runTest {
+        val launcher = CountingReviewLauncher()
+        val reviews = ReviewCoordinator(
+            InMemoryPreferenceStore(),
+            "reviews",
+            ReviewPolicy(firstUseAgeMillis = 0, minimumMeaningfulEvents = 1, minimumMeaningfulEventSpanMillis = 0),
+            launcher,
+        ) { 0L }
+        val started = game(version = 4, status = "started", activePlayer = membershipId)
+        val completed = started.copy(
+            status = "completed",
+            version = 5,
+            matchStatus = "won",
+            winnerMembershipId = membershipId,
+        )
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(restored = mobileSession, active = started, moveResult = completed),
+            realtime,
+            SilentHaptics,
+            this,
+            reviews = reviews,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.play(0, 0)
+        realtime.emit(completed)
+        advanceUntilIdle()
+
+        assertEquals(1, launcher.launches)
         coordinator.dispose()
     }
 
@@ -1366,6 +1493,9 @@ class FamilyGamesCoordinatorTests {
         private val rejoinBehavior: (suspend (Int) -> GameSessionSnapshot)? = null,
         private val moveError: ApiException? = null,
         private val resolvedInvitation: GameSessionSnapshot? = null,
+        private val federatedSession: MobileSession = mobileSession.copy(
+            identity = mobileSession.identity.copy(kind = IdentityKind.Registered),
+        ),
         private val deletionBehavior: suspend () -> AccountDeletionAcceptance = { AccountDeletionAcceptance.Completed },
         private val clearBehavior: suspend () -> Unit = {},
     ) : FamilyGamesGateway {
@@ -1383,6 +1513,12 @@ class FamilyGamesCoordinatorTests {
         override suspend fun continueAsGuest(displayName: String): MobileSession {
             guestCalls++
             return mobileSession
+        }
+        var savedProfileName: String? = null
+        override suspend fun authenticateFederated(credential: FederatedCredential) = federatedSession
+        override suspend fun updateProfile(displayName: String): MobileSession {
+            savedProfileName = displayName.trim()
+            return federatedSession.copy(identity = federatedSession.identity.copy(displayName = savedProfileName!!))
         }
         override suspend fun login(userNameOrEmail: String, password: String) = restored ?: mobileSession
         override suspend fun register(request: RegistrationRequest) = mobileSession
@@ -1488,6 +1624,32 @@ class FamilyGamesCoordinatorTests {
         override suspend fun join(roomId: String, generation: Long) = VoiceJoinResult(
             roomId, generation, membershipId, true, false, "connection-a", "member-2", "connection-b",
         )
+    }
+
+    private class FakeCredentials(
+        private val result: FederatedCredentialResult = FederatedCredentialResult.Acquired(
+            FederatedCredential(
+                FederatedIdentityProvider.Google,
+                FederatedCredentialType.IdToken,
+                "provider-token",
+            ),
+        ),
+    ) : FederatedCredentialProvider {
+        override suspend fun acquire(provider: FederatedIdentityProvider) = result
+    }
+
+    private class CountingReviewLauncher : ReviewPromptLauncher {
+        var launches = 0
+        override suspend fun requestReview(beforeNativeLaunch: suspend () -> com.botglobal.mobile.platform.reviews.ReviewPreLaunchDecision): ReviewLaunchOutcome {
+            return when (beforeNativeLaunch()) {
+                com.botglobal.mobile.platform.reviews.ReviewPreLaunchDecision.Proceed -> {
+                    launches++
+                    ReviewLaunchOutcome.Launched
+                }
+                com.botglobal.mobile.platform.reviews.ReviewPreLaunchDecision.Deferred -> ReviewLaunchOutcome.Deferred
+                com.botglobal.mobile.platform.reviews.ReviewPreLaunchDecision.Failed -> ReviewLaunchOutcome.Failed
+            }
+        }
     }
 
     private class RecordingDeletionTeardown(

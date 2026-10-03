@@ -99,11 +99,7 @@ val validateSentriCamReleaseSigning = tasks.register<ValidateSentriCamReleaseSig
 
 android {
     namespace = "com.ashraffarag.sentricam"
-    compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
-    }
+    compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
         applicationId = "com.ashraffarag.sentricam"
@@ -169,6 +165,10 @@ tasks.configureEach {
 
 dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs)
+    implementation(projects.shared) {
+        exclude(group = "io.ktor")
+        exclude(group = "io.github.webrtc-sdk", module = "android")
+    }
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.camera.camera2)

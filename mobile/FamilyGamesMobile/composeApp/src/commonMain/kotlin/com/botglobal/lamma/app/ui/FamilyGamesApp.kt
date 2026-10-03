@@ -95,6 +95,8 @@ import com.botglobal.mobile.platform.device.PermissionController
 import com.botglobal.mobile.platform.device.SemanticHaptics
 import com.botglobal.mobile.platform.device.UnavailablePermissionController
 import com.botglobal.mobile.platform.identity.SessionVault
+import com.botglobal.mobile.platform.identity.FederatedCredentialProvider
+import com.botglobal.mobile.platform.identity.UnavailableFederatedCredentialProvider
 import com.botglobal.mobile.platform.invitations.GameInvitation
 import com.botglobal.mobile.platform.invitations.InvitationLinkCodec
 import com.botglobal.mobile.platform.invitations.PlatformShareCapability
@@ -104,6 +106,7 @@ import com.botglobal.mobile.platform.invitations.UnavailableQrScanner
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
 import com.botglobal.mobile.platform.realtime.NetworkAvailability
 import com.botglobal.mobile.platform.realtime.UnavailableNetworkAvailability
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
 import com.botglobal.mobile.platform.voice.VoiceMediaPeerFactory
 import com.botglobal.mobile.platform.voice.VoiceRoomState
 import com.botglobal.mobile.platform.voice.VoiceConsentState
@@ -127,6 +130,8 @@ fun FamilyGamesApp(
     permissions: PermissionController = UnavailablePermissionController,
     networkAvailability: NetworkAvailability = UnavailableNetworkAvailability,
     languagePreferences: ApplicationLanguagePreferences = UnavailableApplicationLanguagePreferences,
+    federatedCredentials: FederatedCredentialProvider = UnavailableFederatedCredentialProvider,
+    reviews: ReviewCoordinator? = null,
     voiceMediaFactory: VoiceMediaPeerFactory? = null,
     diagnosticsEnabled: Boolean = false,
     invitationQr: @Composable (String, String, Modifier) -> Unit = { _, description, modifier ->
@@ -152,6 +157,8 @@ fun FamilyGamesApp(
         permissions,
         networkAvailability,
         languagePreferences,
+        federatedCredentials,
+        reviews,
         voiceMediaFactory,
         diagnosticsEnabled,
     ) {
@@ -169,6 +176,8 @@ fun FamilyGamesApp(
             permissions,
             networkAvailability,
             languagePreferences,
+            federatedCredentials,
+            reviews,
             voiceMediaFactory,
         )
     }
@@ -207,6 +216,7 @@ fun FamilyGamesApp(
                         AppScreen.Welcome -> WelcomeScreen(text, state, coordinator)
                         AppScreen.SignIn -> SignInScreen(text, coordinator)
                         AppScreen.Register -> RegisterScreen(text, coordinator)
+                        AppScreen.ProfileCompletion -> ProfileCompletionScreen(text, state, coordinator)
                         AppScreen.Home -> HomeScreen(text, state, coordinator, openExternalUrl)
                         AppScreen.Ruleset -> RulesetScreen(text, coordinator)
                         AppScreen.CreateOrJoin -> CreateJoinScreen(text, coordinator)
@@ -295,6 +305,8 @@ private fun WelcomeScreen(
         Text(text.appName, fontSize = 36.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
         Text(text.tagline, color = FamilyGamesColors.Muted, fontSize = 18.sp, textAlign = TextAlign.Center)
         Spacer(Modifier.height(FamilyGamesSpacing.Xl))
+        PrimaryButton(text.continueWithGoogle, !state.busy, coordinator::signInWithGoogle)
+        Spacer(Modifier.height(FamilyGamesSpacing.Md))
         OutlinedTextField(
             value = displayName,
             onValueChange = { displayName = it.take(40) },
@@ -303,9 +315,13 @@ private fun WelcomeScreen(
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         )
-        Spacer(Modifier.height(FamilyGamesSpacing.Md))
-        PrimaryButton(text.continueGuest, displayName.isNotBlank() && !state.busy) {
-            coordinator.continueAsGuest(displayName)
+        Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+        OutlinedButton(
+            onClick = { coordinator.continueAsGuest(displayName) },
+            enabled = displayName.isNotBlank() && !state.busy,
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+        ) {
+            Text(text.continueGuest, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(FamilyGamesSpacing.Sm))
         OutlinedButton(onClick = coordinator::showSignIn, modifier = Modifier.fillMaxWidth().height(54.dp)) {
@@ -315,6 +331,36 @@ private fun WelcomeScreen(
             Text(text.createAccount, color = FamilyGamesColors.Gold)
         }
         Spacer(Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun ProfileCompletionScreen(
+    text: FamilyGamesStrings,
+    state: FamilyGamesUiState,
+    coordinator: FamilyGamesCoordinator,
+) {
+    FormPage(
+        text.profileCompletionTitle,
+        if (state.profileCompletionRequired) text.logout else text.back,
+        if (state.profileCompletionRequired) coordinator::logout else coordinator::backHome,
+    ) {
+        Text(text.profileCompletionBody, color = FamilyGamesColors.Muted)
+        Spacer(Modifier.height(FamilyGamesSpacing.Lg))
+        OutlinedTextField(
+            value = state.profileDraft,
+            onValueChange = coordinator::updateProfileDraft,
+            label = { Text(text.displayName) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        )
+        Spacer(Modifier.height(FamilyGamesSpacing.Lg))
+        PrimaryButton(
+            text.saveProfile,
+            state.profileDraft.isNotBlank() && !state.busy,
+            coordinator::completeProfile,
+        )
     }
 }
 
@@ -417,6 +463,10 @@ private fun HomeScreen(
         }
         Spacer(Modifier.weight(1f))
         if (state.mobileSession?.identity?.kind == com.botglobal.mobile.platform.identity.IdentityKind.Registered) {
+            TextButton(onClick = coordinator::editProfile, enabled = !state.busy,
+                modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text(text.editProfile, color = FamilyGamesColors.Gold)
+            }
             TextButton(onClick = coordinator::beginAccountDeletion, enabled = !state.busy,
                 modifier = Modifier.align(Alignment.CenterHorizontally)) {
                 Text(text.deleteAccount, color = MaterialTheme.colorScheme.error)

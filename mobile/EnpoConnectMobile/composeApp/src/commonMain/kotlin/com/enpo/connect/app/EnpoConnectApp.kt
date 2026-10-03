@@ -65,6 +65,7 @@ import com.botglobal.mobile.platform.profile.ProfileController
 import com.botglobal.mobile.platform.profile.ProfileLoadState
 import com.botglobal.mobile.platform.profile.ProfileRepository
 import com.botglobal.mobile.platform.profile.UnavailableProfileRepository
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
 import com.enpo.connect.app.network.EnpoNetworkConfiguration
 import com.enpo.connect.app.notifications.EnpoNotificationActionHandler
 import com.enpo.connect.app.notifications.EnpoNotificationPermissionRequester
@@ -109,9 +110,10 @@ fun EnpoConnectApp(
     notificationActionHandler: EnpoNotificationActionHandler = NoOpNotificationActionHandler,
     onPairingCompleted: () -> Unit = {},
     onResolvedAppearanceChanged: (ResolvedAppearance) -> Unit = {},
+    reviews: ReviewCoordinator? = null,
 ) {
-    val state = remember(preferences, deviceInfrastructure, networkConfiguration, pairingCoordinator) {
-        EnpoAppState(preferences, deviceInfrastructure, networkConfiguration, pairingCoordinator)
+    val state = remember(preferences, deviceInfrastructure, networkConfiguration, pairingCoordinator, reviews) {
+        EnpoAppState(preferences, deviceInfrastructure, networkConfiguration, pairingCoordinator, reviews)
     }
     val profileController = remember(profileRepository) { ProfileController(profileRepository) }
     val locale by state.locale.state.collectAsState()

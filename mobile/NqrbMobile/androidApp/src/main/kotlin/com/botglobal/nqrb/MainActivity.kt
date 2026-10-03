@@ -30,6 +30,9 @@ import com.botglobal.mobile.platform.device.PermissionKind
 import com.botglobal.mobile.platform.identity.AndroidGoogleCredentialProvider
 import com.botglobal.mobile.platform.identity.FederatedIdentityController
 import com.botglobal.mobile.platform.preferences.AndroidPreferenceStore
+import com.botglobal.mobile.platform.reviews.AndroidPlayReviewPromptLauncher
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
+import com.botglobal.mobile.platform.reviews.ReviewPolicy
 import com.botglobal.nqrb.app.state.NqrbContactBookController
 import com.botglobal.nqrb.app.state.NqrbAppState
 import com.botglobal.nqrb.app.state.NqrbRingtone
@@ -91,6 +94,7 @@ class MainActivity : ComponentActivity() {
         val nqrbApplication = application as NqrbApplication
         val sessionVault = nqrbApplication.sessionVault
         val appearanceStore = AndroidPreferenceStore(this, "nqrb_appearance")
+        val reviewStore = AndroidPreferenceStore(this, "nqrb_review")
         val savedAppearance = AppearancePreference.entries.firstOrNull {
             it.name == appearanceStore.string(AppearancePreferenceKey)
         } ?: AppearancePreference.Light
@@ -115,6 +119,13 @@ class MainActivity : ComponentActivity() {
             accountProfile = nqrbApplication.identityApi,
             localAccountDataCleaner = nqrbApplication.localAccountDataCleaner,
             permissions = permissionController,
+            reviews = ReviewCoordinator(
+                preferenceStore = reviewStore,
+                storageKey = "play_review_policy",
+                policy = ReviewPolicy(),
+                launcher = AndroidPlayReviewPromptLauncher { if (!isFinishing && !isDestroyed) this else null },
+                nowMillis = System::currentTimeMillis,
+            ),
         )
         setContent {
             NqrbApp(

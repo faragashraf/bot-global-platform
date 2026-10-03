@@ -118,6 +118,12 @@ import com.ashraffarag.sentricam.recording.settings.android.SharedPreferencesRec
 import com.ashraffarag.sentricam.recording.settings.domain.RecordingSettings
 import com.ashraffarag.sentricam.recording.settings.domain.RecordingSettingsRepository
 import com.ashraffarag.sentricam.recording.settings.domain.RecordingCamera as SettingsRecordingCamera
+import com.botglobal.mobile.platform.preferences.AndroidPreferenceStore
+import com.botglobal.mobile.platform.reviews.AndroidPlayReviewPromptLauncher
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
+import com.botglobal.mobile.platform.reviews.ReviewAttemptResult
+import com.botglobal.mobile.platform.reviews.ReviewPolicy
+import com.botglobal.mobile.platform.reviews.ReviewTrigger
 import com.ashraffarag.sentricam.settings.android.AppSettingsActivity
 import com.ashraffarag.sentricam.settings.capability.MotionConfigApplyMode
 import com.ashraffarag.sentricam.settings.capability.MotionLiveConfigPolicy
@@ -147,6 +153,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var motionToolbarButtonController: MotionToolbarButtonController
     private lateinit var motionSettingsHintPolicy: MotionSettingsHintPolicy
     private lateinit var recordingStartFeedbackController: RecordingStartFeedbackController
+    private lateinit var reviews: ReviewCoordinator
+    private val reviewCountedRecordingSessions = mutableSetOf<String>()
+    private var pendingReviewTrigger: ReviewTrigger? = null
     private var appliedSettings = RecordingSettings()
     private var engineUiSettings = RecordingEngineUiSettings()
     private var motionConfig = MotionDetectionConfig()
@@ -241,6 +250,13 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         recordingStartFeedbackController = RecordingStartFeedbackController(
             AndroidRecordingConfirmationVibrator(applicationContext),
+        )
+        reviews = ReviewCoordinator(
+            preferenceStore = AndroidPreferenceStore(applicationContext, "sentricam_review"),
+            storageKey = "play_review_policy",
+            policy = ReviewPolicy(),
+            launcher = AndroidPlayReviewPromptLauncher { if (!isFinishing && !isDestroyed) this else null },
+            nowMillis = System::currentTimeMillis,
         )
         applyResponsiveLayoutResources()
         // Operational status must remain readable even when the monitoring-service placeholder
@@ -476,6 +492,7 @@ class MainActivity : AppCompatActivity() {
         } else if (permissionWasRequested(KEY_CAMERA_PERMISSION_REQUESTED)) {
             showCameraPermissionDenied()
         }
+        requestReviewIfReady(ReviewTrigger.Foreground)
     }
 
     private fun applyResponsiveLayoutResources() {
@@ -929,6 +946,19 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     ""
                 }
+                if (ReviewReadinessPolicy.shouldCountFinalizedRecording(
+                        state.result.sessionId,
+                        state.result.successfulSegments.size,
+                        reviewCountedRecordingSessions,
+                    )
+                ) {
+                    reviewCountedRecordingSessions.add(state.result.sessionId)
+                    pendingReviewTrigger = ReviewTrigger.CompletedExperience
+                    lifecycleScope.launch {
+                        reviews.recordMeaningfulEvent("sentricam:recording:${state.result.sessionId}")
+                        requestPendingReviewIfReady()
+                    }
+                }
                 setRecordingControls(
                     status = R.string.recording_saved,
                     statusColor = R.color.vision_status_healthy,
@@ -999,7 +1029,41 @@ class MainActivity : AppCompatActivity() {
             ),
         )
         binding.recordingButton.isEnabled = buttonEnabled
+        requestPendingReviewIfReady()
     }
+
+    private fun requestPendingReviewIfReady() {
+        val trigger = pendingReviewTrigger ?: return
+        if (!isReviewReadyForLaunch()) return
+        lifecycleScope.launch {
+            when (reviews.tryRequest(trigger, ::isReviewReadyForLaunch)) {
+                ReviewAttemptResult.Launched,
+                ReviewAttemptResult.Failed,
+                -> pendingReviewTrigger = null
+                ReviewAttemptResult.AlreadyRunning,
+                ReviewAttemptResult.Deferred,
+                ReviewAttemptResult.NotEligible,
+                -> Unit
+            }
+        }
+    }
+
+    private fun requestReviewIfReady(trigger: ReviewTrigger) {
+        if (pendingReviewTrigger == null) pendingReviewTrigger = trigger
+        requestPendingReviewIfReady()
+    }
+
+    private fun isReviewReadyForLaunch(): Boolean =
+        ReviewReadinessPolicy.canLaunch(
+            resumed = lifecycle.currentState >= androidx.lifecycle.Lifecycle.State.RESUMED,
+            audioPermissionDialogVisible = audioPermissionDialog != null,
+            audioPermissionDecisionInFlight = audioPermissionDecisionInFlight,
+            motionConfigurationInProgress = motionConfigurationInProgress,
+            permissionRequestInFlight = permissionRequestInFlight,
+            cameraStarting = cameraStarting,
+            recordingEngineInitialized = ::recordingEngine.isInitialized,
+            recordingControlsSettled = ::recordingEngine.isInitialized && canOpenSettings(currentRecordingState()),
+        )
 
     private fun showLanguageSelector() {
         if (!canOpenSettings(currentRecordingState())) {

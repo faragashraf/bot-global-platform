@@ -44,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -416,6 +417,26 @@ private fun PeopleScreen(
     var nicknameSaveFailed by remember { mutableStateOf(false) }
     var blockingMembershipId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    fun closeNicknameEditor() {
+        editingContact = null
+        nicknameDraft = ""
+        nicknameSaveFailed = false
+    }
+    fun closeBlockConfirmation() {
+        blockingMembershipId = null
+    }
+    LaunchedEffect(editingContact, nicknameSaving) {
+        appState.setReviewWorkflowActive("people-nickname-edit", editingContact != null || nicknameSaving)
+    }
+    LaunchedEffect(blockingMembershipId) {
+        appState.setReviewWorkflowActive("people-block-contact", blockingMembershipId != null)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            appState.setReviewWorkflowActive("people-nickname-edit", false)
+            appState.setReviewWorkflowActive("people-block-contact", false)
+        }
+    }
     LaunchedEffect(query, appState) {
         delay(350)
         appState.searchNqrbUsers(query)
@@ -558,7 +579,7 @@ private fun PeopleScreen(
     }
     editingContact?.let { contact ->
         AlertDialog(
-            onDismissRequest = { if (!nicknameSaving) editingContact = null },
+            onDismissRequest = { if (!nicknameSaving) closeNicknameEditor() },
             title = { Text(strings.editContactNickname) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
@@ -581,26 +602,26 @@ private fun PeopleScreen(
                         scope.launch {
                             val saved = appState.updateNqrbContactNickname(contact.membershipId, nicknameDraft.trim().ifBlank { null })
                             nicknameSaving = false
-                            if (saved) editingContact = null else nicknameSaveFailed = true
+                            if (saved) closeNicknameEditor() else nicknameSaveFailed = true
                         }
                     },
                 ) { Text(strings.saveNickname) }
             },
             dismissButton = {
-                TextButton(enabled = !nicknameSaving, onClick = { editingContact = null }) { Text(strings.cancel) }
+                TextButton(enabled = !nicknameSaving, onClick = { closeNicknameEditor() }) { Text(strings.cancel) }
             },
         )
     }
     blockingMembershipId?.let { membershipId ->
         AlertDialog(
-            onDismissRequest = { blockingMembershipId = null },
+            onDismissRequest = { closeBlockConfirmation() },
             title = { Text(strings.blockConfirmTitle) },
             text = { Text(strings.blockConfirmBody) },
             confirmButton = { TextButton(onClick = {
-                blockingMembershipId = null
+                closeBlockConfirmation()
                 appState.blockNqrbAccount(membershipId)
             }) { Text(strings.blockContact) } },
-            dismissButton = { TextButton(onClick = { blockingMembershipId = null }) { Text(strings.cancel) } },
+            dismissButton = { TextButton(onClick = { closeBlockConfirmation() }) { Text(strings.cancel) } },
         )
     }
 }
@@ -1081,6 +1102,15 @@ private fun ProfileScreen(strings: NqrbStrings, appState: NqrbAppState, contactB
         NqrbAccountActionState.SigningOut,
         NqrbAccountActionState.Deleting,
     )
+    LaunchedEffect(deletionConfirmation, operationInProgress) {
+        appState.setReviewWorkflowActive(
+            "profile-delete-confirmation",
+            deletionConfirmation != NqrbDeletionConfirmation.Closed || operationInProgress,
+        )
+    }
+    DisposableEffect(Unit) {
+        onDispose { appState.setReviewWorkflowActive("profile-delete-confirmation", false) }
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
         verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
@@ -1891,6 +1921,12 @@ private fun SettingsScreen(
     val ringtone by appState.ringtone.selection.collectAsState()
     val phoneRingtoneName by appState.ringtone.deviceToneName.collectAsState()
     var confirmingUsageReset by remember { mutableStateOf(false) }
+    LaunchedEffect(confirmingUsageReset) {
+        appState.setReviewWorkflowActive("settings-usage-reset", confirmingUsageReset)
+    }
+    DisposableEffect(Unit) {
+        onDispose { appState.setReviewWorkflowActive("settings-usage-reset", false) }
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
         verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Lg),
@@ -2187,6 +2223,15 @@ private fun CallDetailScreen(strings: NqrbStrings, languageTag: String, appState
     val addedFromHistory by appState.addedHistoryContactCalls.collectAsState()
     var confirmBlock by remember { mutableStateOf(false) }
     val counterpartId = detail.counterpartMembershipId
+    val blockReviewKey = counterpartId?.let { "history-block:$it" }
+    LaunchedEffect(confirmBlock, blockReviewKey) {
+        blockReviewKey?.let { appState.setReviewWorkflowActive(it, confirmBlock) }
+    }
+    DisposableEffect(blockReviewKey) {
+        onDispose {
+            blockReviewKey?.let { appState.setReviewWorkflowActive(it, false) }
+        }
+    }
     val isBlocked = counterpartId != null && contactBook.blockedAccounts.any { it.membershipId == counterpartId }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
         verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md)) {
