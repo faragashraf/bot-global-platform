@@ -123,6 +123,7 @@ public static class IdentityModule
                 options.Cookie.Name =
                     "__Host-BotGlobal.Admin";
 
+                options.Cookie.Path = "/";
                 options.Cookie.HttpOnly = true;
                 options.Cookie.SameSite =
                     SameSiteMode.Lax;

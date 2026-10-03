@@ -198,6 +198,20 @@ public sealed class PlatformHttpSecurityTests
             && cookie.Contains("samesite=lax"));
     }
 
+    [Fact]
+    public async Task Host_prefixed_admin_cookie_keeps_root_path_when_hosted_under_backend_path()
+    {
+        await using var app = await CreateAppAsync(pathBase: "/backend");
+        var client = Client(app);
+        var response = await client.PostAsync("/backend/test/sign-in/admin", null);
+        response.EnsureSuccessStatusCode();
+
+        Assert.Contains(response.Headers.GetValues("Set-Cookie"), cookie =>
+            cookie.StartsWith("__Host-BotGlobal.Admin=")
+            && cookie.Contains("path=/")
+            && !cookie.Contains("domain=", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Theory]
     [InlineData("https://frontend.example.test", true)]
     [InlineData("https://untrusted.example.test", false)]
@@ -290,7 +304,7 @@ public sealed class PlatformHttpSecurityTests
     }
 
     private static async Task<WebApplication> CreateAppAsync(
-        string environment = "Production", bool includeProtection = true)
+        string environment = "Production", bool includeProtection = true, string? pathBase = null)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
         builder.Configuration.Sources.Clear();
@@ -328,6 +342,10 @@ public sealed class PlatformHttpSecurityTests
         builder.Services.AddSingleton<RecordingDirectNotification>();
         builder.Services.AddSingleton<IMobileNotificationService>(sp => sp.GetRequiredService<RecordingDirectNotification>());
         var app = builder.Build();
+        if (!string.IsNullOrWhiteSpace(pathBase))
+        {
+            app.UsePathBase(pathBase);
+        }
         app.UseCors();
         app.UseAuthentication();
         app.UseAuthorization();
