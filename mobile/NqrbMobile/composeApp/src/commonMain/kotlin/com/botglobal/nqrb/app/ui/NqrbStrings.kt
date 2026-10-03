@@ -247,7 +247,7 @@ private val EnglishStrings = NqrbStrings(
     savedContactsTitle = "My circle", savedContactsBody = "A private list tied to your account. You choose who stays in it.",
     savedContactsLoading = "Loading saved contacts...", savedContactsEmpty = "You have not added any contacts yet.",
     savedContactsError = "Saved contacts could not be loaded. Try again.", loadMoreContacts = "Show more contacts",
-    searchNqrbUsers = "Search NQRB accounts", loadMoreSearchResults = "Show more results",
+    searchNqrbUsers = "Search Nqrb accounts", loadMoreSearchResults = "Show more results",
     searchPlaceholder = "Type at least two characters", addContact = "Add", removeContact = "Remove",
     contactSearchTooShort = "Type at least two characters to search.", contactSearchEmpty = "No matching accounts.",
     contactSearchError = "Search could not be completed. Try again.",
