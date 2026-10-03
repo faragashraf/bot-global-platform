@@ -48,22 +48,22 @@ internal sealed class ProductLocalizationConfiguration : IEntityTypeConfiguratio
                 ProductId = CatalogSeed.SentriCamProductId,
                 Language = "en",
                 Name = "SentriCam",
-                ShortDescription = "An existing BOT GLOBAL product with public catalog details in preparation.",
-                Description = "SentriCam is identified in the BOT GLOBAL platform documentation as an existing product. Verified public feature, platform, media, availability, and support details have not yet been published, so this entry intentionally makes no additional product claims.",
-                DisplayStatus = "Details pending",
-                Platforms = Array.Empty<string>(),
-                Technologies = Array.Empty<string>()
+                ShortDescription = "Local-first camera monitoring for homes and small teams, pairing Android camera devices with a private Hub and browser dashboard.",
+                Description = "SentriCam turns Android phones into managed monitoring devices connected to a local Hub on a home or office computer. The setup journey covers Hub installation, storage policy selection, QR pairing, device health, recording control, local recording archive, and LAN live view. The V1 boundary is deliberately local-first: SignalR coordinates authorized sessions, while video stays on the local network and cloud/AI capabilities remain deferred.",
+                DisplayStatus = "V1 runtime showcase",
+                Platforms = new[] { "Android camera device", "SentriCam Hub", "Browser dashboard" },
+                Technologies = new[] { "Kotlin", "CameraX", "ASP.NET Core", "SignalR", "WebRTC LAN live view" }
             },
             new
             {
                 ProductId = CatalogSeed.SentriCamProductId,
                 Language = "ar",
                 Name = "SentriCam",
-                ShortDescription = "منتج قائم من BOT GLOBAL، ويجري حاليًا إعداد تفاصيله للنشر في الكتالوج العام.",
-                Description = "تُعرّف وثائق منصة BOT GLOBAL منتج SentriCam باعتباره منتجًا قائمًا. لم تُنشر بعد تفاصيل موثقة للعامة حول الميزات أو المنصات أو الوسائط أو الإتاحة أو الدعم؛ لذلك لا يتضمن هذا السجل أي ادعاءات إضافية عن المنتج.",
-                DisplayStatus = "التفاصيل قيد الإعداد",
-                Platforms = Array.Empty<string>(),
-                Technologies = Array.Empty<string>()
+                ShortDescription = "مراقبة كاميرات محلية للمنازل والفرق الصغيرة، تربط أجهزة أندرويد بلوحة Hub خاصة ولوحة تحكم من المتصفح.",
+                Description = "يحول SentriCam هواتف أندرويد إلى أجهزة مراقبة مُدارة تتصل بـ Hub محلي على كمبيوتر في المنزل أو المكتب. رحلة الإعداد تشمل تثبيت الـ Hub، اختيار سياسة التخزين، الاقتران عبر QR، متابعة صحة الجهاز، التحكم في التسجيل، أرشيف التسجيلات المحلي، والبث المباشر داخل الشبكة المحلية. حدود V1 مقصودة: SignalR ينسق الجلسات المصرح بها، بينما يظل الفيديو داخل الشبكة المحلية وتبقى إمكانات السحابة والذكاء الاصطناعي مؤجلة.",
+                DisplayStatus = "استعراض تشغيلي V1",
+                Platforms = new[] { "جهاز كاميرا أندرويد", "SentriCam Hub", "لوحة تحكم المتصفح" },
+                Technologies = new[] { "Kotlin", "CameraX", "ASP.NET Core", "SignalR", "بث مباشر WebRTC داخل الشبكة المحلية" }
             });
     }
 
