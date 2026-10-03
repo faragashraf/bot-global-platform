@@ -37,7 +37,7 @@ fun requirePublicHttpsEndpoint(value: String) {
     }
 }
 
-val releaseApiBaseUrl = "https://botglobalservice.com/backend".also(::requirePublicHttpsEndpoint)
+val releaseApiBaseUrl = "https://www.botglobalservice.com/backend".also(::requirePublicHttpsEndpoint)
 val uploadStoreFile = releaseSetting("familyGamesUploadStoreFile", "LAMMA_UPLOAD_STORE_FILE")
 val uploadStorePassword = releaseSetting("familyGamesUploadStorePassword", "LAMMA_UPLOAD_STORE_PASSWORD")
 val uploadKeyAlias = releaseSetting("familyGamesUploadKeyAlias", "LAMMA_UPLOAD_KEY_ALIAS")
@@ -98,6 +98,8 @@ android {
 
     buildTypes {
         getByName("debug") {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             val debugUrl = providers.gradleProperty("familyGamesDebugApiBaseUrl").orNull
                 ?: "http://10.0.2.2:5062"
