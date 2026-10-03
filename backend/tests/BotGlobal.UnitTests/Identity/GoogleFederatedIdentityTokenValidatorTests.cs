@@ -1,3 +1,4 @@
+using BotGlobal.Contracts.Mobile;
 using BotGlobal.Identity.Application;
 using BotGlobal.Identity.Infrastructure;
 using Microsoft.Extensions.Options;
@@ -26,7 +27,7 @@ public sealed class GoogleFederatedIdentityTokenValidatorTests
         var verifier = new FakeVerifier(SuccessfulClaims());
         var validator = CreateValidator(string.Empty, verifier);
 
-        var result = await validator.ValidateAsync("google", "token", CancellationToken.None);
+        var result = await validator.ValidateAsync(BotGlobalApplications.FamilyGames, "google", "token", CancellationToken.None);
 
         Assert.False(result.Succeeded);
         Assert.Equal("google_configuration_missing", result.Error);
@@ -44,7 +45,7 @@ public sealed class GoogleFederatedIdentityTokenValidatorTests
             "server-client.apps.googleusercontent.com",
             new FakeVerifier(GoogleTokenVerificationResult.Failure(reason)));
 
-        var result = await validator.ValidateAsync("google", "untrusted-token", CancellationToken.None);
+        var result = await validator.ValidateAsync(BotGlobalApplications.Nqrb, "google", "untrusted-token", CancellationToken.None);
 
         Assert.False(result.Succeeded);
         Assert.Equal(reason, result.Error);
@@ -57,7 +58,7 @@ public sealed class GoogleFederatedIdentityTokenValidatorTests
             "server-client.apps.googleusercontent.com",
             new FakeVerifier(new GoogleTokenClaims("", "person@example.test", true, "Person")));
 
-        var result = await validator.ValidateAsync("google", "token", CancellationToken.None);
+        var result = await validator.ValidateAsync(BotGlobalApplications.Nqrb, "google", "token", CancellationToken.None);
 
         Assert.False(result.Succeeded);
         Assert.Equal("google_identity_incomplete", result.Error);
@@ -69,7 +70,7 @@ public sealed class GoogleFederatedIdentityTokenValidatorTests
         var verifier = new FakeVerifier(SuccessfulClaims());
         var validator = CreateValidator("server-client.apps.googleusercontent.com", verifier);
 
-        var result = await validator.ValidateAsync("google", "transient-token", CancellationToken.None);
+        var result = await validator.ValidateAsync(BotGlobalApplications.Nqrb, "google", "transient-token", CancellationToken.None);
 
         Assert.True(result.Succeeded);
         Assert.Equal("google-subject-123", result.Identity!.ProviderSubject);
@@ -115,6 +116,81 @@ public sealed class GoogleFederatedIdentityTokenValidatorTests
         Assert.Equal(0, verifier.Calls);
     }
 
+    [Fact]
+    public async Task FamilyGamesRequiresExplicitApplicationAudience()
+    {
+        var verifier = new FakeVerifier(SuccessfulClaims());
+        var validator = CreateValidator("legacy-nqrb.apps.googleusercontent.com", verifier);
+
+        var result = await validator.ValidateAsync(
+            BotGlobalApplications.FamilyGames,
+            "google",
+            "token",
+            CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("google_configuration_missing", result.Error);
+        Assert.Equal(0, verifier.Calls);
+    }
+
+    [Fact]
+    public async Task ApplicationScopedAudiencePreventsCrossAppTokenAcceptance()
+    {
+        var verifier = new FakeVerifier(SuccessfulClaims());
+        var validator = new GoogleFederatedIdentityTokenValidator(
+            Options.Create(new GoogleFederatedIdentityOptions
+            {
+                ServerClientId = "legacy-nqrb.apps.googleusercontent.com",
+                ServerClientIds = new Dictionary<string, string>
+                {
+                    [BotGlobalApplications.Nqrb] = "nqrb-android.apps.googleusercontent.com",
+                    [BotGlobalApplications.FamilyGames] = "family-games-android.apps.googleusercontent.com"
+                }
+            }),
+            verifier);
+
+        await validator.ValidateAsync(
+            BotGlobalApplications.FamilyGames,
+            "google",
+            "token",
+            CancellationToken.None);
+
+        Assert.Equal("family-games-android.apps.googleusercontent.com", verifier.Audience);
+        Assert.NotEqual("nqrb-android.apps.googleusercontent.com", verifier.Audience);
+    }
+
+    [Theory]
+    [InlineData("family-games", "nqrb-token")]
+    [InlineData("nqrb", "family-games-token")]
+    public async Task TokenForAnotherConfiguredApplicationAudienceIsRejected(
+        string applicationKey,
+        string token)
+    {
+        var validator = new GoogleFederatedIdentityTokenValidator(
+            Options.Create(new GoogleFederatedIdentityOptions
+            {
+                ServerClientIds = new Dictionary<string, string>
+                {
+                    [BotGlobalApplications.Nqrb] = "nqrb-android.apps.googleusercontent.com",
+                    [BotGlobalApplications.FamilyGames] = "family-games-android.apps.googleusercontent.com"
+                }
+            }),
+            new AudienceCheckingVerifier(new Dictionary<string, string>
+            {
+                ["nqrb-token"] = "nqrb-android.apps.googleusercontent.com",
+                ["family-games-token"] = "family-games-android.apps.googleusercontent.com"
+            }));
+
+        var result = await validator.ValidateAsync(
+            applicationKey,
+            "google",
+            token,
+            CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("wrong_audience", result.Error);
+    }
+
     private static GoogleFederatedIdentityTokenValidator CreateValidator(
         string clientId,
         IGoogleIdTokenVerifier verifier) =>
@@ -143,6 +219,21 @@ public sealed class GoogleFederatedIdentityTokenValidatorTests
             Calls++;
             Audience = expectedAudience;
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class AudienceCheckingVerifier(IReadOnlyDictionary<string, string> tokenAudiences) : IGoogleIdTokenVerifier
+    {
+        public Task<GoogleTokenVerificationResult> VerifyAsync(
+            string idToken,
+            string expectedAudience,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(
+                tokenAudiences.TryGetValue(idToken, out var actualAudience) &&
+                string.Equals(actualAudience, expectedAudience, StringComparison.Ordinal)
+                    ? GoogleTokenVerificationResult.Success(SuccessfulClaims())
+                    : GoogleTokenVerificationResult.Failure("wrong_audience"));
         }
     }
 }

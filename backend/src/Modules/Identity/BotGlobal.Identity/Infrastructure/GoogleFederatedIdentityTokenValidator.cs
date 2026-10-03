@@ -1,4 +1,5 @@
 using BotGlobal.Identity.Application;
+using BotGlobal.Contracts.Mobile;
 using Google.Apis.Auth;
 using Microsoft.Extensions.Options;
 
@@ -9,6 +10,7 @@ public sealed class GoogleFederatedIdentityOptions
     public const string SectionName = "Identity:Federated:Google";
     public string ServerClientId { get; set; } = string.Empty;
     public string NqrbWebClientId { get; set; } = string.Empty;
+    public Dictionary<string, string> ServerClientIds { get; set; } = [];
 }
 
 internal interface IGoogleIdTokenVerifier
@@ -68,6 +70,7 @@ internal sealed class GoogleFederatedIdentityTokenValidator(
     IGoogleIdTokenVerifier google) : IFederatedIdentityTokenValidator
 {
     public async Task<FederatedIdentityValidationResult> ValidateAsync(
+        string applicationKey,
         string provider,
         string idToken,
         CancellationToken cancellationToken)
@@ -77,8 +80,8 @@ internal sealed class GoogleFederatedIdentityTokenValidator(
             return FederatedIdentityValidationResult.Failure("provider_not_supported");
         }
 
-        var audience = options.Value.ServerClientId.Trim();
-        if (audience.Length == 0)
+        var audience = AudienceFor(applicationKey);
+        if (audience is null)
         {
             return FederatedIdentityValidationResult.Failure("google_configuration_missing");
         }
@@ -90,6 +93,26 @@ internal sealed class GoogleFederatedIdentityTokenValidator(
 
         var verified = await google.VerifyAsync(idToken, audience, cancellationToken);
         return ToFederatedIdentity(verified);
+    }
+
+    private string? AudienceFor(string applicationKey)
+    {
+        var configured = options.Value.ServerClientIds
+            .FirstOrDefault(item => string.Equals(item.Key, applicationKey, StringComparison.Ordinal))
+            .Value
+            ?.Trim();
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        if (string.Equals(applicationKey, BotGlobalApplications.Nqrb, StringComparison.Ordinal))
+        {
+            var legacy = options.Value.ServerClientId.Trim();
+            return legacy.Length == 0 ? null : legacy;
+        }
+
+        return null;
     }
 
     internal static FederatedIdentityValidationResult ToFederatedIdentity(

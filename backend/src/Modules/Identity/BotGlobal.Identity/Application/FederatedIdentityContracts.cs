@@ -29,6 +29,7 @@ public sealed record FederatedIdentityValidationResult(
 public interface IFederatedIdentityTokenValidator
 {
     Task<FederatedIdentityValidationResult> ValidateAsync(
+        string applicationKey,
         string provider,
         string idToken,
         CancellationToken cancellationToken);
