@@ -108,16 +108,20 @@ public sealed class CatalogDbContextModelTests
             localizations["en"],
             expectedId,
             "SentriCam",
-            "An existing BOT GLOBAL product with public catalog details in preparation.",
-            "SentriCam is identified in the BOT GLOBAL platform documentation as an existing product. Verified public feature, platform, media, availability, and support details have not yet been published, so this entry intentionally makes no additional product claims.",
-            "Details pending");
+            "Local-first camera monitoring for homes and small teams, pairing Android camera devices with a private Hub and browser dashboard.",
+            "SentriCam turns Android phones into managed monitoring devices connected to a local Hub on a home or office computer. The setup journey covers Hub installation, storage policy selection, QR pairing, device health, recording control, local recording archive, and LAN live view. The V1 boundary is deliberately local-first: SignalR coordinates authorized sessions, while video stays on the local network and cloud/AI capabilities remain deferred.",
+            "V1 runtime showcase",
+            ["Android camera device", "SentriCam Hub", "Browser dashboard"],
+            ["Kotlin", "CameraX", "ASP.NET Core", "SignalR", "WebRTC LAN live view"]);
         AssertSeedLocalization(
             localizations["ar"],
             expectedId,
             "SentriCam",
-            "منتج قائم من BOT GLOBAL، ويجري حاليًا إعداد تفاصيله للنشر في الكتالوج العام.",
-            "تُعرّف وثائق منصة BOT GLOBAL منتج SentriCam باعتباره منتجًا قائمًا. لم تُنشر بعد تفاصيل موثقة للعامة حول الميزات أو المنصات أو الوسائط أو الإتاحة أو الدعم؛ لذلك لا يتضمن هذا السجل أي ادعاءات إضافية عن المنتج.",
-            "التفاصيل قيد الإعداد");
+            "مراقبة كاميرات محلية للمنازل والفرق الصغيرة، تربط أجهزة أندرويد بلوحة Hub خاصة ولوحة تحكم من المتصفح.",
+            "يحول SentriCam هواتف أندرويد إلى أجهزة مراقبة مُدارة تتصل بـ Hub محلي على كمبيوتر في المنزل أو المكتب. رحلة الإعداد تشمل تثبيت الـ Hub، اختيار سياسة التخزين، الاقتران عبر QR، متابعة صحة الجهاز، التحكم في التسجيل، أرشيف التسجيلات المحلي، والبث المباشر داخل الشبكة المحلية. حدود V1 مقصودة: SignalR ينسق الجلسات المصرح بها، بينما يظل الفيديو داخل الشبكة المحلية وتبقى إمكانات السحابة والذكاء الاصطناعي مؤجلة.",
+            "استعراض تشغيلي V1",
+            ["جهاز كاميرا أندرويد", "SentriCam Hub", "لوحة تحكم المتصفح"],
+            ["Kotlin", "CameraX", "ASP.NET Core", "SignalR", "بث مباشر WebRTC داخل الشبكة المحلية"]);
 
         Assert.Empty(AssertEntity(typeof(ProductMedia)).GetSeedData());
         Assert.Empty(AssertEntity(typeof(ProductLink)).GetSeedData());
@@ -130,15 +134,17 @@ public sealed class CatalogDbContextModelTests
         string name,
         string shortDescription,
         string description,
-        string displayStatus)
+        string displayStatus,
+        string[] platforms,
+        string[] technologies)
     {
         Assert.Equal(productId, localization[nameof(ProductLocalization.ProductId)]);
         Assert.Equal(name, localization[nameof(ProductLocalization.Name)]);
         Assert.Equal(shortDescription, localization[nameof(ProductLocalization.ShortDescription)]);
         Assert.Equal(description, localization[nameof(ProductLocalization.Description)]);
         Assert.Equal(displayStatus, localization[nameof(ProductLocalization.DisplayStatus)]);
-        Assert.Empty(Assert.IsAssignableFrom<IEnumerable<string>>(localization[nameof(ProductLocalization.Platforms)]));
-        Assert.Empty(Assert.IsAssignableFrom<IEnumerable<string>>(localization[nameof(ProductLocalization.Technologies)]));
+        Assert.Equal(platforms, Assert.IsAssignableFrom<IEnumerable<string>>(localization[nameof(ProductLocalization.Platforms)]));
+        Assert.Equal(technologies, Assert.IsAssignableFrom<IEnumerable<string>>(localization[nameof(ProductLocalization.Technologies)]));
     }
 
     private IEntityType AssertEntity(Type type) =>
