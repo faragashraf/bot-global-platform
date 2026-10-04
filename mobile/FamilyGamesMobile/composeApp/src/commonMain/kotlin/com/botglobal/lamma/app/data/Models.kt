@@ -69,7 +69,14 @@ data class MobileSessionDto(
 @Serializable data class RefreshRequest(val refreshToken: String)
 @Serializable data class FederatedIdentityRequest(val provider: String, val idToken: String)
 @Serializable data class ProfileUpdateRequest(val displayName: String)
-@Serializable data class CreateSessionRequest(val rulesetKey: String)
+@Serializable data class CreateSessionRequest(
+    val rulesetKey: String,
+    val gameType: String? = null,
+    val roundCount: Int? = null,
+    val roundSeconds: Int? = null,
+    val difficulty: String? = null,
+    val categories: List<String>? = null,
+)
 @Serializable
 data class AppVersionPolicyDto(
     val currentVersion: String,
@@ -124,6 +131,32 @@ data class ResolvedGameInvitationDto(
     val column: Int,
     val expectedVersion: Long,
 )
+@Serializable data class AutobusSubmitAnswersRequest(
+    val sessionId: String,
+    val commandId: String,
+    val expectedVersion: Long,
+    val matchNumber: Int,
+    val round: Int,
+    val answers: Map<String, String>,
+)
+@Serializable data class AutobusFinishRoundRequest(
+    val sessionId: String,
+    val commandId: String,
+    val expectedVersion: Long,
+)
+@Serializable data class AutobusRevealRequest(
+    val sessionId: String,
+    val commandId: String,
+    val expectedVersion: Long,
+)
+@Serializable data class AutobusVoteRequest(
+    val sessionId: String,
+    val commandId: String,
+    val expectedVersion: Long,
+    val answerOwnerMembershipId: String,
+    val categoryKey: String,
+    val accept: Boolean,
+)
 
 @Serializable
 data class RulesetSnapshot(
@@ -164,6 +197,64 @@ data class GameSessionSnapshot(
     val rematchRequestedByMembershipId: String? = null,
     val lastActivityAtUtc: String,
     val revision: Long = 0,
+    val autobus: AutobusSnapshot? = null,
+)
+
+@Serializable
+data class AutobusSnapshot(
+    val schemaVersion: Int,
+    val difficulty: String,
+    val roundCount: Int,
+    val roundSeconds: Int,
+    val categories: List<AutobusCategorySnapshot>,
+    val currentRound: Int,
+    val currentLetter: String? = null,
+    val phase: String,
+    val roundStartedAtUtc: String? = null,
+    val roundDeadlineAtUtc: String? = null,
+    val graceEndsAtUtc: String? = null,
+    val voteDeadlineAtUtc: String? = null,
+    val revealCategoryKey: String? = null,
+    val answers: List<AutobusAnswerSnapshot> = emptyList(),
+    val scores: List<AutobusScoreSnapshot> = emptyList(),
+    val votes: List<AutobusVoteSnapshot> = emptyList(),
+    val tieMessageCode: String? = null,
+)
+
+@Serializable
+data class AutobusCategorySnapshot(
+    val key: String,
+    val arabicName: String,
+    val englishName: String,
+)
+
+@Serializable
+data class AutobusAnswerSnapshot(
+    val playerMembershipId: String,
+    val categoryKey: String,
+    val displayAnswer: String,
+    val outcome: String,
+    val reasonCode: String,
+    val friendlyMessageCode: String,
+    val canonicalValue: String? = null,
+    val score: Int,
+    val scored: Boolean,
+    val needsVote: Boolean,
+    val duplicate: Boolean,
+)
+
+@Serializable
+data class AutobusScoreSnapshot(
+    val playerMembershipId: String,
+    val score: Int,
+)
+
+@Serializable
+data class AutobusVoteSnapshot(
+    val answerOwnerMembershipId: String,
+    val categoryKey: String,
+    val voterMembershipId: String,
+    val accept: Boolean,
 )
 
 class ApiException(

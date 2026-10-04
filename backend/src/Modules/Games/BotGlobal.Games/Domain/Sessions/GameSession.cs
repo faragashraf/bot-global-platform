@@ -91,11 +91,31 @@ public sealed class GameSession
 
     public bool SetReady(Guid membershipId, DateTimeOffset now)
     {
+        return SetReadyCore(membershipId, now, MaximumPlayers);
+    }
+
+    public bool SetReadyAndStartWhen(Guid membershipId, DateTimeOffset now, int minimumReadyPlayers)
+    {
+        if (minimumReadyPlayers < 2 || minimumReadyPlayers > MaximumPlayers)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minimumReadyPlayers));
+        }
+
+        return SetReadyCore(membershipId, now, minimumReadyPlayers);
+    }
+
+    private bool SetReadyCore(Guid membershipId, DateTimeOffset now, int minimumReadyPlayers)
+    {
+        if (Status != GameSessionStatus.Waiting)
+        {
+            throw new InvalidOperationException("Players can only become ready while the session is waiting.");
+        }
+
         var player = RequirePlayer(membershipId);
         player.SetReady();
         LastActivityAtUtc = now;
         AdvanceVersion();
-        if (_players.Count == MaximumPlayers && _players.All(x => x.IsReady))
+        if (_players.Count >= minimumReadyPlayers && _players.All(x => x.IsReady))
         {
             Status = GameSessionStatus.Started;
             StartedAtUtc ??= now;
@@ -129,7 +149,7 @@ public sealed class GameSession
         AdvanceVersion();
     }
 
-    public void RequestRematch(Guid membershipId, DateTimeOffset now)
+    public bool RequestRematch(Guid membershipId, DateTimeOffset now)
     {
         if (Status != GameSessionStatus.Completed)
         {
@@ -137,12 +157,27 @@ public sealed class GameSession
         }
 
         RequirePlayer(membershipId);
+        if (RematchRequestedByMembershipId == membershipId)
+        {
+            return false;
+        }
+
+        if (RematchRequestedByMembershipId.HasValue)
+        {
+            throw new InvalidOperationException("Another player already requested a rematch.");
+        }
+
+        foreach (var player in _players)
+        {
+            player.SetReady(player.MembershipId == membershipId);
+        }
         RematchRequestedByMembershipId = membershipId;
         LastActivityAtUtc = now;
         AdvanceVersion();
+        return true;
     }
 
-    public void AcceptRematch(Guid membershipId, DateTimeOffset now)
+    public bool AcceptRematch(Guid membershipId, DateTimeOffset now)
     {
         if (Status != GameSessionStatus.Completed ||
             RematchRequestedByMembershipId is null ||
@@ -151,13 +186,19 @@ public sealed class GameSession
             throw new InvalidOperationException("A rematch request from the other player is required.");
         }
 
-        RequirePlayer(membershipId);
+        RequirePlayer(membershipId).SetReady(true);
+        LastActivityAtUtc = now;
+        AdvanceVersion();
+        if (!_players.All(player => player.IsReady))
+        {
+            return false;
+        }
+
         Status = GameSessionStatus.Started;
         CompletedAtUtc = null;
         RematchRequestedByMembershipId = null;
         MatchNumber++;
-        LastActivityAtUtc = now;
-        AdvanceVersion();
+        return true;
     }
 
     internal void AnonymizeMembership(Guid membershipId, Guid anonymousId)
@@ -231,7 +272,9 @@ public sealed class GamePlayer
         IsConnected = false;
     }
 
-    internal void SetReady() => IsReady = true;
+    internal void SetReady() => SetReady(true);
+
+    internal void SetReady(bool ready) => IsReady = ready;
 
     internal void SetConnected(bool connected, DateTimeOffset now)
     {

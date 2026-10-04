@@ -2,6 +2,7 @@ using System.Security.Claims;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Games.Application;
 using BotGlobal.Games.Application.Sessions;
+using BotGlobal.Games.Domain.Autobus;
 using BotGlobal.Games.Domain.Invitations;
 using BotGlobal.Games.Domain.Sessions;
 using BotGlobal.Games.Domain.Xo;
@@ -44,6 +45,24 @@ public sealed class GamesAccountDeletionTests
         var state = new XoSessionState(retained.Id, XoRuleset.Classic);
         state.Reset(member);
         db.XoStates.Add(state);
+        var autobusRuleset = new AutobusRuleset(
+            "autobus-test",
+            5,
+            60,
+            "easy",
+            [AutobusCategories.BoyName]);
+        var retainedAutobus = new AutobusSessionState(retained.Id, autobusRuleset);
+        retainedAutobus.StartFirstRound(autobusRuleset, [other, member], Now);
+        retainedAutobus.Submit(
+            member,
+            new Dictionary<string, string> { [AutobusCategories.BoyName.Key] = "أحمد" },
+            Now);
+        var ownedAutobus = new AutobusSessionState(owned.Id, autobusRuleset);
+        db.AutobusStates.AddRange(retainedAutobus, ownedAutobus);
+        var originalCommandId = Guid.NewGuid().ToString("N");
+        db.AutobusCommands.AddRange(
+            new AutobusCommand(Guid.NewGuid(), retained.Id, originalCommandId, member, "submit", 1, Now),
+            new AutobusCommand(Guid.NewGuid(), owned.Id, Guid.NewGuid().ToString("N"), member, "submit", 1, Now));
         db.XoMoves.AddRange(Move(owned, member), Move(retained, member), Move(retained, other), Move(nqrb, member));
         db.Invitations.AddRange(Invitation(owned, other), Invitation(retained, member), Invitation(retained, other), Invitation(nqrb, member));
         await db.SaveChangesAsync();
@@ -72,10 +91,18 @@ public sealed class GamesAccountDeletionTests
         Assert.Equal(other, result.CreatedByMembershipId);
         Assert.Equal("Owner", result.Players.Single(player => player.MembershipId == other).DisplayName);
         Assert.Equal(anonymous.MembershipId, (await db.XoStates.SingleAsync()).ActivePlayerMembershipId);
+        var retainedAutobusAfterDeletion = await db.AutobusStates.SingleAsync();
+        Assert.Equal(anonymous.MembershipId, Assert.Single(retainedAutobusAfterDeletion.Answers).PlayerMembershipId);
+        Assert.Equal(string.Empty, Assert.Single(retainedAutobusAfterDeletion.Answers).DisplayAnswer);
+        var retainedCommand = await db.AutobusCommands.SingleAsync();
+        Assert.Equal(anonymous.MembershipId, retainedCommand.PlayerMembershipId);
+        Assert.NotEqual(originalCommandId, retainedCommand.CommandId);
         Assert.Equal(anonymous.MembershipId, (await db.XoMoves.SingleAsync(move => move.SessionId == retained.Id && move.PlayerMembershipId != other)).PlayerMembershipId);
         Assert.NotEqual(anonymous.MembershipId, (await db.Players.SingleAsync(player => player.SessionId == another.Id && player.MembershipId != other)).MembershipId);
         Assert.False(await db.Sessions.AnyAsync(session => session.Id == owned.Id));
         Assert.False(await db.XoMoves.AnyAsync(move => move.SessionId == owned.Id));
+        Assert.False(await db.AutobusStates.AnyAsync(autobus => autobus.SessionId == owned.Id));
+        Assert.False(await db.AutobusCommands.AnyAsync(command => command.SessionId == owned.Id));
         Assert.False(await db.Invitations.AnyAsync(invitation => invitation.SessionId == owned.Id));
         Assert.Single(await db.Invitations.Where(invitation => invitation.SessionId == retained.Id).ToListAsync());
         Assert.True(await db.Players.AnyAsync(player => player.SessionId == nqrb.Id && player.MembershipId == member));
@@ -659,6 +686,14 @@ public sealed class GamesAccountDeletionTests
             CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<GameCommandResult<GameSessionSnapshot>> MoveAsync(ApplicationIdentityDescriptor identity,
             XoMoveRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<GameCommandResult<GameSessionSnapshot>> SubmitAutobusAnswersAsync(ApplicationIdentityDescriptor identity,
+            AutobusSubmitAnswersRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<GameCommandResult<GameSessionSnapshot>> FinishAutobusRoundAsync(ApplicationIdentityDescriptor identity,
+            AutobusFinishRoundRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<GameCommandResult<GameSessionSnapshot>> RevealAutobusAsync(ApplicationIdentityDescriptor identity,
+            AutobusRevealRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<GameCommandResult<GameSessionSnapshot>> VoteAutobusAsync(ApplicationIdentityDescriptor identity,
+            AutobusVoteRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<GameCommandResult<GameSessionSnapshot>> SetDisconnectedAsync(Guid membershipId,
             Guid sessionId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<GameCommandResult<GameSessionSnapshot>> RequestRematchAsync(ApplicationIdentityDescriptor identity,

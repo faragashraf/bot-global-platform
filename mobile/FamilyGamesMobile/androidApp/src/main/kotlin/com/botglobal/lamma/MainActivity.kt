@@ -11,6 +11,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.botglobal.lamma.app.platform.AndroidApplicationLanguagePreferences
+import com.botglobal.lamma.app.platform.AndroidRecentGameSessionPreferences
 import com.botglobal.lamma.app.platform.AndroidSecureSessionVault
 import com.botglobal.lamma.app.platform.AndroidSemanticHaptics
 import com.botglobal.lamma.app.ui.FamilyGamesApp
@@ -153,6 +154,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         val vault = AndroidSecureSessionVault(applicationContext)
         val languagePreferences = AndroidApplicationLanguagePreferences(applicationContext)
+        val recentGameSessionPreferences = AndroidRecentGameSessionPreferences(applicationContext)
         val haptics = AndroidSemanticHaptics(applicationContext)
         val networkAvailability = AndroidNetworkAvailability(applicationContext)
         val preferences = AndroidPreferenceStore(applicationContext, "lamma_review")
@@ -195,6 +197,7 @@ class MainActivity : FragmentActivity() {
                 permissions = permissionController,
                 networkAvailability = networkAvailability,
                 languagePreferences = languagePreferences,
+                recentGameSessionPreferences = recentGameSessionPreferences,
                 federatedCredentials = AndroidGoogleCredentialProvider(
                     this,
                     BuildConfig.LAMMA_GOOGLE_SERVER_CLIENT_ID,

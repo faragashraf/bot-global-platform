@@ -1,5 +1,6 @@
 using BotGlobal.Games.Domain.Invitations;
 using BotGlobal.Games.Domain.Sessions;
+using BotGlobal.Games.Domain.Autobus;
 using BotGlobal.Games.Domain.Xo;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,6 +14,8 @@ public sealed class GamesDbContext(DbContextOptions<GamesDbContext> options) : D
     public DbSet<GameSession> Sessions => Set<GameSession>();
     public DbSet<GameInvitation> Invitations => Set<GameInvitation>();
     public DbSet<GamePlayer> Players => Set<GamePlayer>();
+    public DbSet<AutobusSessionState> AutobusStates => Set<AutobusSessionState>();
+    public DbSet<AutobusCommand> AutobusCommands => Set<AutobusCommand>();
     public DbSet<XoSessionState> XoStates => Set<XoSessionState>();
     public DbSet<XoMove> XoMoves => Set<XoMove>();
     internal DbSet<GamesMembershipDeletionFence> MembershipDeletionFences => Set<GamesMembershipDeletionFence>();
@@ -27,6 +30,10 @@ public sealed class GamesDbContext(DbContextOptions<GamesDbContext> options) : D
                 StringComparison.Ordinal))
         {
             modelBuilder.Entity<XoSessionState>()
+                .Property(x => x.ConcurrencyToken)
+                .IsConcurrencyToken(false)
+                .ValueGeneratedNever();
+            modelBuilder.Entity<AutobusSessionState>()
                 .Property(x => x.ConcurrencyToken)
                 .IsConcurrencyToken(false)
                 .ValueGeneratedNever();

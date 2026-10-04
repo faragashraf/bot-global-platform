@@ -3,6 +3,7 @@ package com.botglobal.lamma.app
 import androidx.compose.ui.window.ComposeUIViewController
 import com.botglobal.lamma.app.state.AppLanguage
 import com.botglobal.lamma.app.state.ApplicationLanguagePreferences
+import com.botglobal.lamma.app.state.RecentGameSessionPreferences
 import com.botglobal.lamma.app.state.appLanguageFromPreference
 import com.botglobal.lamma.app.state.preferenceValue
 import com.botglobal.lamma.app.ui.FamilyGamesApp
@@ -24,6 +25,24 @@ private class IosApplicationLanguagePreferences(
     }
 }
 
+private class IosRecentGameSessionPreferences(
+    private val defaults: NSUserDefaults = NSUserDefaults.standardUserDefaults,
+) : RecentGameSessionPreferences {
+    override fun restore(): String? = defaults.stringForKey(KEY_SESSION_ID)
+
+    override fun save(sessionId: String) {
+        defaults.setObject(sessionId, forKey = KEY_SESSION_ID)
+    }
+
+    override fun clear() {
+        defaults.removeObjectForKey(KEY_SESSION_ID)
+    }
+
+    private companion object {
+        const val KEY_SESSION_ID = "botglobal.familygames.recentGameSessionId"
+    }
+}
+
 fun MainViewController(
     apiBaseUrl: String,
     sessionVault: SessionVault,
@@ -37,5 +56,6 @@ fun MainViewController(
         appVersion = appVersion,
         platform = "ios",
         languagePreferences = IosApplicationLanguagePreferences(),
+        recentGameSessionPreferences = IosRecentGameSessionPreferences(),
     )
 }

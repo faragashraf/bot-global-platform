@@ -1,6 +1,13 @@
 package com.botglobal.lamma.app.state
 
 import com.botglobal.lamma.app.data.AccountDeletionAcceptance
+import com.botglobal.lamma.app.data.AutobusFinishRoundRequest
+import com.botglobal.lamma.app.data.AutobusAnswerSnapshot
+import com.botglobal.lamma.app.data.AutobusCategorySnapshot
+import com.botglobal.lamma.app.data.AutobusRevealRequest
+import com.botglobal.lamma.app.data.AutobusSnapshot
+import com.botglobal.lamma.app.data.AutobusSubmitAnswersRequest
+import com.botglobal.lamma.app.data.AutobusVoteRequest
 
 import com.botglobal.lamma.app.data.FamilyGamesGateway
 import com.botglobal.lamma.app.data.GameSessionSnapshot
@@ -433,6 +440,72 @@ class FamilyGamesCoordinatorTests {
         assertEquals(AppScreen.Result, coordinator.state.value.screen)
         assertContains(haptics.events, HapticEvent.Success)
         coordinator.dispose()
+    }
+
+    @Test
+    fun completed_game_is_restored_from_recent_session_after_app_restart() = runTest {
+        val completed = game(version = 18, status = "completed", gameType = "autobus")
+        val preferences = FakeRecentGameSessionPreferences(completed.sessionId)
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            rejoinResult = completed,
+        )
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(
+            gateway,
+            realtime,
+            SilentHaptics,
+            this,
+            recentGameSessionPreferences = preferences,
+        )
+
+        coordinator.startup()
+        advanceUntilIdle()
+
+        assertEquals(1, gateway.rejoinCalls)
+        assertEquals(AppScreen.Result, coordinator.state.value.screen)
+        assertEquals(completed, coordinator.state.value.game)
+        assertEquals(completed.sessionId, realtime.startedSession)
+        assertEquals(completed.sessionId, preferences.stored)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun explicit_game_exit_clears_recent_session_and_does_not_reopen_result() = runTest {
+        val completed = game(version = 18, status = "completed", gameType = "autobus")
+        val preferences = FakeRecentGameSessionPreferences(completed.sessionId)
+        val firstCoordinator = FamilyGamesCoordinator(
+            FakeGateway(restored = mobileSession, rejoinResult = completed),
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            recentGameSessionPreferences = preferences,
+        )
+        firstCoordinator.startup()
+        advanceUntilIdle()
+
+        firstCoordinator.exitGame()
+        advanceUntilIdle()
+
+        assertEquals(AppScreen.Home, firstCoordinator.state.value.screen)
+        assertNull(preferences.stored)
+        firstCoordinator.dispose()
+
+        val freshGateway = FakeGateway(restored = mobileSession)
+        val freshCoordinator = FamilyGamesCoordinator(
+            freshGateway,
+            FakeRealtime(),
+            SilentHaptics,
+            this,
+            recentGameSessionPreferences = preferences,
+        )
+        freshCoordinator.startup()
+        advanceUntilIdle()
+
+        assertEquals(0, freshGateway.rejoinCalls)
+        assertEquals(AppScreen.Home, freshCoordinator.state.value.screen)
+        assertNull(freshCoordinator.state.value.game)
+        freshCoordinator.dispose()
     }
 
     @Test
@@ -982,6 +1055,275 @@ class FamilyGamesCoordinatorTests {
     }
 
     @Test
+    fun multiplayer_presence_is_disconnected_when_any_other_player_is_offline() {
+        val multiplayer = game(gameType = "autobus").copy(
+            players = listOf(
+                PlayerSnapshot(membershipId, "Player", 0, "1", true, true),
+                PlayerSnapshot("member-2", "Connected", 1, "2", true, true),
+                PlayerSnapshot("member-3", "Offline", 2, "3", true, false),
+            ),
+        )
+
+        assertEquals(
+            OpponentConnectionState.Disconnected,
+            multiplayer.opponentConnectionState(membershipId),
+        )
+    }
+
+    @Test
+    fun autobus_submission_retries_once_after_authoritative_refresh() = runTest {
+        val activeAutobus = autobusGame(version = 4)
+        val recoveredAutobus = autobusGame(version = 7)
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = activeAutobus,
+            rejoinResult = recoveredAutobus,
+            autobusSubmitFailuresBeforeSuccess = 1,
+        )
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.updateAutobusAnswer("boy_name", "أحمد")
+        coordinator.submitAutobusAnswers()
+        advanceUntilIdle()
+
+        assertEquals(2, gateway.autobusSubmitCalls)
+        assertEquals(7, gateway.lastAutobusAnswers?.expectedVersion)
+        assertNull(coordinator.state.value.errorCode)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun autobus_timer_finish_is_queued_behind_an_in_flight_submission() = runTest {
+        val releaseFirstSubmit = CompletableDeferred<Unit>()
+        val activeAutobus = autobusGame(version = 4)
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = activeAutobus,
+            autobusSubmitBehavior = { call, request ->
+                if (call == 1) releaseFirstSubmit.await()
+                autobusGame(request.expectedVersion + 1, "active")
+            },
+        )
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.submitAutobusAnswers()
+        runCurrent()
+        coordinator.finishAutobusRound()
+        releaseFirstSubmit.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(2, gateway.autobusSubmitCalls)
+        assertEquals(1, gateway.autobusFinishCalls)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun expired_grace_skips_closed_submission_and_locks_the_round() = runTest {
+        val expiredGrace = autobusGame(
+            version = 9,
+            phase = "grace",
+            graceEndsAtUtc = "2000-01-01T00:00:00Z",
+        )
+        val gateway = FakeGateway(restored = mobileSession, active = expiredGrace)
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.finishAutobusRound()
+        advanceUntilIdle()
+
+        assertEquals(0, gateway.autobusSubmitCalls)
+        assertEquals(1, gateway.autobusFinishCalls)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun vote_expiry_is_queued_behind_an_in_flight_vote() = runTest {
+        val releaseVote = CompletableDeferred<Unit>()
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = autobusGame(version = 4, phase = "reveal"),
+            autobusVoteBehavior = { _, request ->
+                releaseVote.await()
+                autobusGame(request.expectedVersion + 1, phase = "reveal")
+            },
+        )
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.voteAutobus("member-2", "boy_name", accept = true)
+        runCurrent()
+        coordinator.revealAutobus()
+        releaseVote.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, gateway.autobusVoteCalls)
+        assertEquals(1, gateway.autobusRevealCalls)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun queued_vote_expiry_is_discarded_after_the_category_advances() = runTest {
+        val releaseVote = CompletableDeferred<Unit>()
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = autobusGame(
+                version = 4,
+                phase = "reveal",
+                revealCategoryKey = "boy_name",
+                voteDeadlineAtUtc = "2099-01-01T00:01:00Z",
+            ),
+            autobusVoteBehavior = { _, request ->
+                releaseVote.await()
+                autobusGame(
+                    version = request.expectedVersion + 1,
+                    phase = "reveal",
+                    revealCategoryKey = "girl_name",
+                    voteDeadlineAtUtc = "2099-01-01T00:02:00Z",
+                )
+            },
+        )
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.voteAutobus("member-2", "boy_name", accept = true)
+        runCurrent()
+        coordinator.revealAutobus()
+        releaseVote.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, gateway.autobusVoteCalls)
+        assertEquals(0, gateway.autobusRevealCalls)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun expired_vote_retries_after_authoritative_refresh_in_the_same_category() = runTest {
+        val reveal = autobusGame(
+            version = 4,
+            phase = "reveal",
+            revealCategoryKey = "boy_name",
+            voteDeadlineAtUtc = "2000-01-01T00:00:00Z",
+        )
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = reveal,
+            rejoinResult = reveal.copy(version = 7),
+            autobusRevealFailuresBeforeSuccess = 1,
+        )
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.revealAutobus()
+        advanceUntilIdle()
+
+        assertEquals(2, gateway.autobusRevealCalls)
+        assertNull(coordinator.state.value.errorCode)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun submission_recovery_does_not_carry_old_answers_into_a_new_round() = runTest {
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = autobusGame(version = 4, currentRound = 1),
+            rejoinResult = autobusGame(version = 7, currentRound = 2),
+            autobusSubmitFailuresBeforeSuccess = 1,
+        )
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.updateAutobusAnswer("boy_name", "أحمد")
+        coordinator.submitAutobusAnswers()
+        advanceUntilIdle()
+
+        assertEquals(1, gateway.autobusSubmitCalls)
+        assertEquals(2, coordinator.state.value.game?.autobus?.currentRound)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun queued_round_expiry_is_discarded_after_the_round_advances() = runTest {
+        val releaseSubmit = CompletableDeferred<Unit>()
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = autobusGame(version = 4, currentRound = 1),
+            autobusSubmitBehavior = { _, request ->
+                releaseSubmit.await()
+                autobusGame(request.expectedVersion + 1, currentRound = 2)
+            },
+        )
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.finishAutobusRound()
+        runCurrent()
+        coordinator.finishAutobusRound()
+        releaseSubmit.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, gateway.autobusSubmitCalls)
+        assertEquals(0, gateway.autobusFinishCalls)
+        assertEquals(2, coordinator.state.value.game?.autobus?.currentRound)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun newer_local_draft_survives_a_delayed_submit_response() = runTest {
+        val releaseSubmit = CompletableDeferred<Unit>()
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            active = autobusGame(version = 4, ownAnswer = "أحمد"),
+            autobusSubmitBehavior = { _, request ->
+                releaseSubmit.await()
+                autobusGame(request.expectedVersion + 1, ownAnswer = "أمل")
+            },
+        )
+        val coordinator = FamilyGamesCoordinator(gateway, FakeRealtime(), SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.updateAutobusAnswer("boy_name", "أمل")
+        coordinator.submitAutobusAnswers()
+        runCurrent()
+        coordinator.updateAutobusAnswer("boy_name", "أيمن")
+        releaseSubmit.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals("أيمن", coordinator.state.value.autobusDrafts["boy_name"])
+        coordinator.dispose()
+    }
+
+    @Test
+    fun newer_local_draft_survives_authoritative_recovery() = runTest {
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(restored = mobileSession, active = autobusGame(version = 4, ownAnswer = "أحمد")),
+            realtime,
+            SilentHaptics,
+            this,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.updateAutobusAnswer("boy_name", "أيمن")
+        realtime.emit(autobusGame(version = 5, ownAnswer = "أحمد"))
+        advanceUntilIdle()
+
+        assertEquals("أيمن", coordinator.state.value.autobusDrafts["boy_name"])
+        coordinator.dispose()
+    }
+
+    @Test
     fun foreground_resume_uses_the_same_authoritative_recovery_owner() = runTest {
         val gateway = FakeGateway(
             restored = mobileSession,
@@ -1492,6 +1834,10 @@ class FamilyGamesCoordinatorTests {
         private val rejoinResult: GameSessionSnapshot? = null,
         private val rejoinBehavior: (suspend (Int) -> GameSessionSnapshot)? = null,
         private val moveError: ApiException? = null,
+        private val autobusSubmitFailuresBeforeSuccess: Int = 0,
+        private val autobusSubmitBehavior: (suspend (Int, AutobusSubmitAnswersRequest) -> GameSessionSnapshot)? = null,
+        private val autobusRevealFailuresBeforeSuccess: Int = 0,
+        private val autobusVoteBehavior: (suspend (Int, AutobusVoteRequest) -> GameSessionSnapshot)? = null,
         private val resolvedInvitation: GameSessionSnapshot? = null,
         private val federatedSession: MobileSession = mobileSession.copy(
             identity = mobileSession.identity.copy(kind = IdentityKind.Registered),
@@ -1504,6 +1850,11 @@ class FamilyGamesCoordinatorTests {
         override suspend fun deleteAccount(): AccountDeletionAcceptance { deletionCalls++; return deletionBehavior() }
         override suspend fun clearLocalSession() { clearCalls++; clearBehavior() }
         var lastMove: MoveRequest? = null
+        var lastAutobusAnswers: AutobusSubmitAnswersRequest? = null
+        var autobusSubmitCalls: Int = 0
+        var autobusFinishCalls: Int = 0
+        var autobusRevealCalls: Int = 0
+        var autobusVoteCalls: Int = 0
         var rejoinCalls: Int = 0
         var guestCalls: Int = 0
         var resolvedToken: String? = null
@@ -1525,6 +1876,12 @@ class FamilyGamesCoordinatorTests {
         override suspend fun logout() = Unit
         override suspend fun activeSession() = active
         override suspend fun createSession(rulesetKey: String) = game()
+        override suspend fun createAutobusSession(
+            rounds: Int,
+            seconds: Int,
+            difficulty: String,
+            categories: List<String>,
+        ) = game(gameType = "autobus")
         override suspend fun joinSession(code: String) = game()
         override suspend fun createInvitation(sessionId: String) = GameInvitation(
             invitationId = "invite-1",
@@ -1550,6 +1907,31 @@ class FamilyGamesCoordinatorTests {
             lastMove = request
             moveError?.let { throw it }
             return moveResult ?: game(version = request.expectedVersion + 1)
+        }
+        override suspend fun submitAutobusAnswers(request: AutobusSubmitAnswersRequest): GameSessionSnapshot {
+            autobusSubmitCalls++
+            lastAutobusAnswers = request
+            if (autobusSubmitCalls <= autobusSubmitFailuresBeforeSuccess) {
+                throw ApiException("stale_version", 409, "Refresh authoritative state.")
+            }
+            autobusSubmitBehavior?.let { return it(autobusSubmitCalls, request) }
+            return game(version = request.expectedVersion + 1, gameType = "autobus")
+        }
+        override suspend fun finishAutobusRound(request: AutobusFinishRoundRequest): GameSessionSnapshot {
+            autobusFinishCalls++
+            return autobusGame(request.expectedVersion + 1, "grace")
+        }
+        override suspend fun revealAutobus(request: AutobusRevealRequest): GameSessionSnapshot {
+            autobusRevealCalls++
+            if (autobusRevealCalls <= autobusRevealFailuresBeforeSuccess) {
+                throw ApiException("stale_version", 409, "Refresh authoritative state.")
+            }
+            return autobusGame(request.expectedVersion + 1, phase = "reveal")
+        }
+        override suspend fun voteAutobus(request: AutobusVoteRequest): GameSessionSnapshot {
+            autobusVoteCalls++
+            autobusVoteBehavior?.let { return it(autobusVoteCalls, request) }
+            return autobusGame(request.expectedVersion + 1, phase = "reveal")
         }
         override suspend fun requestRematch(sessionId: String) = game(status = "completed")
         override suspend fun acceptRematch(sessionId: String) = game(status = "started")
@@ -1718,6 +2100,20 @@ class FamilyGamesCoordinatorTests {
         }
     }
 
+    private class FakeRecentGameSessionPreferences(initial: String? = null) : RecentGameSessionPreferences {
+        var stored: String? = initial
+
+        override fun restore(): String? = stored
+
+        override fun save(sessionId: String) {
+            stored = sessionId
+        }
+
+        override fun clear() {
+            stored = null
+        }
+    }
+
     private object SilentHaptics : SemanticHaptics {
         override fun perform(event: HapticEvent) = Unit
     }
@@ -1806,6 +2202,51 @@ class FamilyGamesCoordinatorTests {
             matchStatus = "inprogress",
             lastActivityAtUtc = "2099-01-01T00:00:00Z",
             revision = revision,
+        )
+
+        private fun autobusGame(
+            version: Long,
+            phase: String = "active",
+            graceEndsAtUtc: String? = null,
+            ownAnswer: String? = null,
+            currentRound: Int = 1,
+            revealCategoryKey: String? = null,
+            voteDeadlineAtUtc: String? = null,
+        ) = game(
+            version = version,
+            status = "started",
+            gameType = "autobus",
+        ).copy(
+            autobus = AutobusSnapshot(
+                schemaVersion = 1,
+                difficulty = "easy",
+                roundCount = 5,
+                roundSeconds = 60,
+                categories = listOf(AutobusCategorySnapshot("boy_name", "اسم ولد", "Boy name")),
+                currentRound = currentRound,
+                currentLetter = "أ",
+                phase = phase,
+                graceEndsAtUtc = graceEndsAtUtc,
+                voteDeadlineAtUtc = voteDeadlineAtUtc,
+                revealCategoryKey = revealCategoryKey,
+                answers = ownAnswer?.let {
+                    listOf(
+                        AutobusAnswerSnapshot(
+                            playerMembershipId = membershipId,
+                            categoryKey = "boy_name",
+                            displayAnswer = it,
+                            outcome = "accepted",
+                            reasonCode = "accepted",
+                            friendlyMessageCode = "accepted",
+                            canonicalValue = it,
+                            score = 10,
+                            scored = true,
+                            needsVote = false,
+                            duplicate = false,
+                        ),
+                    )
+                }.orEmpty(),
+            ),
         )
     }
 }

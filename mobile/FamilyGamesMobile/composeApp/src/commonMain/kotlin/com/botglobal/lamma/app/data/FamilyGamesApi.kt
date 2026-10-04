@@ -47,12 +47,22 @@ interface FamilyGamesGateway {
     suspend fun logout()
     suspend fun activeSession(): GameSessionSnapshot?
     suspend fun createSession(rulesetKey: String): GameSessionSnapshot
+    suspend fun createAutobusSession(
+        rounds: Int,
+        seconds: Int,
+        difficulty: String,
+        categories: List<String>,
+    ): GameSessionSnapshot
     suspend fun joinSession(code: String): GameSessionSnapshot
     suspend fun createInvitation(sessionId: String): GameInvitation
     suspend fun resolveInvitation(token: String): GameSessionSnapshot
     suspend fun ready(sessionId: String): GameSessionSnapshot
     suspend fun rejoin(sessionId: String): GameSessionSnapshot
     suspend fun move(request: MoveRequest): GameSessionSnapshot
+    suspend fun submitAutobusAnswers(request: AutobusSubmitAnswersRequest): GameSessionSnapshot
+    suspend fun finishAutobusRound(request: AutobusFinishRoundRequest): GameSessionSnapshot
+    suspend fun revealAutobus(request: AutobusRevealRequest): GameSessionSnapshot
+    suspend fun voteAutobus(request: AutobusVoteRequest): GameSessionSnapshot
     suspend fun requestRematch(sessionId: String): GameSessionSnapshot
     suspend fun acceptRematch(sessionId: String): GameSessionSnapshot
 }
@@ -146,9 +156,7 @@ class FamilyGamesApi(
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
-            } catch (_: Throwable) {
-                Unit
-            }
+            } catch (_: Throwable) { }
         }
     }
 
@@ -177,6 +185,24 @@ class FamilyGamesApi(
     override suspend fun createSession(rulesetKey: String): GameSessionSnapshot =
         authorizedPost("/api/games/sessions", CreateSessionRequest(rulesetKey)).expect()
 
+    override suspend fun createAutobusSession(
+        rounds: Int,
+        seconds: Int,
+        difficulty: String,
+        categories: List<String>,
+    ): GameSessionSnapshot =
+        authorizedPost(
+            "/api/games/sessions",
+            CreateSessionRequest(
+                rulesetKey = "autobus-${rounds}x$seconds-$difficulty",
+                gameType = "autobus",
+                roundCount = rounds,
+                roundSeconds = seconds,
+                difficulty = difficulty,
+                categories = categories,
+            ),
+        ).expect()
+
     override suspend fun joinSession(code: String): GameSessionSnapshot =
         authorizedPost("/api/games/sessions/join", JoinSessionRequest(code.trim().uppercase())).expect()
 
@@ -199,6 +225,18 @@ class FamilyGamesApi(
 
     override suspend fun move(request: MoveRequest): GameSessionSnapshot =
         authorizedPost("/api/games/sessions/${request.sessionId}/moves", request).expect()
+
+    override suspend fun submitAutobusAnswers(request: AutobusSubmitAnswersRequest): GameSessionSnapshot =
+        authorizedPost("/api/games/sessions/${request.sessionId}/autobus/answers", request).expect()
+
+    override suspend fun finishAutobusRound(request: AutobusFinishRoundRequest): GameSessionSnapshot =
+        authorizedPost("/api/games/sessions/${request.sessionId}/autobus/finish", request).expect()
+
+    override suspend fun revealAutobus(request: AutobusRevealRequest): GameSessionSnapshot =
+        authorizedPost("/api/games/sessions/${request.sessionId}/autobus/reveal", request).expect()
+
+    override suspend fun voteAutobus(request: AutobusVoteRequest): GameSessionSnapshot =
+        authorizedPost("/api/games/sessions/${request.sessionId}/autobus/votes", request).expect()
 
     override suspend fun requestRematch(sessionId: String): GameSessionSnapshot =
         authorizedPost("/api/games/sessions/$sessionId/rematch/request").expect()
