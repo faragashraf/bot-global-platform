@@ -13,7 +13,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertFalse
-import androidx.compose.ui.unit.LayoutDirection
 import kotlin.time.Instant
 
 class NqrbPrivateDirectoryTests {
@@ -56,12 +55,11 @@ class NqrbPrivateDirectoryTests {
     }
 
     @Test
-    fun call_swipe_uses_the_visible_direction_of_each_language() {
-        assertTrue(shouldStartCallFromSwipe(80f, 80f, LayoutDirection.Rtl))
-        assertFalse(shouldStartCallFromSwipe(-100f, 80f, LayoutDirection.Rtl))
-        assertTrue(shouldStartCallFromSwipe(-80f, 80f, LayoutDirection.Ltr))
-        assertFalse(shouldStartCallFromSwipe(100f, 80f, LayoutDirection.Ltr))
-        assertFalse(shouldStartCallFromSwipe(40f, 80f, LayoutDirection.Rtl))
+    fun call_swipe_always_requires_a_rightward_threshold() {
+        assertTrue(shouldStartCallFromSwipe(80f, 80f))
+        assertTrue(shouldStartCallFromSwipe(100f, 80f))
+        assertFalse(shouldStartCallFromSwipe(-100f, 80f))
+        assertFalse(shouldStartCallFromSwipe(40f, 80f))
     }
 
     @Test
