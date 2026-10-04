@@ -57,6 +57,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Calling", "Calling", "{45F2
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BotGlobal.Calling", "src\Modules\Calling\BotGlobal.Calling\BotGlobal.Calling.csproj", "{8DF65973-95CE-4BF8-BD98-CA84C9527231}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BotGlobal.Persistence", "src\BuildingBlocks\BotGlobal.Persistence\BotGlobal.Persistence.csproj", "{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -235,6 +237,18 @@ Global
 		{8DF65973-95CE-4BF8-BD98-CA84C9527231}.Release|x64.Build.0 = Release|Any CPU
 		{8DF65973-95CE-4BF8-BD98-CA84C9527231}.Release|x86.ActiveCfg = Release|Any CPU
 		{8DF65973-95CE-4BF8-BD98-CA84C9527231}.Release|x86.Build.0 = Release|Any CPU
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}.Debug|x64.Build.0 = Debug|Any CPU
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}.Debug|x86.Build.0 = Debug|Any CPU
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}.Release|x64.ActiveCfg = Release|Any CPU
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}.Release|x64.Build.0 = Release|Any CPU
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}.Release|x86.ActiveCfg = Release|Any CPU
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -263,5 +277,6 @@ Global
 		{9F279BC3-94D8-4FEA-8ECB-AEA57B351468} = {A53CE702-9517-4799-8136-312759F97CBB}
 		{81028989-DB87-4FD4-B9CC-D911FDCC5B75} = {04252BA6-B404-FD3B-81B5-D989EEE58EED}
 		{8DF65973-95CE-4BF8-BD98-CA84C9527231} = {45F275E0-3B8B-4EA2-936E-EFC0B30B9234}
+		{F70EE2B3-1B56-4D3D-9589-96CE5679CBB4} = {90298CBA-BD6F-3A0A-69D5-97CAD7B05E7E}
 	EndGlobalSection
 EndGlobal

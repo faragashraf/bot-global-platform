@@ -18,6 +18,7 @@ using BotGlobal.Contracts.Notifications;
 using BotGlobal.Contracts.Calling;
 using BotGlobal.Pairing.Application.Calling;
 using BotGlobal.Pairing.Application.Profiles;
+using BotGlobal.Persistence;
 
 namespace BotGlobal.Pairing;
 
@@ -51,12 +52,12 @@ public static class PairingModule
 
         services.AddDbContext<PairingDbContext>(
             options =>
-                options.UseSqlServer(
+                options.UseBotGlobalDatabase(
+                    configuration,
+                    ConnectionStringName,
                     connectionString,
-                    sqlServer =>
-                        sqlServer.MigrationsHistoryTable(
-                            MigrationsHistoryTableName,
-                            DatabaseSchema)));
+                    DatabaseSchema,
+                    MigrationsHistoryTableName));
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddScoped<

@@ -1,0 +1,12 @@
+:80 {
+	handle /backend {
+		rewrite * /health
+		reverse_proxy backend:8080
+	}
+
+	handle_path /backend/* {
+		reverse_proxy backend:8080
+	}
+
+	respond "Bot Global apps-prod-01 canary" 200
+}

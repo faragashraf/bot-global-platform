@@ -1,0 +1,14 @@
+.git
+.github
+.vs
+**/bin
+**/obj
+**/node_modules
+**/.gradle
+**/build
+mobile
+frontend/node_modules
+frontend/dist
+privacy-site
+*.apk
+*.aab

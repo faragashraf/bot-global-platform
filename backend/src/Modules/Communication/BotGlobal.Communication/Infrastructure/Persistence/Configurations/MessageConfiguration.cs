@@ -35,6 +35,7 @@ public sealed class MessageConfiguration
             .IsRequired();
 
         builder.Property(message => message.SequenceNumber)
+            .ValueGeneratedOnAdd()
             .UseIdentityColumn();
 
         builder.Property(message => message.Kind)

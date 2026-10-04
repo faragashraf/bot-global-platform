@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BuildingBlocks\BotGlobal.Contracts\BotGlobal.Contracts.csproj" />
+    <ProjectReference Include="..\BuildingBlocks\BotGlobal.Persistence\BotGlobal.Persistence.csproj" />
     <ProjectReference Include="..\Modules\Catalog\BotGlobal.Catalog\BotGlobal.Catalog.csproj" />
     <ProjectReference Include="..\Modules\Calling\BotGlobal.Calling\BotGlobal.Calling.csproj" />
     <ProjectReference Include="..\Modules\Identity\BotGlobal.Identity\BotGlobal.Identity.csproj" />

@@ -23,6 +23,10 @@ public sealed class IdentityDbContext(
     {
         base.OnModelCreating(builder);
 
+        var isPostgreSql = Database.ProviderName?.Contains(
+            "Npgsql",
+            StringComparison.OrdinalIgnoreCase) == true;
+
         builder.HasDefaultSchema("identity");
 
         builder.Entity<ApplicationUser>(
@@ -39,9 +43,13 @@ public sealed class IdentityDbContext(
                 entity.Property(x => x.IsActive)
                     .IsRequired();
 
-                entity.Property(x => x.CreatedAtUtc)
-                    .HasColumnType("datetimeoffset")
+                var createdAtUtc = entity.Property(x => x.CreatedAtUtc)
                     .IsRequired();
+
+                if (!isPostgreSql)
+                {
+                    createdAtUtc.HasColumnType("datetimeoffset");
+                }
             });
 
         builder.Entity<IdentityRole<Guid>>()
@@ -62,7 +70,7 @@ public sealed class IdentityDbContext(
         builder.Entity<IdentityUserToken<Guid>>()
             .ToTable("UserTokens", "identity");
 
-        builder.ApplyConfiguration(new ApplicationMembershipConfiguration());
+        builder.ApplyConfiguration(new ApplicationMembershipConfiguration(isPostgreSql));
         builder.ApplyConfiguration(new MobileApplicationSessionConfiguration());
         builder.ApplyConfiguration(new ApplicationAccountDeletionRequestConfiguration());
     }

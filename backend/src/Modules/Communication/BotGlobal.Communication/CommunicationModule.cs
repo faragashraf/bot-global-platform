@@ -9,6 +9,7 @@ using BotGlobal.Communication.Application.Foundation;
 using BotGlobal.Communication.Hubs;
 using BotGlobal.Communication.Infrastructure.Persistence;
 using BotGlobal.Communication.Realtime;
+using BotGlobal.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
@@ -42,12 +43,12 @@ public static class CommunicationModule
 
         services.AddDbContext<CommunicationDbContext>(
             options =>
-                options.UseSqlServer(
+                options.UseBotGlobalDatabase(
+                    configuration,
+                    ConnectionStringName,
                     connectionString,
-                    sqlServer =>
-                        sqlServer.MigrationsHistoryTable(
-                            MigrationsHistoryTableName,
-                            DatabaseSchema)));
+                    DatabaseSchema,
+                    MigrationsHistoryTableName));
 
         services.AddSignalR();
         services.Configure<FcmOptions>(

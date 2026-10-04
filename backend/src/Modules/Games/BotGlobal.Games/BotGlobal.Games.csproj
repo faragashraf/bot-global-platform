@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\BuildingBlocks\BotGlobal.Contracts\BotGlobal.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\BotGlobal.Persistence\BotGlobal.Persistence.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\BotGlobal.SharedKernel\BotGlobal.SharedKernel.csproj" />
   </ItemGroup>
   <ItemGroup>
@@ -14,7 +15,6 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

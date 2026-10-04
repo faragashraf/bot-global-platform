@@ -4,7 +4,7 @@ fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\
 
 val googleServerClientId = providers.gradleProperty("nqrbGoogleServerClientId")
     .orElse(providers.environmentVariable("NQRB_GOOGLE_SERVER_CLIENT_ID"))
-    .getOrElse("")
+    .getOrElse("235804274047-bb8tmlbfttdm8irq9hl8br4mac1su1pu.apps.googleusercontent.com")
 
 plugins {
     alias(libs.plugins.androidApplication)
@@ -54,6 +54,16 @@ android {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             val apiUrl = providers.gradleProperty("nqrbDebugApiBaseUrl").getOrElse("http://10.0.2.2:5062")
+            buildConfigField("String", "API_BASE_URL", apiUrl.asBuildConfigString())
+        }
+        create("canary") {
+            initWith(getByName("debug"))
+            versionNameSuffix = "-canary"
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
+            matchingFallbacks += listOf("debug")
+            val apiUrl = providers.gradleProperty("nqrbCanaryApiBaseUrl")
+                .orElse(providers.environmentVariable("NQRB_CANARY_API_BASE_URL"))
+                .getOrElse("http://134.209.241.35:18080/backend")
             buildConfigField("String", "API_BASE_URL", apiUrl.asBuildConfigString())
         }
         getByName("release") {

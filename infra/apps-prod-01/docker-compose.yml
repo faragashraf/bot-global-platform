@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: backend/src/BotGlobal.Api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      Database__Provider: PostgreSql
+      Database__CanarySchema__EnsureCreated: "true"
+      Notifications__Worker__Enabled: "false"
+      Firebase__Enabled: "false"
+      Identity__Federated__Google__ServerClientIds__nqrb: 235804274047-bb8tmlbfttdm8irq9hl8br4mac1su1pu.apps.googleusercontent.com
+      Identity__Federated__Google__NqrbWebClientId: 235804274047-bb8tmlbfttdm8irq9hl8br4mac1su1pu.apps.googleusercontent.com
+      ConnectionStrings__Catalog: Host=postgres;Port=5432;Database=botglobal_catalog;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false
+      ConnectionStrings__Identity: Host=postgres;Port=5432;Database=botglobal_identity;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false
+      ConnectionStrings__Communication: Host=postgres;Port=5432;Database=botglobal_communication;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false
+      ConnectionStrings__PlatformClients: Host=postgres;Port=5432;Database=botglobal_platform_clients;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false
+      ConnectionStrings__Pairing: Host=postgres;Port=5432;Database=botglobal_pairing;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false
+      ConnectionStrings__Notifications: Host=postgres;Port=5432;Database=botglobal_notifications;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false
+      ConnectionStrings__Games: Host=postgres;Port=5432;Database=botglobal_games;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "18080:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

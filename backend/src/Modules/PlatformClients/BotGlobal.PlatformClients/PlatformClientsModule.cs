@@ -8,6 +8,7 @@ using BotGlobal.PlatformClients.Authentication;
 using BotGlobal.PlatformClients.Authorization;
 using BotGlobal.PlatformClients.Endpoints;
 using BotGlobal.PlatformClients.Infrastructure.Security;
+using BotGlobal.Persistence;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Routing;
@@ -42,12 +43,12 @@ public static class PlatformClientsModule
 
         services.AddDbContext<PlatformClientsDbContext>(
             options =>
-                options.UseSqlServer(
+                options.UseBotGlobalDatabase(
+                    configuration,
+                    ConnectionStringName,
                     connectionString,
-                    sqlServer =>
-                        sqlServer.MigrationsHistoryTable(
-                            MigrationsHistoryTableName,
-                            DatabaseSchema)));
+                    DatabaseSchema,
+                    MigrationsHistoryTableName));
 
         services.AddSingleton<
             IPlatformClientSecretService,

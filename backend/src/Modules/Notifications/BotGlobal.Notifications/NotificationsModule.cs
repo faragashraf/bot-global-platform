@@ -5,6 +5,7 @@ using BotGlobal.Notifications.Application.Processing;
 using BotGlobal.Notifications.Endpoints;
 using BotGlobal.Notifications.Infrastructure.Persistence;
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
@@ -40,11 +41,12 @@ public static class NotificationsModule
         }
 
         services.AddDbContext<NotificationsDbContext>(options =>
-            options.UseSqlServer(
+            options.UseBotGlobalDatabase(
+                configuration,
+                ConnectionStringName,
                 connectionString,
-                sqlServer => sqlServer.MigrationsHistoryTable(
-                    MigrationsHistoryTableName,
-                    DatabaseSchema)));
+                DatabaseSchema,
+                MigrationsHistoryTableName));
 
         var notificationsSection = configuration.GetSection(
             NotificationCampaignOptions.SectionName);

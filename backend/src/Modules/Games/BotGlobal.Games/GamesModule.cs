@@ -8,6 +8,7 @@ using BotGlobal.Games.Endpoints;
 using BotGlobal.Games.Infrastructure.Persistence;
 using BotGlobal.Games.Realtime;
 using BotGlobal.Games.Realtime.Voice;
+using BotGlobal.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
@@ -30,13 +31,13 @@ public static class GamesModule
         }
 
         services.AddDbContext<GamesDbContext>(options =>
-            options.UseSqlServer(
+            options.UseBotGlobalDatabase(
+                configuration,
+                "Games",
                 connectionString,
-                sql =>
-                {
-                    sql.MigrationsAssembly(typeof(GamesDbContext).Assembly.FullName);
-                    sql.MigrationsHistoryTable(GamesDbContext.MigrationHistoryTable, GamesDbContext.Schema);
-                }));
+                GamesDbContext.Schema,
+                GamesDbContext.MigrationHistoryTable,
+                typeof(GamesDbContext).Assembly.FullName));
         services.AddSignalR(options => options.EnableDetailedErrors = false);
         services.Configure<FamilyGamesVersionPolicyOptions>(
             configuration.GetSection(FamilyGamesVersionPolicyOptions.SectionName));
@@ -61,7 +62,11 @@ public static class GamesModule
         services.AddScoped<IGameNotificationPublisher, DeferredGameNotificationPublisher>();
         services.AddScoped<IGameRealtimeNotifier, GameRealtimeNotifier>();
         services.AddSingleton<GameConnectionRegistry>();
-        services.AddHostedService<RevokedGamePresenceCleanupService>();
+        if (!BotGlobalDatabaseOptions.IsCanaryEnsureCreatedEnabled(configuration))
+        {
+            services.AddHostedService<RevokedGamePresenceCleanupService>();
+        }
+
         services.AddSingleton<VoiceConnectionRegistry>();
         services.AddSingleton<VoiceConsentRegistry>();
         services.TryAddSingleton(TimeProvider.System);
@@ -92,6 +97,11 @@ public static class GamesModule
     {
         await using var scope = app.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<GamesDbContext>();
+        if (BotGlobalDatabaseOptions.IsCanaryEnsureCreatedEnabled(app.Configuration))
+        {
+            return;
+        }
+
         await dbContext.Database.MigrateAsync(cancellationToken);
     }
 }

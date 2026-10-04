@@ -8,6 +8,7 @@ using BotGlobal.Identity.Domain;
 using BotGlobal.Identity.Endpoints;
 using BotGlobal.Identity.Infrastructure;
 using BotGlobal.Identity.Infrastructure.Persistence;
+using BotGlobal.Persistence;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
@@ -38,12 +39,12 @@ public static class IdentityModule
 
         services.AddDbContext<IdentityDbContext>(
             options =>
-                options.UseSqlServer(
+                options.UseBotGlobalDatabase(
+                    configuration,
+                    "Identity",
                     connectionString,
-                    sql =>
-                        sql.MigrationsHistoryTable(
-                            "__EFMigrationsHistory",
-                            "identity")));
+                    "identity",
+                    "__EFMigrationsHistory"));
 
         services
             .AddIdentity<
@@ -90,7 +91,10 @@ public static class IdentityModule
         services.AddScoped<IPublicNqrbAccountDeletionService, PublicNqrbAccountDeletionService>();
         services.AddScoped<IApplicationMembershipActivityReader, ApplicationMembershipActivityReader>();
         services.AddScoped<ApplicationAccountDeletionProcessor>();
-        services.AddHostedService<ApplicationAccountDeletionBackgroundService>();
+        if (!BotGlobalDatabaseOptions.IsCanaryEnsureCreatedEnabled(configuration))
+        {
+            services.AddHostedService<ApplicationAccountDeletionBackgroundService>();
+        }
 
         services.AddRateLimiter(options =>
         {

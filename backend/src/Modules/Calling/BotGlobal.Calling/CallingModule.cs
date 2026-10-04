@@ -5,6 +5,7 @@ using BotGlobal.Calling.Application;
 using BotGlobal.Calling.Infrastructure;
 using BotGlobal.Contracts.Calling;
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -36,8 +37,12 @@ public static class CallingModule
         var connectionString = configuration.GetConnectionString(ConnectionStringName);
         if (string.IsNullOrWhiteSpace(connectionString))
             throw new InvalidOperationException($"Connection string '{ConnectionStringName}' is required for Calling persistence.");
-        services.AddDbContext<CallingDbContext>(options => options.UseSqlServer(connectionString,
-            sql => sql.MigrationsHistoryTable(MigrationsHistoryTableName, DatabaseSchema)));
+        services.AddDbContext<CallingDbContext>(options => options.UseBotGlobalDatabase(
+            configuration,
+            ConnectionStringName,
+            connectionString,
+            DatabaseSchema,
+            MigrationsHistoryTableName));
         services.TryAddScoped<
             IApplicationMembershipActivityReader,
             UnavailableApplicationMembershipActivityReader>();
@@ -99,11 +104,19 @@ public static class CallingModule
             .AddScheme<AuthenticationSchemeOptions, NqrbGuestCallAuthenticationHandler>(
                 NqrbGuestCallAuthenticationDefaults.Scheme,
                 _ => { });
-        services.AddHostedService<CallActivityRecoveryHostedService>();
+        if (!BotGlobalDatabaseOptions.IsCanaryEnsureCreatedEnabled(configuration))
+        {
+            services.AddHostedService<CallActivityRecoveryHostedService>();
+        }
+
         services.AddSignalR(options => options.EnableDetailedErrors = false);
         services.AddSingleton<CallSessionRegistry>();
         services.TryAddSingleton(TimeProvider.System);
-        services.AddHostedService<CallExpiryBackgroundService>();
+        if (!BotGlobalDatabaseOptions.IsCanaryEnsureCreatedEnabled(configuration))
+        {
+            services.AddHostedService<CallExpiryBackgroundService>();
+        }
+
         services.AddOptions<CallingIceOptions>()
             .Bind(configuration.GetSection(CallingIceOptions.SectionName))
             .Validate(

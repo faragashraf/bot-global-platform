@@ -1,4 +1,5 @@
 using BotGlobal.Catalog;
+using BotGlobal.Api;
 using BotGlobal.Api.Security;
 using BotGlobal.Catalog.Endpoints;
 using BotGlobal.Calling;
@@ -96,6 +97,7 @@ app.MapCatalogEndpoints();
 app.MapAdminCatalogEndpoints();
 app.MapIdentityModuleEndpoints();
 
+await app.InitializeCanaryPostgresSchemaAsync();
 await app.InitializeIdentityAsync();
 await app.InitializeGamesAsync();
 

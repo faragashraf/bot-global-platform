@@ -1,6 +1,7 @@
 using BotGlobal.Catalog.Application;
 using BotGlobal.Catalog.Application.Admin;
 using BotGlobal.Catalog.Infrastructure;
+using BotGlobal.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,15 +22,13 @@ public static class CatalogModule
         }
 
         services.AddDbContext<CatalogDbContext>(options =>
-            options.UseSqlServer(
+            options.UseBotGlobalDatabase(
+                configuration,
+                "Catalog",
                 connectionString,
-                sqlServer =>
-                {
-                    sqlServer.MigrationsAssembly(typeof(CatalogDbContext).Assembly.FullName);
-                    sqlServer.MigrationsHistoryTable(
-                        CatalogDbContext.MigrationHistoryTable,
-                        CatalogDbContext.Schema);
-                }));
+                CatalogDbContext.Schema,
+                CatalogDbContext.MigrationHistoryTable,
+                typeof(CatalogDbContext).Assembly.FullName));
         services.AddScoped<IPublicCatalogQueries, PublicCatalogQueries>();
         services.AddSingleton<IMediaUrlResolver, NullMediaUrlResolver>();
 
