@@ -1,15 +1,15 @@
-# Lamma — Google Play internal release readiness
+# Lamma — Google Play production release readiness
 
 ## Immutable Android identity and version
 
 - Application ID: `com.botglobal.lamma`
-- Version name: `0.1.0`
-- Version code: `2`
-- Minimum SDK: 23
+- Version name: `0.2.0`
+- Version code: `7`
+- Minimum SDK: 24
 - Target SDK: 36
 - Compile SDK: 37
 
-Version code `1` was used for the first Internal Testing upload. This corrected bundle uses version code `2` while retaining version name `0.1.0`.
+Version code `6` (`0.1.2`) is the current production release. This release uses version code `7` and version name `0.2.0` for the Autobus Lamma family-game expansion.
 
 ## Release connectivity
 
@@ -98,15 +98,15 @@ Server retention, deletion, encryption in transit/at rest, and third-party shari
 - No advertising, purchases, gambling, simulated gambling, violence, sexual content, or controlled-substance content is implemented.
 - These are implementation facts only. The owner must answer Google Play's questionnaire and select the resulting rating without treating this document as a rating decision.
 
-## Internal Testing release notes
+## Production release notes
 
 ### English
 
-First Lamma Internal Testing release: play online XO as a Guest, invite another player with QR codes or native sharing, use consent-based voice requests/chat, and recover from temporary connection loss. Includes Arabic and English. Voice is proven in the current test environment, but some carrier/NAT networks may remain unsupported until TURN relay rollout.
+Autobus Lamma joins XO as a new family game for 2–8 players. Play timed Arabic letter rounds with automatic answer checks, fair player voting, live scoring, ties, rematches, and reliable session recovery. Also includes Google, account, and guest sign-in plus stability improvements.
 
 ### Arabic
 
-أول إصدار من لَمّة للاختبار الداخلي: العب XO عبر الإنترنت كضيف، وادعُ لاعبًا آخر عبر رمز QR أو المشاركة، واستخدم طلبات المحادثة الصوتية بعد موافقة الطرفين، مع استعادة الاتصال بعد الانقطاع المؤقت. يدعم العربية والإنجليزية. تم إثبات الصوت في بيئة الاختبار الحالية، وقد لا يعمل على بعض شبكات المحمول أو NAT حتى إضافة ترحيل TURN.
+أضفنا لعبة أتوبيس لَمّة العائلية بجانب XO لعدد من ٢ إلى ٨ لاعبين، مع جولات حروف مؤقتة، وتصحيح ذكي للإجابات، وتصويت عادل، ونقاط مباشرة، وتعادل، وإعادة اللعب، واستعادة الجلسة بعد الانقطاع. يشمل أيضًا الدخول بجوجل أو الحساب أو كضيف وتحسينات للثبات.
 
 ## Store listing inventory
 
