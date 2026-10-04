@@ -30,6 +30,34 @@ import kotlinx.coroutines.test.runTest
 @OptIn(ExperimentalCoroutinesApi::class)
 class NqrbContactBookControllerTests {
     @Test
+    fun refresh_keeps_saved_contacts_visible_while_loading() = runTest {
+        val refresh = CompletableDeferred<NqrbContactBookResult>()
+        var loads = 0
+        val gateway = object : NqrbContactBookGateway by CountingGateway() {
+            override suspend fun listContacts(session: MobileSession, page: Int): NqrbContactBookResult {
+                loads++
+                return if (loads == 1) page("saved") else refresh.await()
+            }
+        }
+        val controller = NqrbContactBookController(gateway)
+        val session = session("owner")
+        controller.load(session)
+
+        backgroundScope.launch { controller.load(session) }
+        runCurrent()
+
+        assertEquals(NqrbContactBookLoadState.Ready, controller.state.value.contactsState)
+        assertEquals(listOf("saved"), controller.state.value.contacts.map(NqrbContact::membershipId))
+        assertEquals(true, controller.state.value.contactsRefreshing)
+
+        refresh.complete(page("updated"))
+        runCurrent()
+
+        assertEquals(listOf("updated"), controller.state.value.contacts.map(NqrbContact::membershipId))
+        assertEquals(false, controller.state.value.contactsRefreshing)
+    }
+
+    @Test
     fun temporary_refresh_failure_keeps_saved_contacts_visible_and_can_retry() = runTest {
         var loads = 0
         val gateway = object : NqrbContactBookGateway by CountingGateway() {

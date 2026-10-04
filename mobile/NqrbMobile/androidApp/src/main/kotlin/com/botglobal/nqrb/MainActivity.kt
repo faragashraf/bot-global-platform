@@ -32,9 +32,9 @@ import com.botglobal.mobile.platform.identity.FederatedIdentityController
 import com.botglobal.mobile.platform.preferences.AndroidPreferenceStore
 import com.botglobal.mobile.platform.reviews.AndroidPlayReviewPromptLauncher
 import com.botglobal.mobile.platform.reviews.ReviewCoordinator
-import com.botglobal.mobile.platform.reviews.ReviewPolicy
 import com.botglobal.nqrb.app.state.NqrbContactBookController
 import com.botglobal.nqrb.app.state.NqrbAppState
+import com.botglobal.nqrb.app.state.NqrbPlayReviewPolicy
 import com.botglobal.nqrb.app.state.NqrbRingtone
 import com.botglobal.nqrb.app.state.NqrbRingtoneSettings
 import com.botglobal.nqrb.app.ui.NqrbApp
@@ -122,7 +122,7 @@ class MainActivity : ComponentActivity() {
             reviews = ReviewCoordinator(
                 preferenceStore = reviewStore,
                 storageKey = "play_review_policy",
-                policy = ReviewPolicy(),
+                policy = NqrbPlayReviewPolicy,
                 launcher = AndroidPlayReviewPromptLauncher { if (!isFinishing && !isDestroyed) this else null },
                 nowMillis = System::currentTimeMillis,
             ),

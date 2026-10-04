@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -399,6 +400,60 @@ private fun InfoNote(text: String) {
 }
 
 @Composable
+private fun NqrbListSkeleton(label: String, rows: Int = 3) {
+    val colors = LocalNqrbColors.current
+    Column(
+        Modifier.fillMaxWidth().semantics { contentDescription = label },
+        verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
+    ) {
+        repeat(rows) { index ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(colors.elevatedSurface)
+                    .padding(NqrbSpacing.Md),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
+            ) {
+                Box(Modifier.size(42.dp).clip(CircleShape).background(colors.accentSoft))
+                Column(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(if (index % 2 == 0) .56f else .68f)
+                            .height(12.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(colors.border),
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth(.38f)
+                            .height(9.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(colors.border.copy(alpha = .7f)),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackgroundRefreshIndicator(visible: Boolean) {
+    if (!visible) return
+    val colors = LocalNqrbColors.current
+    LinearProgressIndicator(
+        modifier = Modifier.fillMaxWidth().height(2.dp),
+        color = colors.accent,
+        trackColor = colors.accentSoft,
+    )
+}
+
+@Composable
 private fun PeopleScreen(
     strings: NqrbStrings,
     languageTag: String,
@@ -468,7 +523,7 @@ private fun PeopleScreen(
         when (contactBook.searchState) {
             NqrbContactSearchState.Idle -> Unit
             NqrbContactSearchState.TooShort -> if (query.isNotBlank()) InfoNote(strings.contactSearchTooShort)
-            NqrbContactSearchState.Loading -> InfoNote(strings.callingDirectoryLoading)
+            NqrbContactSearchState.Loading -> NqrbListSkeleton(strings.callingDirectoryLoading, rows = 2)
             NqrbContactSearchState.Empty -> InfoNote(strings.contactSearchEmpty)
             NqrbContactSearchState.Error -> InfoNote(strings.contactSearchError)
             NqrbContactSearchState.Ready -> contactBook.searchResults.forEach { contact ->
@@ -494,6 +549,7 @@ private fun PeopleScreen(
         }
         Text(strings.savedContactsTitle, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
         Text(strings.savedContactsBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+        BackgroundRefreshIndicator(contactBook.contactsRefreshing)
         InfoNote(strings.swipeToCallHint)
         if (contactBook.contactsRefreshFailed) {
             InfoNote(strings.savedContactsError)
@@ -502,7 +558,7 @@ private fun PeopleScreen(
         when (contactBook.contactsState) {
             NqrbContactBookLoadState.Idle,
             NqrbContactBookLoadState.Loading,
-            -> InfoNote(strings.savedContactsLoading)
+            -> NqrbListSkeleton(strings.savedContactsLoading)
             NqrbContactBookLoadState.Empty -> InfoNote(strings.savedContactsEmpty)
             NqrbContactBookLoadState.Error -> {
                 InfoNote(strings.savedContactsError)
@@ -1450,9 +1506,19 @@ internal fun privateCallingDirectory(directory: CallingDirectorySnapshot, contac
             status = if (directory.status == CallingDirectoryStatus.Ready && directory.participants.none { it.membershipId in savedIds && it.membershipId !in blockedIds }) CallingDirectoryStatus.Empty else directory.status,
             participants = directory.participants.filter { it.membershipId in savedIds && it.membershipId !in blockedIds },
         )
-        NqrbContactBookLoadState.Empty -> CallingDirectorySnapshot(CallingDirectoryStatus.Empty)
-        NqrbContactBookLoadState.Error -> CallingDirectorySnapshot(CallingDirectoryStatus.Error)
-        else -> CallingDirectorySnapshot(CallingDirectoryStatus.Loading)
+        NqrbContactBookLoadState.Empty -> CallingDirectorySnapshot(
+            status = CallingDirectoryStatus.Empty,
+            isRefreshing = directory.isRefreshing || contactBook.contactsRefreshing,
+            refreshFailed = directory.refreshFailed,
+        )
+        NqrbContactBookLoadState.Error -> CallingDirectorySnapshot(
+            status = CallingDirectoryStatus.Error,
+            refreshFailed = directory.refreshFailed,
+        )
+        else -> CallingDirectorySnapshot(
+            status = CallingDirectoryStatus.Loading,
+            isRefreshing = directory.isRefreshing || contactBook.contactsRefreshing,
+        )
     }
 }
 
@@ -1571,10 +1637,12 @@ private fun CallingDirectorySection(
         style = MaterialTheme.typography.titleLarge,
         color = colors.textPrimary,
     )
+    BackgroundRefreshIndicator(directory.isRefreshing || contactBook.contactsRefreshing)
+    if (directory.refreshFailed) InfoNote(strings.callingDirectoryError)
     when (directory.status) {
         CallingDirectoryStatus.Idle,
         CallingDirectoryStatus.Loading,
-        -> InfoNote(strings.callingDirectoryLoading)
+        -> NqrbListSkeleton(strings.callingDirectoryLoading)
 
         CallingDirectoryStatus.Empty -> {
             InfoNote(strings.callingDirectoryEmpty)
@@ -2008,8 +2076,10 @@ private fun SettingsScreen(
             }
         }
         SettingsGroup(strings.dataUsage, NqrbGlyph.History, strings.dataUsage) {
+            BackgroundRefreshIndicator(activity.usageRefreshing)
+            if (activity.usageRefreshFailed) InfoNote(strings.historyError)
             when (activity.usageState) {
-                CallActivityLoadState.Loading, CallActivityLoadState.Idle -> InfoNote(strings.historyLoading)
+                CallActivityLoadState.Loading, CallActivityLoadState.Idle -> NqrbListSkeleton(strings.historyLoading, rows = 1)
                 CallActivityLoadState.Error -> InfoNote(strings.historyError)
                 else -> activity.usage?.let { usage ->
                     Text("${strings.from}: ${callTime(usage.startedAtUtc, languageTag).fullLabel}", color = colors.textSecondary)
@@ -2080,10 +2150,12 @@ private fun CallHistoryScreen(
         Text(strings.historyTitle, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
         Text(strings.historyBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
         HistoryFilterRow(strings, activity.historyFilter, appState::selectCallHistoryFilter)
+        BackgroundRefreshIndicator(activity.historyRefreshing)
+        if (activity.historyRefreshFailed) InfoNote(strings.historyError)
         if (activity.history.any { callableHistoryParticipant(it) != null }) InfoNote(strings.swipeToCallHint)
         if (contactBook.mutationState == NqrbContactMutationState.Error) InfoNote(strings.contactAddUnavailable)
         when (activity.historyState) {
-            CallActivityLoadState.Idle, CallActivityLoadState.Loading -> InfoNote(strings.historyLoading)
+            CallActivityLoadState.Idle, CallActivityLoadState.Loading -> NqrbListSkeleton(strings.historyLoading)
             CallActivityLoadState.Empty -> InfoNote(strings.historyEmpty)
             CallActivityLoadState.Error -> { InfoNote(strings.historyError); DirectoryRefreshAction(strings.retry, appState::refreshCallHistory) }
             CallActivityLoadState.Ready -> {

@@ -159,7 +159,7 @@ class NqrbAppState(
                     if (!submittedUsageCalls.add(callId)) return@collect
                     callActivity.submit(FinalCallUsage(callId, usage.bytesSent, usage.bytesReceived,
                         usage.connectedDurationSeconds ?: 0), membershipId)
-                    if ((usage.connectedDurationSeconds ?: 0) >= 30) {
+                    if ((usage.connectedDurationSeconds ?: 0) >= NqrbMeaningfulCallDurationSeconds) {
                         pendingReviewTrigger = ReviewTrigger.CompletedExperience
                         reviews?.recordMeaningfulEvent("nqrb:call:$callId")
                         requestPendingReviewIfReady()

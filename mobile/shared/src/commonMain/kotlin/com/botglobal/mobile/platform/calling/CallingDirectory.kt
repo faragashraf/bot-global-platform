@@ -30,6 +30,8 @@ enum class CallingDirectoryStatus { Idle, Loading, Ready, Empty, Error }
 data class CallingDirectorySnapshot(
     val status: CallingDirectoryStatus = CallingDirectoryStatus.Idle,
     val participants: List<CallableParticipant> = emptyList(),
+    val isRefreshing: Boolean = false,
+    val refreshFailed: Boolean = false,
 )
 
 class CallingDirectoryController(
@@ -44,7 +46,19 @@ class CallingDirectoryController(
         val requestGeneration = generation.value
         return refreshMutex.withLock {
             if (requestGeneration != generation.value) return@withLock mutableState.value
-            mutableState.value = CallingDirectorySnapshot(CallingDirectoryStatus.Loading)
+            val previous = mutableState.value
+            val canRefreshInBackground = previous.status in setOf(
+                CallingDirectoryStatus.Ready,
+                CallingDirectoryStatus.Empty,
+            )
+            mutableState.value = if (canRefreshInBackground) {
+                previous.copy(isRefreshing = true, refreshFailed = false)
+            } else {
+                CallingDirectorySnapshot(
+                    status = CallingDirectoryStatus.Loading,
+                    isRefreshing = true,
+                )
+            }
             try {
                 val participants = directory.loadCallableParticipants()
                     .asSequence()
@@ -70,7 +84,11 @@ class CallingDirectoryController(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                CallingDirectorySnapshot(CallingDirectoryStatus.Error)
+                if (canRefreshInBackground) {
+                    previous.copy(isRefreshing = false, refreshFailed = true)
+                } else {
+                    CallingDirectorySnapshot(CallingDirectoryStatus.Error)
+                }
                     .also { if (requestGeneration == generation.value) mutableState.value = it }
             }
         }
