@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -36,6 +37,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.window.DialogProperties
 import com.botglobal.lamma.app.state.AccountDeletionConfirmation
@@ -67,7 +69,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -78,8 +82,12 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.delay
+import kotlin.time.Clock
+import kotlin.time.Instant
 import com.botglobal.lamma.app.data.FamilyGamesApi
 import com.botglobal.lamma.app.data.FamilyGamesEnvironment
+import com.botglobal.lamma.app.data.AutobusSnapshot
 import com.botglobal.lamma.app.data.GameSessionSnapshot
 import com.botglobal.lamma.app.data.PlayerSnapshot
 import com.botglobal.lamma.app.data.createPlatformHttpClient
@@ -90,11 +98,15 @@ import com.botglobal.lamma.app.state.ApplicationLanguagePreferences
 import com.botglobal.lamma.app.state.FamilyGamesCoordinator
 import com.botglobal.lamma.app.state.FamilyGamesUiState
 import com.botglobal.lamma.app.state.OpponentConnectionState
+import com.botglobal.lamma.app.state.RecentGameSessionPreferences
 import com.botglobal.lamma.app.state.UnavailableApplicationLanguagePreferences
+import com.botglobal.lamma.app.state.UnavailableRecentGameSessionPreferences
 import com.botglobal.mobile.platform.device.PermissionController
 import com.botglobal.mobile.platform.device.SemanticHaptics
 import com.botglobal.mobile.platform.device.UnavailablePermissionController
 import com.botglobal.mobile.platform.identity.SessionVault
+import com.botglobal.mobile.platform.identity.FederatedCredentialProvider
+import com.botglobal.mobile.platform.identity.UnavailableFederatedCredentialProvider
 import com.botglobal.mobile.platform.invitations.GameInvitation
 import com.botglobal.mobile.platform.invitations.InvitationLinkCodec
 import com.botglobal.mobile.platform.invitations.PlatformShareCapability
@@ -104,6 +116,7 @@ import com.botglobal.mobile.platform.invitations.UnavailableQrScanner
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
 import com.botglobal.mobile.platform.realtime.NetworkAvailability
 import com.botglobal.mobile.platform.realtime.UnavailableNetworkAvailability
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
 import com.botglobal.mobile.platform.voice.VoiceMediaPeerFactory
 import com.botglobal.mobile.platform.voice.VoiceRoomState
 import com.botglobal.mobile.platform.voice.VoiceConsentState
@@ -127,6 +140,9 @@ fun FamilyGamesApp(
     permissions: PermissionController = UnavailablePermissionController,
     networkAvailability: NetworkAvailability = UnavailableNetworkAvailability,
     languagePreferences: ApplicationLanguagePreferences = UnavailableApplicationLanguagePreferences,
+    recentGameSessionPreferences: RecentGameSessionPreferences = UnavailableRecentGameSessionPreferences,
+    federatedCredentials: FederatedCredentialProvider = UnavailableFederatedCredentialProvider,
+    reviews: ReviewCoordinator? = null,
     voiceMediaFactory: VoiceMediaPeerFactory? = null,
     diagnosticsEnabled: Boolean = false,
     invitationQr: @Composable (String, String, Modifier) -> Unit = { _, description, modifier ->
@@ -152,6 +168,9 @@ fun FamilyGamesApp(
         permissions,
         networkAvailability,
         languagePreferences,
+        recentGameSessionPreferences,
+        federatedCredentials,
+        reviews,
         voiceMediaFactory,
         diagnosticsEnabled,
     ) {
@@ -169,6 +188,9 @@ fun FamilyGamesApp(
             permissions,
             networkAvailability,
             languagePreferences,
+            recentGameSessionPreferences,
+            federatedCredentials,
+            reviews,
             voiceMediaFactory,
         )
     }
@@ -207,8 +229,10 @@ fun FamilyGamesApp(
                         AppScreen.Welcome -> WelcomeScreen(text, state, coordinator)
                         AppScreen.SignIn -> SignInScreen(text, coordinator)
                         AppScreen.Register -> RegisterScreen(text, coordinator)
+                        AppScreen.ProfileCompletion -> ProfileCompletionScreen(text, state, coordinator)
                         AppScreen.Home -> HomeScreen(text, state, coordinator, openExternalUrl)
                         AppScreen.Ruleset -> RulesetScreen(text, coordinator)
+                        AppScreen.AutobusSetup -> AutobusSetupScreen(text, state, coordinator)
                         AppScreen.CreateOrJoin -> CreateJoinScreen(text, coordinator)
                         AppScreen.Lobby -> LobbyScreen(text, state, coordinator)
                         AppScreen.Gameplay -> GameplayScreen(text, state, coordinator)
@@ -231,7 +255,7 @@ fun FamilyGamesApp(
                             text = text,
                             invitation = invitation,
                             invitationQr = invitationQr,
-                            onShare = { coordinator.shareInvitation(text.xoTitle) },
+                            onShare = { coordinator.shareInvitation(if (state.game?.gameType == "autobus") text.autobusTitle else text.xoTitle) },
                             onDismiss = coordinator::dismissInvitation,
                         )
                     }
@@ -295,6 +319,8 @@ private fun WelcomeScreen(
         Text(text.appName, fontSize = 36.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
         Text(text.tagline, color = FamilyGamesColors.Muted, fontSize = 18.sp, textAlign = TextAlign.Center)
         Spacer(Modifier.height(FamilyGamesSpacing.Xl))
+        PrimaryButton(text.continueWithGoogle, !state.busy, coordinator::signInWithGoogle)
+        Spacer(Modifier.height(FamilyGamesSpacing.Md))
         OutlinedTextField(
             value = displayName,
             onValueChange = { displayName = it.take(40) },
@@ -303,9 +329,13 @@ private fun WelcomeScreen(
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         )
-        Spacer(Modifier.height(FamilyGamesSpacing.Md))
-        PrimaryButton(text.continueGuest, displayName.isNotBlank() && !state.busy) {
-            coordinator.continueAsGuest(displayName)
+        Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+        OutlinedButton(
+            onClick = { coordinator.continueAsGuest(displayName) },
+            enabled = displayName.isNotBlank() && !state.busy,
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+        ) {
+            Text(text.continueGuest, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(FamilyGamesSpacing.Sm))
         OutlinedButton(onClick = coordinator::showSignIn, modifier = Modifier.fillMaxWidth().height(54.dp)) {
@@ -315,6 +345,36 @@ private fun WelcomeScreen(
             Text(text.createAccount, color = FamilyGamesColors.Gold)
         }
         Spacer(Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun ProfileCompletionScreen(
+    text: FamilyGamesStrings,
+    state: FamilyGamesUiState,
+    coordinator: FamilyGamesCoordinator,
+) {
+    FormPage(
+        text.profileCompletionTitle,
+        if (state.profileCompletionRequired) text.logout else text.back,
+        if (state.profileCompletionRequired) coordinator::logout else coordinator::backHome,
+    ) {
+        Text(text.profileCompletionBody, color = FamilyGamesColors.Muted)
+        Spacer(Modifier.height(FamilyGamesSpacing.Lg))
+        OutlinedTextField(
+            value = state.profileDraft,
+            onValueChange = coordinator::updateProfileDraft,
+            label = { Text(text.displayName) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        )
+        Spacer(Modifier.height(FamilyGamesSpacing.Lg))
+        PrimaryButton(
+            text.saveProfile,
+            state.profileDraft.isNotBlank() && !state.busy,
+            coordinator::completeProfile,
+        )
     }
 }
 
@@ -415,8 +475,40 @@ private fun HomeScreen(
                 }
             }
         }
+        Spacer(Modifier.height(FamilyGamesSpacing.Md))
+        Card(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = coordinator::showAutobusSetup),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = FamilyGamesColors.NightSoft),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(FamilyGamesSpacing.Lg),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier.size(74.dp).clip(RoundedCornerShape(18.dp))
+                        .background(FamilyGamesColors.Gold.copy(alpha = .18f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("أ", fontSize = 38.sp, fontWeight = FontWeight.Black, color = FamilyGamesColors.Gold)
+                }
+                Spacer(Modifier.width(FamilyGamesSpacing.Md))
+                Column(Modifier.weight(1f)) {
+                    Text(text.autobusTitle, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                    Text(text.autobusSubtitle, color = FamilyGamesColors.Muted)
+                }
+                Button(
+                    onClick = coordinator::showAutobusSetup,
+                    colors = ButtonDefaults.buttonColors(containerColor = FamilyGamesColors.Gold, contentColor = FamilyGamesColors.Night),
+                ) { Text(text.play, fontWeight = FontWeight.Bold) }
+            }
+        }
         Spacer(Modifier.weight(1f))
         if (state.mobileSession?.identity?.kind == com.botglobal.mobile.platform.identity.IdentityKind.Registered) {
+            TextButton(onClick = coordinator::editProfile, enabled = !state.busy,
+                modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text(text.editProfile, color = FamilyGamesColors.Gold)
+            }
             TextButton(onClick = coordinator::beginAccountDeletion, enabled = !state.busy,
                 modifier = Modifier.align(Alignment.CenterHorizontally)) {
                 Text(text.deleteAccount, color = MaterialTheme.colorScheme.error)
@@ -425,6 +517,116 @@ private fun HomeScreen(
         TextButton(onClick = coordinator::logout, enabled = !state.busy,
             modifier = Modifier.align(Alignment.CenterHorizontally)) {
             Text(text.logout, color = FamilyGamesColors.Muted)
+        }
+    }
+}
+
+@Composable
+private fun AutobusSetupScreen(
+    text: FamilyGamesStrings,
+    state: FamilyGamesUiState,
+    coordinator: FamilyGamesCoordinator,
+) {
+    var rounds by remember { mutableStateOf(5) }
+    var seconds by remember { mutableStateOf(60) }
+    var difficulty by remember { mutableStateOf("medium") }
+    var selectedCategories by remember {
+        mutableStateOf(AutobusSetupCategories.filter { it.selectedByDefault }.map { it.key }.toSet())
+    }
+    FormPage(text.autobusSetupTitle, text.back, coordinator::backHome) {
+        OptionRow(text.autobusRounds, listOf(5 to "5", 10 to "10"), rounds) { rounds = it }
+        Spacer(Modifier.height(FamilyGamesSpacing.Md))
+        OptionRow(text.autobusTimer, listOf(60 to "60s", 90 to "90s"), seconds) { seconds = it }
+        Spacer(Modifier.height(FamilyGamesSpacing.Md))
+        Text(text.autobusDifficulty, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+        Row(horizontalArrangement = Arrangement.spacedBy(FamilyGamesSpacing.Sm)) {
+            listOf(
+                "easy" to text.autobusDifficultyEasy,
+                "medium" to text.autobusDifficultyMedium,
+                "hard" to text.autobusDifficultyHard,
+            ).forEach { (value, label) ->
+                OutlinedButton(
+                    onClick = { difficulty = value },
+                    modifier = Modifier.weight(1f).height(48.dp).semantics { selected = difficulty == value },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (difficulty == value) FamilyGamesColors.Gold.copy(alpha = .22f) else Color.Transparent,
+                    ),
+                ) { Text(label) }
+            }
+        }
+        Spacer(Modifier.height(FamilyGamesSpacing.Lg))
+        Text(text.autobusCategories, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+        AutobusSetupCategories.chunked(2).forEach { categories ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(FamilyGamesSpacing.Sm),
+            ) {
+                categories.forEach { category ->
+                    val selected = category.key in selectedCategories
+                    AutobusCategoryChoice(
+                        label = category.label(state.language),
+                        selected = selected,
+                        modifier = Modifier.weight(1f),
+                    ) { checked ->
+                        selectedCategories = if (checked) {
+                            selectedCategories + category.key
+                        } else {
+                            selectedCategories - category.key
+                        }
+                    }
+                }
+                if (categories.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        PrimaryButton(text.autobusStartRoom, selectedCategories.isNotEmpty()) {
+            coordinator.createAutobusGame(rounds, seconds, difficulty, selectedCategories.toList())
+        }
+    }
+}
+
+@Composable
+private fun AutobusCategoryChoice(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onSelectedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = modifier
+            .sizeIn(minHeight = 48.dp)
+            .toggleable(
+                value = selected,
+                role = Role.Checkbox,
+                onValueChange = onSelectedChange,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = selected, onCheckedChange = null)
+        Text(label, modifier = Modifier.weight(1f), fontSize = 14.sp)
+    }
+}
+
+@Composable
+private fun OptionRow(
+    title: String,
+    options: List<Pair<Int, String>>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Text(title, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+    Row(horizontalArrangement = Arrangement.spacedBy(FamilyGamesSpacing.Sm)) {
+        options.forEach { (value, label) ->
+            OutlinedButton(
+                onClick = { onSelect(value) },
+                modifier = Modifier.weight(1f).height(48.dp).semantics { this.selected = selected == value },
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = if (selected == value) FamilyGamesColors.Gold.copy(alpha = .22f) else Color.Transparent,
+                ),
+            ) { Text(label, fontWeight = FontWeight.Bold) }
         }
     }
 }
@@ -656,9 +858,17 @@ private fun LobbyScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, coo
         }
         Spacer(Modifier.height(FamilyGamesSpacing.Lg))
         game.players.forEach { player -> PlayerCard(player, player.membershipId == membershipId, text) }
-        if (game.players.size < 2) {
+        val canInvite = if (game.gameType == "autobus") {
+            game.players.size < game.ruleset.playerCount
+        } else {
+            game.players.size < 2
+        }
+        if (canInvite) {
             Spacer(Modifier.height(FamilyGamesSpacing.Lg))
-            Text(text.waitingOpponent, color = FamilyGamesColors.Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
+            if (game.players.size < 2) {
+                Text(text.waitingOpponent, color = FamilyGamesColors.Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Spacer(Modifier.height(FamilyGamesSpacing.Md))
+            }
             Spacer(Modifier.height(FamilyGamesSpacing.Md))
             OutlinedButton(
                 onClick = coordinator::showInvitation,
@@ -768,6 +978,10 @@ private fun VoiceRequestDialog(text: FamilyGamesStrings, onAccept: () -> Unit, o
 @Composable
 private fun GameplayScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, coordinator: FamilyGamesCoordinator) {
     val game = state.game ?: return
+    if (game.gameType == "autobus") {
+        AutobusGameplayScreen(text, state, coordinator)
+        return
+    }
     val membershipId = state.mobileSession?.identity?.membershipId
     val local = game.players.firstOrNull { it.membershipId == membershipId }
     val opponent = game.players.firstOrNull { it.membershipId != membershipId }
@@ -818,6 +1032,356 @@ private fun GameplayScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, 
         }
     }
 }
+
+@Composable
+private fun AutobusGameplayScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, coordinator: FamilyGamesCoordinator) {
+    val game = state.game ?: return
+    val autobus = game.autobus ?: return
+    val membershipId = state.mobileSession?.identity?.membershipId.orEmpty()
+    Page {
+        PageHeader(text.autobusTitle, text.exit, coordinator::exitGame)
+        Spacer(Modifier.height(FamilyGamesSpacing.Md))
+        ConnectionPill(state.connection, state.recoveredFromInterruption, text, coordinator::retryRealtime)
+        OpponentPresenceBanner(state.opponentConnection, text)
+        Spacer(Modifier.height(FamilyGamesSpacing.Md))
+        if (autobus.phase in setOf("active", "grace")) {
+            AutobusRoundStatus(
+                text = text,
+                autobus = autobus,
+                onElapsed = coordinator::finishAutobusRound,
+            )
+            Spacer(Modifier.height(FamilyGamesSpacing.Md))
+        }
+        AutobusScores(text, game)
+        Spacer(Modifier.height(FamilyGamesSpacing.Lg))
+        when (autobus.phase) {
+            "active", "grace" -> {
+                autobus.categories.forEach { category ->
+                    OutlinedTextField(
+                        value = state.autobusDrafts[category.key].orEmpty(),
+                        onValueChange = { coordinator.updateAutobusAnswer(category.key, it) },
+                        label = { Text(categoryLabel(category, state.language)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    )
+                    Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+                }
+                Spacer(Modifier.height(FamilyGamesSpacing.Md))
+                PrimaryButton(
+                    text.autobusSubmit,
+                    state.connection == RealtimeConnectionState.Connected && !state.busy,
+                    coordinator::submitAutobusAnswers,
+                )
+                Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+                if (autobus.phase == "active") {
+                    OutlinedButton(
+                        onClick = coordinator::finishAutobusRound,
+                        enabled = state.connection == RealtimeConnectionState.Connected && !state.busy,
+                        modifier = Modifier.fillMaxWidth().height(54.dp),
+                    ) { Text(text.autobusFinish, fontWeight = FontWeight.Bold) }
+                }
+            }
+            "reveal" -> AutobusRevealPanel(text, state, membershipId, coordinator)
+            else -> {
+                Text(text.loading, color = FamilyGamesColors.Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Spacer(Modifier.height(FamilyGamesSpacing.Md))
+                PrimaryButton(text.autobusReveal, state.connection == RealtimeConnectionState.Connected, coordinator::revealAutobus)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AutobusRevealPanel(
+    text: FamilyGamesStrings,
+    state: FamilyGamesUiState,
+    membershipId: String,
+    coordinator: FamilyGamesCoordinator,
+) {
+    val game = state.game ?: return
+    val autobus = game.autobus ?: return
+    val categoryKey = autobus.revealCategoryKey ?: autobus.categories.firstOrNull()?.key ?: return
+    val category = autobus.categories.firstOrNull { it.key == categoryKey }
+    val pendingAnswers = autobus.answers.filter { it.categoryKey == categoryKey && it.needsVote }
+    Text(category?.let { categoryLabel(it, state.language) }.orEmpty(), fontSize = 24.sp, fontWeight = FontWeight.Black)
+    Spacer(Modifier.height(FamilyGamesSpacing.Md))
+    if (pendingAnswers.isNotEmpty()) {
+        AutobusCountdown(
+            label = text.autobusVoteRemaining,
+            deadlineUtc = autobus.voteDeadlineAtUtc,
+            onElapsed = coordinator::revealAutobus,
+        )
+        Spacer(Modifier.height(FamilyGamesSpacing.Md))
+    }
+    autobus.answers.filter { it.categoryKey == categoryKey }.forEach { answer ->
+        val player = game.players.firstOrNull { it.membershipId == answer.playerMembershipId }
+        Surface(
+            color = FamilyGamesColors.NightSoft,
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = FamilyGamesSpacing.Sm),
+        ) {
+            Column(Modifier.padding(FamilyGamesSpacing.Md)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(player?.displayName.orEmpty(), modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                    Text("${answer.score}", color = FamilyGamesColors.Gold, fontWeight = FontWeight.Black)
+                }
+                Text(answer.displayAnswer.ifBlank { "—" }, fontSize = 20.sp, color = FamilyGamesColors.Cream)
+                val message = when {
+                    answer.needsVote -> text.autobusNeedsVote
+                    answer.outcome == "rejected" -> text.autobusRejected
+                    answer.duplicate -> "5"
+                    else -> "10"
+                }
+                Text(message, color = if (answer.outcome == "rejected") FamilyGamesColors.Coral else FamilyGamesColors.Muted)
+                if (answer.needsVote && answer.playerMembershipId != membershipId) {
+                    val hasVoted = autobus.votes.any {
+                        it.answerOwnerMembershipId == answer.playerMembershipId &&
+                            it.categoryKey == answer.categoryKey &&
+                            it.voterMembershipId == membershipId
+                    }
+                    Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+                    if (hasVoted) {
+                        Text(text.autobusVoteRecorded, color = FamilyGamesColors.Mint, fontWeight = FontWeight.Bold)
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(FamilyGamesSpacing.Sm)) {
+                            OutlinedButton(
+                                onClick = { coordinator.voteAutobus(answer.playerMembershipId, answer.categoryKey, false) },
+                                modifier = Modifier.weight(1f).height(48.dp),
+                            ) { Text(text.autobusVoteReject) }
+                            Button(
+                                onClick = { coordinator.voteAutobus(answer.playerMembershipId, answer.categoryKey, true) },
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = FamilyGamesColors.Mint, contentColor = FamilyGamesColors.Night),
+                            ) { Text(text.autobusVoteAccept, fontWeight = FontWeight.Bold) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    autobus.tieMessageCode?.let { messageCode ->
+        Text(
+            if (messageCode == "autobus_vote_timeout_rejected") text.autobusVoteTimeoutRejected else text.autobusTieRejected,
+            color = FamilyGamesColors.Gold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    Spacer(Modifier.height(FamilyGamesSpacing.Md))
+    PrimaryButton(
+        text.autobusNext,
+        pendingAnswers.isEmpty() && state.connection == RealtimeConnectionState.Connected && !state.busy,
+        coordinator::revealAutobus,
+    )
+}
+
+@Composable
+private fun AutobusResultScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, coordinator: FamilyGamesCoordinator) {
+    val game = state.game ?: return
+    val membershipId = state.mobileSession?.identity?.membershipId
+    val requester = game.rematchRequestedByMembershipId
+    val localAccepted = game.players.firstOrNull { it.membershipId == membershipId }?.isReady == true
+    val buttonText = when {
+        requester == null -> text.rematch
+        requester == membershipId || localAccepted -> text.rematchWaiting
+        else -> text.acceptRematch
+    }
+    Page {
+        PageHeader(text.autobusFinalRanking, text.exit, coordinator::exitGame)
+        Spacer(Modifier.height(FamilyGamesSpacing.Md))
+        ConnectionPill(state.connection, state.recoveredFromInterruption, text, coordinator::retryRealtime)
+        Spacer(Modifier.height(FamilyGamesSpacing.Lg))
+        AutobusScores(text, game, large = true)
+        Spacer(Modifier.weight(1f))
+        PrimaryButton(
+            buttonText,
+            (requester == null || !localAccepted) && state.connection == RealtimeConnectionState.Connected,
+        ) {
+            if (requester == null) coordinator.requestRematch() else coordinator.acceptRematch()
+        }
+        Spacer(Modifier.height(FamilyGamesSpacing.Sm))
+        OutlinedButton(onClick = coordinator::exitGame, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text(text.exit) }
+    }
+}
+
+@Composable
+private fun AutobusScores(text: FamilyGamesStrings, game: GameSessionSnapshot, large: Boolean = false) {
+    val scores = game.autobus?.scores.orEmpty()
+    Surface(color = FamilyGamesColors.NightSoft.copy(alpha = .82f), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(FamilyGamesSpacing.Md)) {
+            Text(text.autobusScores, color = FamilyGamesColors.Muted, fontWeight = FontWeight.Bold)
+            val ranking = scores.sortedByDescending { it.score }
+            if (large) {
+                var displayedRank = 0
+                var previousScore: Int? = null
+                ranking.forEachIndexed { index, score ->
+                    if (previousScore != score.score) displayedRank = index + 1
+                    previousScore = score.score
+                    val player = game.players.firstOrNull { it.membershipId == score.playerMembershipId }
+                    Row(Modifier.fillMaxWidth().padding(top = FamilyGamesSpacing.Sm), verticalAlignment = Alignment.CenterVertically) {
+                        Text("$displayedRank", color = FamilyGamesColors.Gold, fontWeight = FontWeight.Black, modifier = Modifier.width(28.dp))
+                        Text(player?.displayName.orEmpty(), modifier = Modifier.weight(1f), fontSize = 20.sp)
+                        Text("${score.score}", color = FamilyGamesColors.Gold, fontWeight = FontWeight.Black)
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = FamilyGamesSpacing.Sm),
+                    horizontalArrangement = Arrangement.spacedBy(FamilyGamesSpacing.Md),
+                ) {
+                    ranking.forEachIndexed { index, score ->
+                        val player = game.players.firstOrNull { it.membershipId == score.playerMembershipId }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "${index + 1}  ${player?.displayName.orEmpty()}",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text("${score.score}", color = FamilyGamesColors.Gold, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AutobusRoundStatus(
+    text: FamilyGamesStrings,
+    autobus: AutobusSnapshot,
+    onElapsed: () -> Unit,
+) {
+    val grace = autobus.phase == "grace"
+    val remainingSeconds = rememberRemainingSeconds(
+        if (grace) autobus.graceEndsAtUtc else autobus.roundDeadlineAtUtc,
+        onElapsed,
+    )
+    Surface(
+        color = if (remainingSeconds <= 5) {
+            FamilyGamesColors.Coral.copy(alpha = .18f)
+        } else {
+            FamilyGamesColors.NightSoft
+        },
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = FamilyGamesSpacing.Md, vertical = FamilyGamesSpacing.Sm),
+            horizontalArrangement = Arrangement.spacedBy(FamilyGamesSpacing.Sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AutobusStatusValue(text.autobusRound, "${autobus.currentRound} / ${autobus.roundCount}", Modifier.weight(1f))
+            AutobusStatusValue(text.autobusLetter, autobus.currentLetter.orEmpty(), Modifier.weight(1f), accent = true)
+            AutobusStatusValue(
+                if (grace) text.autobusGrace else text.autobusTimeRemaining,
+                "$remainingSeconds",
+                Modifier.weight(1f),
+                urgent = remainingSeconds <= 5,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AutobusStatusValue(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    accent: Boolean = false,
+    urgent: Boolean = false,
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, color = FamilyGamesColors.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Text(
+                value,
+                color = when {
+                    urgent -> FamilyGamesColors.Coral
+                    accent -> FamilyGamesColors.Gold
+                    else -> FamilyGamesColors.Cream
+                },
+                fontSize = if (accent) 30.sp else 22.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AutobusCountdown(
+    label: String,
+    deadlineUtc: String?,
+    onElapsed: () -> Unit,
+) {
+    val remainingSeconds = rememberRemainingSeconds(deadlineUtc, onElapsed)
+    Surface(
+        color = if (remainingSeconds <= 5) FamilyGamesColors.Coral.copy(alpha = .18f) else FamilyGamesColors.Gold.copy(alpha = .14f),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = FamilyGamesSpacing.Md, vertical = FamilyGamesSpacing.Sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, modifier = Modifier.weight(1f), color = FamilyGamesColors.Muted, fontWeight = FontWeight.Bold)
+            Text(
+                "$remainingSeconds",
+                color = if (remainingSeconds <= 5) FamilyGamesColors.Coral else FamilyGamesColors.Gold,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Black,
+            )
+        }
+    }
+}
+
+@Composable
+private fun rememberRemainingSeconds(deadlineUtc: String?, onElapsed: () -> Unit): Int {
+    val deadline = remember(deadlineUtc) { deadlineUtc?.let { runCatching { Instant.parse(it) }.getOrNull() } }
+    var now by remember(deadlineUtc) { mutableStateOf(Clock.System.now()) }
+    LaunchedEffect(deadline) {
+        if (deadline == null) return@LaunchedEffect
+        while (true) {
+            now = Clock.System.now()
+            if (now >= deadline) {
+                onElapsed()
+                break
+            }
+            delay(250)
+        }
+    }
+    return deadline?.let {
+        (((it - now).inWholeMilliseconds.coerceAtLeast(0) + 999) / 1_000).toInt()
+    } ?: 0
+}
+
+private data class AutobusSetupCategory(
+    val key: String,
+    val arabic: String,
+    val english: String,
+    val selectedByDefault: Boolean,
+) {
+    fun label(language: AppLanguage): String = if (language == AppLanguage.Arabic) arabic else english
+}
+
+private val AutobusSetupCategories = listOf(
+    AutobusSetupCategory("boy_name", "اسم ولد", "Boy name", true),
+    AutobusSetupCategory("girl_name", "اسم بنت", "Girl name", true),
+    AutobusSetupCategory("animal", "حيوان", "Animal", true),
+    AutobusSetupCategory("plant", "نبات", "Plant", true),
+    AutobusSetupCategory("object", "جماد", "Object", true),
+    AutobusSetupCategory("country_city", "بلد / مدينة", "Country / city", true),
+    AutobusSetupCategory("food", "أكلة", "Food", false),
+    AutobusSetupCategory("profession", "مهنة", "Profession", false),
+    AutobusSetupCategory("cartoon_character", "شخصية كرتون", "Cartoon character", false),
+    AutobusSetupCategory("thing_at_home", "شيء في البيت", "Thing at home", false),
+    AutobusSetupCategory("place_to_visit", "مكان نزوره", "Place to visit", false),
+)
+
+private fun categoryLabel(category: com.botglobal.lamma.app.data.AutobusCategorySnapshot, language: AppLanguage): String =
+    if (language == AppLanguage.Arabic) category.arabicName else category.englishName
 
 @Composable
 private fun VoiceControl(text: FamilyGamesStrings, state: FamilyGamesUiState, coordinator: FamilyGamesCoordinator) {
@@ -876,6 +1440,10 @@ private fun VoiceControl(text: FamilyGamesStrings, state: FamilyGamesUiState, co
 @Composable
 private fun ResultScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, coordinator: FamilyGamesCoordinator) {
     val game = state.game ?: return
+    if (game.gameType == "autobus") {
+        AutobusResultScreen(text, state, coordinator)
+        return
+    }
     val membershipId = state.mobileSession?.identity?.membershipId
     val result = when {
         game.matchStatus == "draw" -> text.draw
@@ -883,9 +1451,10 @@ private fun ResultScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, co
         else -> text.opponentWon
     }
     val requester = game.rematchRequestedByMembershipId
+    val localAccepted = game.players.firstOrNull { it.membershipId == membershipId }?.isReady == true
     val buttonText = when {
         requester == null -> text.rematch
-        requester == membershipId -> text.rematchWaiting
+        requester == membershipId || localAccepted -> text.rematchWaiting
         else -> text.acceptRematch
     }
     Page {
@@ -904,7 +1473,7 @@ private fun ResultScreen(text: FamilyGamesStrings, state: FamilyGamesUiState, co
         Spacer(Modifier.weight(1f))
         PrimaryButton(
             buttonText,
-            requester != membershipId && state.connection == RealtimeConnectionState.Connected,
+            (requester == null || !localAccepted) && state.connection == RealtimeConnectionState.Connected,
         ) {
             if (requester == null) coordinator.requestRematch() else coordinator.acceptRematch()
         }

@@ -43,6 +43,12 @@ import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
 import com.botglobal.mobile.platform.notifications.PushRegistrationOutcome
+import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
+import com.botglobal.mobile.platform.reviews.ReviewLaunchOutcome
+import com.botglobal.mobile.platform.reviews.ReviewPolicy
+import com.botglobal.mobile.platform.reviews.ReviewPreLaunchDecision
+import com.botglobal.mobile.platform.reviews.ReviewPromptLauncher
 import com.botglobal.nqrb.app.data.NqrbAccountDeletionGateway
 import com.botglobal.nqrb.app.data.NqrbAccountDeletionOutcome
 import com.botglobal.nqrb.app.data.NqrbContact
@@ -544,6 +550,163 @@ class NqrbAppStateTests {
     }
 
     @Test
+    fun review_failure_does_not_stop_final_call_usage_submission() = runTest {
+        val signaling = RecordingCallSignaling()
+        val voice = RecordingVoiceRoom()
+        val gateway = RecordingCallActivityGateway()
+        val reviews = ReviewCoordinator(
+            InMemoryPreferenceStore(),
+            "reviews",
+            ReviewPolicy(firstUseAgeMillis = 0, minimumMeaningfulEvents = 1, minimumMeaningfulEventSpanMillis = 0),
+            FailingReviewLauncher,
+        ) { 0L }
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, FixedIdentityGateway(session(), FederatedSignInResult.Rejected)),
+            calling = CallSessionController(backgroundScope, signaling, voice, RecordingCallPlatform()),
+            callActivity = CallActivityController(gateway, RecordingPendingUsageStore()),
+            permissions = FixedPermission(PermissionState.Granted),
+            reviews = reviews,
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+        state.onForeground()
+        state.requestOutgoingCall(CallableParticipant("remote", "Remote"))
+        runCurrent()
+        voice.snapshot.value = VoiceRoomSnapshot(
+            state = VoiceRoomState.Connected,
+            stats = VoiceMediaStats(outboundBytes = 100, inboundBytes = 200, available = true),
+        )
+        runCurrent()
+        advanceTimeBy(31_000)
+        voice.snapshot.value = VoiceRoomSnapshot(
+            state = VoiceRoomState.Connected,
+            stats = VoiceMediaStats(outboundBytes = 700, inboundBytes = 900, available = true),
+        )
+        runCurrent()
+
+        state.endCall()
+        runCurrent()
+
+        assertEquals(1, gateway.finalized.size)
+        assertEquals("outgoing", gateway.finalized.single().callId)
+    }
+
+    @Test
+    fun foreground_review_deferred_by_local_workflow_retries_after_process_safe_blocker_releases() = runTest {
+        val launcher = CountingReviewLauncher()
+        val reviews = ReviewCoordinator(
+            InMemoryPreferenceStore(),
+            "reviews",
+            ReviewPolicy(firstUseAgeMillis = 0, minimumMeaningfulEvents = 1, minimumMeaningfulEventSpanMillis = 0),
+            launcher,
+        ) { 0L }
+        reviews.recordMeaningfulEvent("nqrb:call:restored")
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, FixedIdentityGateway(session(), FederatedSignInResult.Rejected)),
+            reviews = reviews,
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+        state.setReviewWorkflowActive("dialog:block-contact", true)
+
+        state.onForeground()
+        runCurrent()
+        assertEquals(0, launcher.launches)
+
+        state.setReviewWorkflowActive("dialog:block-contact", false)
+        runCurrent()
+        assertEquals(1, launcher.launches)
+    }
+
+    @Test
+    fun review_counts_only_connected_final_calls_at_least_thirty_seconds_once() = runTest {
+        var now = 0L
+        val launcher = CountingReviewLauncher()
+        val reviews = ReviewCoordinator(
+            InMemoryPreferenceStore(),
+            "reviews",
+            ReviewPolicy(firstUseAgeMillis = 0, minimumMeaningfulEvents = 1, minimumMeaningfulEventSpanMillis = 0),
+            launcher,
+        ) { now }
+        val signaling = RecordingCallSignaling()
+        val voice = RecordingVoiceRoom()
+        val gateway = RecordingCallActivityGateway()
+        val calling = CallSessionController(
+            backgroundScope,
+            signaling,
+            voice,
+            RecordingCallPlatform(),
+            nowEpochMillis = { now },
+        )
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, FixedIdentityGateway(session(), FederatedSignInResult.Rejected)),
+            calling = calling,
+            callActivity = CallActivityController(gateway, RecordingPendingUsageStore()),
+            permissions = FixedPermission(PermissionState.Granted),
+            reviews = reviews,
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+        state.onForeground()
+        runCurrent()
+
+        signaling.nextStartedCallId = CallId("rejected")
+        state.requestOutgoingCall(CallableParticipant("remote", "Remote"))
+        runCurrent()
+        signaling.emit(CallSignalingEvent.Rejected(CallId("rejected")))
+        runCurrent()
+
+        signaling.nextStartedCallId = CallId("unconnected")
+        state.requestOutgoingCall(CallableParticipant("remote", "Remote"))
+        runCurrent()
+        signaling.emit(CallSignalingEvent.Cancelled(CallId("unconnected")))
+        runCurrent()
+
+        val incomingId = CallId("missed")
+        signaling.emit(CallSignalingEvent.IncomingOffered(incomingId, "nqrb", CallParticipant("caller", "Caller")))
+        runCurrent()
+        calling.dismissIncoming(incomingId, CallTerminationReason.Missed)
+        runCurrent()
+
+        signaling.nextStartedCallId = CallId("short")
+        state.requestOutgoingCall(CallableParticipant("remote", "Remote"))
+        runCurrent()
+        voice.snapshot.value = VoiceRoomSnapshot(
+            state = VoiceRoomState.Connected,
+            stats = VoiceMediaStats(outboundBytes = 100, inboundBytes = 100, available = true),
+        )
+        runCurrent()
+        now = 29_000L
+        state.endCall()
+        runCurrent()
+        assertEquals(0, launcher.launches)
+
+        signaling.nextStartedCallId = CallId("long")
+        now = 100_000L
+        state.requestOutgoingCall(CallableParticipant("remote", "Remote"))
+        runCurrent()
+        voice.snapshot.value = VoiceRoomSnapshot(
+            state = VoiceRoomState.Connected,
+            stats = VoiceMediaStats(outboundBytes = 200, inboundBytes = 200, available = true),
+        )
+        runCurrent()
+        now = 131_000L
+        voice.snapshot.value = VoiceRoomSnapshot(
+            state = VoiceRoomState.Connected,
+            stats = VoiceMediaStats(outboundBytes = 900, inboundBytes = 1_100, available = true),
+        )
+        runCurrent()
+        state.endCall()
+        runCurrent()
+        state.endCall()
+        state.onForeground()
+        runCurrent()
+
+        assertEquals(1, gateway.finalized.count { it.callId == "long" })
+        assertEquals(1, launcher.launches)
+    }
+
+    @Test
     fun adding_contact_from_history_is_single_session_feedback_and_duplicate_suppressed() = runTest {
         val response = CompletableDeferred<NqrbContactMutationResult>()
         val contactGateway = RecordingContactBookGateway(response)
@@ -743,6 +906,26 @@ class NqrbAppStateTests {
         override suspend fun clearLocalState() = Unit
     }
 
+    private object FailingReviewLauncher : ReviewPromptLauncher {
+        override suspend fun requestReview(beforeNativeLaunch: suspend () -> ReviewPreLaunchDecision): ReviewLaunchOutcome {
+            assertEquals(ReviewPreLaunchDecision.Proceed, beforeNativeLaunch())
+            return ReviewLaunchOutcome.Failed
+        }
+    }
+
+    private class CountingReviewLauncher : ReviewPromptLauncher {
+        var launches = 0
+        override suspend fun requestReview(beforeNativeLaunch: suspend () -> ReviewPreLaunchDecision): ReviewLaunchOutcome =
+            when (beforeNativeLaunch()) {
+                ReviewPreLaunchDecision.Proceed -> {
+                    launches++
+                    ReviewLaunchOutcome.Launched
+                }
+                ReviewPreLaunchDecision.Deferred -> ReviewLaunchOutcome.Deferred
+                ReviewPreLaunchDecision.Failed -> ReviewLaunchOutcome.Failed
+            }
+    }
+
     private class RecordingLocalCleaner : NqrbLocalAccountDataCleaner {
         var clears = 0
         override suspend fun clear() { clears++ }
@@ -772,6 +955,7 @@ class NqrbAppStateTests {
     private class RecordingCallSignaling : CallSignaling {
         private val mutableEvents = MutableSharedFlow<CallSignalingEvent>(extraBufferCapacity = 4)
         override val events = mutableEvents
+        var nextStartedCallId = CallId("outgoing")
         var answers = 0
         var rejects = 0
         var ends = 0
@@ -784,7 +968,7 @@ class NqrbAppStateTests {
 
         override suspend fun startOutgoing(request: OutgoingCallRequest): StartedCall {
             startedRequests += request
-            return StartedCall(CallId("outgoing"), request.callee)
+            return StartedCall(nextStartedCallId, request.callee)
         }
 
         override suspend fun answer(callId: CallId) {

@@ -114,6 +114,12 @@ internal sealed class GamesAccountDeletionHandler(
                 var moves = await dbContext.XoMoves
                     .Where(move => affectedIds.Contains(move.SessionId))
                     .ToListAsync(cancellationToken);
+                var autobusStates = await dbContext.AutobusStates
+                    .Where(state => affectedIds.Contains(state.SessionId))
+                    .ToListAsync(cancellationToken);
+                var autobusCommands = await dbContext.AutobusCommands
+                    .Where(command => affectedIds.Contains(command.SessionId))
+                    .ToListAsync(cancellationToken);
 
                 // Removing invitations revokes their tokens and erases their creator identity.
                 var invitations = await dbContext.Invitations.Where(invitation =>
@@ -129,14 +135,20 @@ internal sealed class GamesAccountDeletionHandler(
                     session.AnonymizeMembership(membershipId, anonymousId);
                     var state = states.SingleOrDefault(state => state.SessionId == session.Id);
                     state?.AnonymizeMembership(membershipId, anonymousId);
+                    var autobusState = autobusStates.SingleOrDefault(state => state.SessionId == session.Id);
+                    autobusState?.AnonymizeMembership(membershipId, anonymousId);
                     foreach (var move in moves.Where(move => move.SessionId == session.Id &&
                         move.PlayerMembershipId == membershipId)) move.Anonymize(anonymousId);
+                    foreach (var command in autobusCommands.Where(command => command.SessionId == session.Id &&
+                        command.PlayerMembershipId == membershipId)) command.Anonymize(anonymousId);
                 }
 
                 // Loading/removing owned children explicitly gives non-relational tests
                 // the same result as SQL Server's database cascades.
                 dbContext.XoMoves.RemoveRange(moves.Where(move => ownedIds.Contains(move.SessionId)));
                 dbContext.XoStates.RemoveRange(states.Where(state => ownedIds.Contains(state.SessionId)));
+                dbContext.AutobusCommands.RemoveRange(autobusCommands.Where(command => ownedIds.Contains(command.SessionId)));
+                dbContext.AutobusStates.RemoveRange(autobusStates.Where(state => ownedIds.Contains(state.SessionId)));
                 dbContext.Sessions.RemoveRange(sessions.Where(session => session.CreatedByMembershipId == membershipId));
                 await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -176,6 +188,28 @@ internal sealed class GamesAccountDeletionHandler(
                         .AnyAsync(move => move.PlayerMembershipId == membershipId, cancellationToken) ||
                     await dbContext.XoMoves.AsNoTracking().AnyAsync(move =>
                         ownedIds.Contains(move.SessionId), cancellationToken) ||
+                    await dbContext.AutobusStates.AsNoTracking()
+                        .Join(
+                            dbContext.Sessions.Where(session =>
+                                session.ApplicationKey == BotGlobalApplications.FamilyGames),
+                            state => state.SessionId,
+                            session => session.Id,
+                            (state, _) => state)
+                        .AnyAsync(state => state.AnswersJson.Contains(membershipId.ToString()) ||
+                            state.ScoresJson.Contains(membershipId.ToString()) ||
+                            state.VotesJson.Contains(membershipId.ToString()), cancellationToken) ||
+                    await dbContext.AutobusStates.AsNoTracking().AnyAsync(state =>
+                        ownedIds.Contains(state.SessionId), cancellationToken) ||
+                    await dbContext.AutobusCommands.AsNoTracking()
+                        .Join(
+                            dbContext.Sessions.Where(session =>
+                                session.ApplicationKey == BotGlobalApplications.FamilyGames),
+                            command => command.SessionId,
+                            session => session.Id,
+                            (command, _) => command)
+                        .AnyAsync(command => command.PlayerMembershipId == membershipId, cancellationToken) ||
+                    await dbContext.AutobusCommands.AsNoTracking().AnyAsync(command =>
+                        ownedIds.Contains(command.SessionId), cancellationToken) ||
                     await dbContext.Invitations.AsNoTracking().AnyAsync(invitation =>
                         invitation.ApplicationKey == BotGlobalApplications.FamilyGames &&
                         invitation.CreatedByMembershipId == membershipId, cancellationToken);

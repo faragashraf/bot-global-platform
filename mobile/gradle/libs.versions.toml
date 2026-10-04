@@ -3,8 +3,8 @@ agp = "9.1.1"
 android-compileSdk = "37"
 android-minSdk = "23"
 android-targetSdk = "36"
-lamma-versionCode = "5"
-lamma-versionName = "0.1.1"
+lamma-versionCode = "6"
+lamma-versionName = "0.1.2"
 androidx-activity = "1.13.0"
 androidx-biometric = "1.1.0"
 androidx-lifecycle = "2.11.0-beta01"
@@ -16,6 +16,7 @@ compose-material-icons = "1.7.3"
 coroutines = "1.10.2"
 credentials = "1.6.0"
 google-id = "1.2.0"
+play-review = "2.0.2"
 firebase-messaging = "25.1.2"
 google-services = "4.5.0"
 kotlin = "2.4.10"
@@ -65,6 +66,7 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 google-identity-googleId = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "google-id" }
+google-play-review = { module = "com.google.android.play:review", version.ref = "play-review" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging", version.ref = "firebase-messaging" }
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }

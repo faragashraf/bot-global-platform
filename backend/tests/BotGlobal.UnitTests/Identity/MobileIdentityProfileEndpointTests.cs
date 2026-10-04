@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Identity.Application;
@@ -76,6 +77,79 @@ public sealed class MobileIdentityProfileEndpointTests
         Assert.Equal("Canonical Person", identity.RootElement.GetProperty("displayName").GetString());
     }
 
+    [Fact]
+    public async Task Family_games_profile_patch_updates_local_me_while_nqrb_profile_remains_global()
+    {
+        await using var app = await StartAppAsync();
+        var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "family-session");
+
+        var patch = await client.PatchAsJsonAsync(
+            "/api/mobile/family-games/identity/profile",
+            new MobileIdentityProfileUpdateRequest("Local LAMMA Name"));
+
+        patch.EnsureSuccessStatusCode();
+        var me = await client.GetAsync("/api/mobile/family-games/identity/me");
+        me.EnsureSuccessStatusCode();
+        using var identity = JsonDocument.Parse(await me.Content.ReadAsStringAsync());
+        Assert.Equal("Local LAMMA Name", identity.RootElement.GetProperty("displayName").GetString());
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "nqrb-session");
+        var nqrbProfile = await client.GetAsync("/api/mobile/nqrb/identity/profile");
+
+        nqrbProfile.EnsureSuccessStatusCode();
+        using var profile = JsonDocument.Parse(await nqrbProfile.Content.ReadAsStringAsync());
+        Assert.Equal("Canonical Person", profile.RootElement.GetProperty("displayName").GetString());
+    }
+
+    [Fact]
+    public async Task Family_games_profile_patch_rejects_guest_without_global_identity_with_service_validation()
+    {
+        await using var app = await StartAppAsync();
+        var services = app.Services.GetRequiredService<UnusedMobileServices>();
+        var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "family-guest-session");
+
+        var patch = await client.PatchAsJsonAsync(
+            "/api/mobile/family-games/identity/profile",
+            new MobileIdentityProfileUpdateRequest("Guest Rename"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, patch.StatusCode);
+        using var problem = JsonDocument.Parse(await patch.Content.ReadAsStringAsync());
+        var identityErrors = problem.RootElement
+            .GetProperty("errors")
+            .GetProperty("identity")
+            .EnumerateArray()
+            .Select(error => error.GetString())
+            .ToArray();
+        Assert.Contains("guest_profile_update_not_supported", identityErrors);
+        Assert.Equal("LAMMA Before", services.FamilyGamesDisplayName);
+        Assert.Equal(1, services.ProfileUpdateCalls);
+        var profileUpdateIdentity = services.ProfileUpdateIdentity;
+        Assert.NotNull(profileUpdateIdentity);
+        Assert.True(profileUpdateIdentity!.IsGuest);
+        Assert.Null(profileUpdateIdentity.GlobalUserId);
+        Assert.Equal(BotGlobalApplications.FamilyGames, profileUpdateIdentity.ApplicationKey);
+    }
+
+    [Fact]
+    public async Task Family_games_profile_patch_rejects_member_missing_global_identity_before_service()
+    {
+        await using var app = await StartAppAsync();
+        var services = app.Services.GetRequiredService<UnusedMobileServices>();
+        var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "family-member-missing-sid");
+
+        var patch = await client.PatchAsJsonAsync(
+            "/api/mobile/family-games/identity/profile",
+            new MobileIdentityProfileUpdateRequest("Member Rename"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, patch.StatusCode);
+        Assert.Equal("LAMMA Before", services.FamilyGamesDisplayName);
+        Assert.Equal(0, services.ProfileUpdateCalls);
+        Assert.Null(services.ProfileUpdateIdentity);
+    }
+
     [Theory]
     [InlineData(SessionRejection.Expired)]
     [InlineData(SessionRejection.Revoked)]
@@ -130,19 +204,31 @@ public sealed class MobileIdentityProfileEndpointTests
                 policy.RequireClaim(
                     ApplicationIdentityDefaults.ApplicationKeyClaim,
                     BotGlobalApplications.Nqrb);
+            }).AddPolicy(
+            ApplicationIdentityPolicies.For(BotGlobalApplications.FamilyGames),
+            policy =>
+            {
+                policy.AddAuthenticationSchemes(ApplicationIdentityDefaults.Scheme);
+                policy.RequireAuthenticatedUser();
+                policy.RequireClaim(
+                    ApplicationIdentityDefaults.ApplicationKeyClaim,
+                    BotGlobalApplications.FamilyGames);
             });
-        builder.Services.AddSingleton<IMobileApplicationSessionAuthenticator, FixedSessionAuthenticator>();
+        builder.Services.AddSingleton<UnusedMobileServices>();
+        builder.Services.AddSingleton<IMobileApplicationSessionAuthenticator>(services =>
+            new FixedSessionAuthenticator(services.GetRequiredService<UnusedMobileServices>()));
         builder.Services.AddSingleton<IMobileIdentityProfileReader>(
             new FixedProfileReader(new MobileIdentityProfileResponse("Canonical Person", "person@example.test")));
-        builder.Services.AddSingleton<UnusedMobileServices>();
         builder.Services.AddSingleton<IMobileFederatedIdentityService>(services => services.GetRequiredService<UnusedMobileServices>());
         builder.Services.AddSingleton<IMobileIdentityService>(services => services.GetRequiredService<UnusedMobileServices>());
         builder.Services.AddSingleton<IMobileApplicationTokenService>(services => services.GetRequiredService<UnusedMobileServices>());
         builder.Services.AddSingleton<IApplicationAccountDeletionService>(services => services.GetRequiredService<UnusedMobileServices>());
+        builder.Services.AddSingleton<IMobileIdentityProfileService>(services => services.GetRequiredService<UnusedMobileServices>());
         var app = builder.Build();
         app.UseAuthentication();
         app.UseAuthorization();
         app.MapNqrbMobileIdentityEndpoints();
+        app.MapFamilyGamesMobileIdentityEndpoints();
         await app.StartAsync();
         return app;
     }
@@ -159,7 +245,7 @@ public sealed class MobileIdentityProfileEndpointTests
         InactiveMembership
     }
 
-    private sealed class FixedSessionAuthenticator : IMobileApplicationSessionAuthenticator
+    private sealed class FixedSessionAuthenticator(UnusedMobileServices mobileServices) : IMobileApplicationSessionAuthenticator
     {
         public Task<AuthenticatedApplicationSession?> AuthenticateAsync(
             string accessToken,
@@ -169,6 +255,8 @@ public sealed class MobileIdentityProfileEndpointTests
             {
                 "nqrb-session" => BotGlobalApplications.Nqrb,
                 "family-session" => BotGlobalApplications.FamilyGames,
+                "family-guest-session" => BotGlobalApplications.FamilyGames,
+                "family-member-missing-sid" => BotGlobalApplications.FamilyGames,
                 _ => null
             };
             if (applicationKey is null)
@@ -176,15 +264,20 @@ public sealed class MobileIdentityProfileEndpointTests
                 return Task.FromResult<AuthenticatedApplicationSession?>(null);
             }
 
+            var isFamilyGames = applicationKey == BotGlobalApplications.FamilyGames;
+            var isGuest = accessToken == "family-guest-session";
+            var missingSid = isGuest || accessToken == "family-member-missing-sid";
             return Task.FromResult<AuthenticatedApplicationSession?>(new(
                 Guid.NewGuid(),
                 new ApplicationIdentityDescriptor(
                     Guid.Parse("11111111-1111-1111-1111-111111111111"),
-                    Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                    "canonical-subject",
+                    missingSid ? null : Guid.Parse("22222222-2222-2222-2222-222222222222"),
+                    isGuest ? "guest-subject" : "canonical-subject",
                     applicationKey,
-                    "Canonical Person",
-                    false)));
+                    isFamilyGames
+                        ? mobileServices.FamilyGamesDisplayName
+                        : "Canonical Person",
+                    isGuest)));
         }
     }
 
@@ -199,9 +292,14 @@ public sealed class MobileIdentityProfileEndpointTests
     private sealed class UnusedMobileServices :
         IMobileFederatedIdentityService,
         IMobileIdentityService,
+        IMobileIdentityProfileService,
         IMobileApplicationTokenService,
         IApplicationAccountDeletionService
     {
+        public string FamilyGamesDisplayName { get; private set; } = "LAMMA Before";
+        public int ProfileUpdateCalls { get; private set; }
+        public ApplicationIdentityDescriptor? ProfileUpdateIdentity { get; private set; }
+
         public Task<MobileIdentityResult> AuthenticateAsync(
             string applicationKey,
             MobileFederatedIdentityRequest request,
@@ -231,6 +329,29 @@ public sealed class MobileIdentityProfileEndpointTests
             string applicationKey,
             MobileRefreshRequest request,
             CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<MobileIdentityProfileUpdateResult> UpdateAsync(
+            ApplicationIdentityDescriptor identity,
+            MobileIdentityProfileUpdateRequest request,
+            CancellationToken cancellationToken)
+        {
+            ProfileUpdateCalls++;
+            ProfileUpdateIdentity = identity;
+            if (identity.IsGuest)
+            {
+                return Task.FromResult(MobileIdentityProfileUpdateResult.Failure(
+                    "identity",
+                    "guest_profile_update_not_supported"));
+            }
+
+            FamilyGamesDisplayName = request.DisplayName.Trim();
+            return Task.FromResult(MobileIdentityProfileUpdateResult.Success(new MobileIdentityResponse(
+                identity.MembershipId,
+                identity.SubjectId,
+                FamilyGamesDisplayName,
+                false,
+                BotGlobalApplications.FamilyGames)));
+        }
 
         public Task<IssuedMobileApplicationSession> IssueAsync(
             ApplicationMembership membership,

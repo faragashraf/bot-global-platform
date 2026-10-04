@@ -101,6 +101,7 @@ public sealed class MobileFederatedIdentityServiceTests
     private sealed class FixedValidator(ValidatedFederatedIdentity identity) : IFederatedIdentityTokenValidator
     {
         public Task<FederatedIdentityValidationResult> ValidateAsync(
+            string applicationKey,
             string provider,
             string idToken,
             CancellationToken cancellationToken) =>

@@ -37,23 +37,38 @@ fun requirePublicHttpsEndpoint(value: String) {
     }
 }
 
-val releaseApiBaseUrl = "https://botglobalservice.com/backend".also(::requirePublicHttpsEndpoint)
+val releaseApiBaseUrl = "https://www.botglobalservice.com/backend".also(::requirePublicHttpsEndpoint)
 val uploadStoreFile = releaseSetting("familyGamesUploadStoreFile", "LAMMA_UPLOAD_STORE_FILE")
 val uploadStorePassword = releaseSetting("familyGamesUploadStorePassword", "LAMMA_UPLOAD_STORE_PASSWORD")
 val uploadKeyAlias = releaseSetting("familyGamesUploadKeyAlias", "LAMMA_UPLOAD_KEY_ALIAS")
 val uploadKeyPassword = releaseSetting("familyGamesUploadKeyPassword", "LAMMA_UPLOAD_KEY_PASSWORD")
 val uploadSigningValues = listOf(uploadStoreFile, uploadStorePassword, uploadKeyAlias, uploadKeyPassword)
 val uploadSigningConfigured = uploadSigningValues.all { it != null }
+val lammaGoogleServerClientId = releaseSetting("familyGamesGoogleServerClientId", "LAMMA_GOOGLE_SERVER_CLIENT_ID")
+val releaseTaskPrefixes = listOf("assemble", "bundle", "install", "package", "publish", "sign", "upload")
 
 if (uploadSigningValues.any { it != null } && !uploadSigningConfigured) {
     throw GradleException("Upload signing is partially configured. Provide all four Lamma upload signing values.")
 }
-// LAMMA uses password/guest identity only. Shared federated identity remains
-// available to its other consumers; do not merge its unused Android components here.
-configurations.configureEach {
-    exclude(group = "androidx.credentials", module = "credentials")
-    exclude(group = "androidx.credentials", module = "credentials-play-services-auth")
-    exclude(group = "com.google.android.libraries.identity.googleid", module = "googleid")
+
+fun String.requiresLammaReleaseGoogleConfig(): Boolean =
+    contains("Release", ignoreCase = true) &&
+        releaseTaskPrefixes.any { startsWith(it, ignoreCase = true) }
+
+val validateLammaGoogleReleaseConfig = tasks.register("validateLammaGoogleReleaseConfig") {
+    group = "verification"
+    description = "Requires the explicit LAMMA Google OAuth server client id for release builds."
+    doLast {
+        if (lammaGoogleServerClientId.isNullOrBlank()) {
+            throw GradleException("LAMMA release Google sign-in requires familyGamesGoogleServerClientId or LAMMA_GOOGLE_SERVER_CLIENT_ID.")
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name.requiresLammaReleaseGoogleConfig()) {
+        dependsOn(validateLammaGoogleReleaseConfig)
+    }
 }
 
 dependencies {
@@ -74,7 +89,7 @@ android {
 
     defaultConfig {
         applicationId = "com.botglobal.lamma"
-        minSdk = libs.versions.android.minSdk.get().toInt()
+        minSdk = maxOf(24, libs.versions.android.minSdk.get().toInt())
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = libs.versions.lamma.versionCode.get().toInt()
         versionName = libs.versions.lamma.versionName.get()
@@ -98,10 +113,13 @@ android {
 
     buildTypes {
         getByName("debug") {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             val debugUrl = providers.gradleProperty("familyGamesDebugApiBaseUrl").orNull
                 ?: "http://10.0.2.2:5062"
             buildConfigField("String", "API_BASE_URL", "\"$debugUrl\"")
+            buildConfigField("String", "LAMMA_GOOGLE_SERVER_CLIENT_ID", "\"${lammaGoogleServerClientId ?: ""}\"")
             val voiceIcePolicy = providers.gradleProperty("familyGamesDebugVoiceIcePolicy").orNull ?: "all"
             if (voiceIcePolicy !in setOf("all", "relay")) {
                 throw GradleException("familyGamesDebugVoiceIcePolicy must be 'all' or 'relay'.")
@@ -119,6 +137,7 @@ android {
                 signingConfig = signingConfigs.getByName("upload")
             }
             buildConfigField("String", "API_BASE_URL", "\"$releaseApiBaseUrl\"")
+            buildConfigField("String", "LAMMA_GOOGLE_SERVER_CLIENT_ID", "\"${lammaGoogleServerClientId ?: ""}\"")
         }
     }
 

@@ -111,7 +111,7 @@ internal sealed class GameInvitationService(
             201);
     }
 
-    public Task<GameCommandResult<ResolvedGameInvitation>> ResolveAsync(
+    public async Task<GameCommandResult<ResolvedGameInvitation>> ResolveAsync(
         ApplicationIdentityDescriptor identity,
         ResolveGameInvitationRequest request,
         CancellationToken cancellationToken)
@@ -119,16 +119,25 @@ internal sealed class GameInvitationService(
         var token = request.Token?.Trim();
         if (string.IsNullOrWhiteSpace(token) || token.Length > 256)
         {
-            return Task.FromResult(
-                Fail<ResolvedGameInvitation>("invitation_invalid", "The invitation is invalid.", 400));
+            return Fail<ResolvedGameInvitation>("invitation_invalid", "The invitation is invalid.", 400);
         }
 
-        return _membershipWriteFence.ExecuteAsync(
+        var resolved = await _membershipWriteFence.ExecuteAsync(
             identity.ApplicationKey,
             identity.MembershipId,
             () => ResolveWithinMembershipWriteAsync(identity, token, cancellationToken),
             () => Fail<ResolvedGameInvitation>("account_deleted", "The game membership has been deleted.", 410),
             cancellationToken);
+
+        if (resolved.Succeeded)
+        {
+            await sessions.PublishJoinSideEffectsAsync(
+                resolved.Value!.Session,
+                identity.MembershipId,
+                cancellationToken);
+        }
+
+        return resolved;
     }
 
     private async Task<GameCommandResult<ResolvedGameInvitation>> ResolveWithinMembershipWriteAsync(
@@ -201,12 +210,12 @@ internal sealed class GameInvitationService(
             identity,
             new JoinGameSessionRequest(session.JoinCode),
             cancellationToken);
-        if (!joined.Succeeded)
+        if (!joined.Result.Succeeded)
         {
             return GameCommandResult<ResolvedGameInvitation>.Failure(
-                joined.ErrorCode!,
-                joined.ErrorMessage!,
-                joined.StatusCode);
+                joined.Result.ErrorCode!,
+                joined.Result.ErrorMessage!,
+                joined.Result.StatusCode);
         }
 
         invitation.Consume(now);
@@ -218,7 +227,7 @@ internal sealed class GameInvitationService(
             session.Id);
 
         return GameCommandResult<ResolvedGameInvitation>.Success(
-            new ResolvedGameInvitation(invitation.Id, joined.Value!));
+            new ResolvedGameInvitation(invitation.Id, joined.Result.Value!));
     }
 
     internal static string Hash(string token) =>

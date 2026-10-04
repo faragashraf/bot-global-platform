@@ -13,11 +13,8 @@ fun GameSessionSnapshot.opponentConnectionState(
     localMembershipId: String?,
 ): OpponentConnectionState {
     if (localMembershipId == null) return OpponentConnectionState.Unknown
-    val opponent = players.firstOrNull { it.membershipId != localMembershipId }
-        ?: return OpponentConnectionState.Unknown
-    return if (opponent.isConnected) {
-        OpponentConnectionState.Connected
-    } else {
-        OpponentConnectionState.Disconnected
-    }
+    val opponents = players.filter { it.membershipId != localMembershipId }
+    if (opponents.isEmpty()) return OpponentConnectionState.Unknown
+    return if (opponents.all { it.isConnected }) OpponentConnectionState.Connected
+    else OpponentConnectionState.Disconnected
 }

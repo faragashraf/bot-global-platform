@@ -5,6 +5,10 @@ import com.botglobal.mobile.platform.identity.IdentityKind
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import com.botglobal.lamma.app.data.ApiException
+import com.botglobal.lamma.app.data.AutobusFinishRoundRequest
+import com.botglobal.lamma.app.data.AutobusRevealRequest
+import com.botglobal.lamma.app.data.AutobusSubmitAnswersRequest
+import com.botglobal.lamma.app.data.AutobusVoteRequest
 import com.botglobal.lamma.app.data.FamilyGamesGateway
 import com.botglobal.lamma.app.data.GameSessionSnapshot
 import com.botglobal.lamma.app.data.MoveRequest
@@ -18,6 +22,10 @@ import com.botglobal.mobile.platform.device.PermissionState
 import com.botglobal.mobile.platform.device.UnavailablePermissionController
 import com.botglobal.mobile.platform.device.SemanticHaptics
 import com.botglobal.mobile.platform.identity.MobileSession
+import com.botglobal.mobile.platform.identity.FederatedCredentialProvider
+import com.botglobal.mobile.platform.identity.FederatedCredentialResult
+import com.botglobal.mobile.platform.identity.FederatedIdentityProvider
+import com.botglobal.mobile.platform.identity.UnavailableFederatedCredentialProvider
 import com.botglobal.mobile.platform.invitations.GameInvitation
 import com.botglobal.mobile.platform.invitations.InvitationLinkCodec
 import com.botglobal.mobile.platform.invitations.InvitationLinkResult
@@ -33,6 +41,9 @@ import com.botglobal.mobile.platform.realtime.NetworkAvailability
 import com.botglobal.mobile.platform.realtime.UnavailableNetworkAvailability
 import com.botglobal.mobile.platform.update.UpdateMode
 import com.botglobal.mobile.platform.update.UpdatePolicyEngine
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
+import com.botglobal.mobile.platform.reviews.ReviewAttemptResult
+import com.botglobal.mobile.platform.reviews.ReviewTrigger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -44,6 +55,8 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlin.random.Random
 import com.botglobal.mobile.platform.voice.ManagedVoiceRoomController
 import com.botglobal.mobile.platform.voice.VoiceMediaPeerFactory
@@ -61,8 +74,10 @@ enum class AppScreen {
     Welcome,
     SignIn,
     Register,
+    ProfileCompletion,
     Home,
     Ruleset,
+    AutobusSetup,
     CreateOrJoin,
     Lobby,
     Gameplay,
@@ -81,6 +96,15 @@ enum class SessionRecoveryState {
 }
 
 enum class AccountDeletionCleanupStepState { Pending, Failed, Completed }
+
+private data class AutobusActionScope(
+    val sessionId: String,
+    val matchNumber: Int,
+    val round: Int,
+    val phase: String,
+    val revealCategoryKey: String?,
+    val deadlineAtUtc: String?,
+)
 
 data class AccountDeletionCleanupState(
     val voiceLeave: AccountDeletionCleanupStepState = AccountDeletionCleanupStepState.Pending,
@@ -127,6 +151,9 @@ data class FamilyGamesUiState(
     val voice: VoiceRoomSnapshot = VoiceRoomSnapshot(VoiceRoomState.Unavailable),
     val voiceConsent: VoiceConsentSnapshot = VoiceConsentSnapshot(),
     val pendingInvitationToken: String? = null,
+    val profileDraft: String = "",
+    val profileCompletionRequired: Boolean = false,
+    val autobusDrafts: Map<String, String> = emptyMap(),
 )
 
 class FamilyGamesCoordinator(
@@ -142,6 +169,9 @@ class FamilyGamesCoordinator(
     private val permissions: PermissionController = UnavailablePermissionController,
     networkAvailability: NetworkAvailability = UnavailableNetworkAvailability,
     private val languagePreferences: ApplicationLanguagePreferences = UnavailableApplicationLanguagePreferences,
+    private val recentGameSessionPreferences: RecentGameSessionPreferences = UnavailableRecentGameSessionPreferences,
+    private val federatedCredentials: FederatedCredentialProvider = UnavailableFederatedCredentialProvider,
+    private val reviews: ReviewCoordinator? = null,
     voiceMediaFactory: VoiceMediaPeerFactory? = null,
     private val accountDeletionTeardown: FamilyGamesAccountDeletionTeardown? = null,
 ) {
@@ -161,6 +191,9 @@ class FamilyGamesCoordinator(
     private var recoveryJob: Job? = null
     private var transportRestartJob: Job? = null
     private var actionJob: Job? = null
+    private var pendingAutobusFinishJob: Job? = null
+    private var pendingAutobusRevealJob: Job? = null
+    private val dirtyAutobusDraftKeys = mutableSetOf<String>()
     private var realtimeHasConnected = false
     private var recoveryRequired = false
     private var recoveryGeneration = 0L
@@ -169,6 +202,7 @@ class FamilyGamesCoordinator(
     private var voiceStateJob: Job? = null
     private var voiceConsentStateJob: Job? = null
     private var handledAcceptedVoiceRequestId: String? = null
+    private var pendingReviewTrigger: ReviewTrigger? = null
 
     init {
         voiceStateJob = voice?.let { controller ->
@@ -229,13 +263,15 @@ class FamilyGamesCoordinator(
 
         val restored = gateway.restore()
         if (restored == null) {
+            recentGameSessionPreferences.clear()
             mutableState.update { it.copy(screen = AppScreen.Welcome) }
             return@launchAction
         }
 
         mutableState.update { it.copy(mobileSession = restored) }
         if (resolvePendingInvitationIfAvailable()) return@launchAction
-        val active = runCatching { gateway.activeSession() }.getOrNull()
+        val active = restoreRecentGameSession()
+            ?: runCatching { gateway.activeSession() }.getOrNull()
         if (active == null) {
             mutableState.update { it.copy(screen = AppScreen.Home) }
         } else {
@@ -247,6 +283,7 @@ class FamilyGamesCoordinator(
     fun continueAsGuest(displayName: String) = launchAction {
         require(displayName.isNotBlank()) { "display_name_required" }
         val session = gateway.continueAsGuest(displayName.trim())
+        recentGameSessionPreferences.clear()
         resetAcceptedDeletionCleanup()
         mutableState.update { it.copy(mobileSession = session, screen = AppScreen.Home,
             accountDeletionAcceptance = null, accountDeletionCleanup = null,
@@ -257,6 +294,7 @@ class FamilyGamesCoordinator(
 
     fun signIn(userNameOrEmail: String, password: String) = launchAction {
         val session = gateway.login(userNameOrEmail.trim(), password)
+        recentGameSessionPreferences.clear()
         resetAcceptedDeletionCleanup()
         mutableState.update { it.copy(mobileSession = session, screen = AppScreen.Home,
             accountDeletionAcceptance = null, accountDeletionCleanup = null,
@@ -267,6 +305,7 @@ class FamilyGamesCoordinator(
 
     fun register(userName: String, email: String, displayName: String, password: String) = launchAction {
         val session = gateway.register(RegistrationRequest(userName, email, displayName, password))
+        recentGameSessionPreferences.clear()
         resetAcceptedDeletionCleanup()
         mutableState.update { it.copy(mobileSession = session, screen = AppScreen.Home,
             accountDeletionAcceptance = null, accountDeletionCleanup = null,
@@ -275,9 +314,73 @@ class FamilyGamesCoordinator(
         resolvePendingInvitationIfAvailable()
     }
 
+    fun signInWithGoogle() = launchAction {
+        when (val acquired = federatedCredentials.acquire(FederatedIdentityProvider.Google)) {
+            is FederatedCredentialResult.Acquired -> {
+                val session = gateway.authenticateFederated(acquired.credential)
+                recentGameSessionPreferences.clear()
+                resetAcceptedDeletionCleanup()
+                mutableState.update {
+                    it.copy(
+                        mobileSession = session,
+                        screen = AppScreen.ProfileCompletion,
+                        profileDraft = session.identity.displayName,
+                        profileCompletionRequired = true,
+                        accountDeletionAcceptance = null,
+                        accountDeletionCleanup = null,
+                        accountDeletionConfirmation = null,
+                        accountDeletionFailed = false,
+                    )
+                }
+                haptics.perform(HapticEvent.Success)
+            }
+            FederatedCredentialResult.Cancelled -> mutableState.update { it.copy(errorCode = null) }
+            FederatedCredentialResult.ConfigurationMissing -> mutableState.update { it.copy(errorCode = "google_configuration_missing") }
+            FederatedCredentialResult.Unavailable -> mutableState.update { it.copy(errorCode = "google_unavailable") }
+            FederatedCredentialResult.Failed -> mutableState.update { it.copy(errorCode = "google_failed") }
+        }
+    }
+
+    fun updateProfileDraft(displayName: String) {
+        mutableState.update { it.copy(profileDraft = displayName.take(120), errorCode = null) }
+    }
+
+    fun completeProfile() = launchAction {
+        val name = mutableState.value.profileDraft.trim()
+        if (name.isBlank()) {
+            mutableState.update { it.copy(errorCode = "display_name_required") }
+            haptics.perform(HapticEvent.Warning)
+            return@launchAction
+        }
+        val session = gateway.updateProfile(name)
+        mutableState.update {
+            it.copy(
+                mobileSession = session,
+                profileDraft = session.identity.displayName,
+                profileCompletionRequired = false,
+            )
+        }
+        if (resolvePendingInvitationIfAvailable()) return@launchAction
+        mutableState.update { it.copy(screen = AppScreen.Home) }
+    }
+
+    fun editProfile() {
+        val identity = mutableState.value.mobileSession?.identity ?: return
+        if (identity.kind != IdentityKind.Registered) return
+        mutableState.update {
+            it.copy(
+                screen = AppScreen.ProfileCompletion,
+                profileDraft = identity.displayName,
+                profileCompletionRequired = false,
+                errorCode = null,
+            )
+        }
+    }
+
     fun showSignIn() = navigate(AppScreen.SignIn)
     fun showRegister() = navigate(AppScreen.Register)
     fun showRuleset() = navigate(AppScreen.Ruleset)
+    fun showAutobusSetup() = navigate(AppScreen.AutobusSetup)
     fun showCreateOrJoin() = navigate(AppScreen.CreateOrJoin)
     fun backToWelcome() = navigate(AppScreen.Welcome)
     fun backHome() = navigate(AppScreen.Home)
@@ -302,6 +405,17 @@ class FamilyGamesCoordinator(
         connectRealtime(snapshot.sessionId, RealtimeConnectSource.SessionCreated)
     }
 
+    fun createAutobusGame(
+        rounds: Int = 5,
+        seconds: Int = 60,
+        difficulty: String = "medium",
+        categories: List<String> = DefaultAutobusCategories,
+    ) = launchAction {
+        val snapshot = gateway.createAutobusSession(rounds, seconds, difficulty, categories)
+        onAuthoritativeSnapshot(snapshot)
+        connectRealtime(snapshot.sessionId, RealtimeConnectSource.SessionCreated)
+    }
+
     fun joinGame(code: String) = launchAction {
         val snapshot = gateway.joinSession(code)
         onAuthoritativeSnapshot(snapshot)
@@ -316,6 +430,7 @@ class FamilyGamesCoordinator(
 
     fun dismissInvitation() {
         mutableState.update { it.copy(invitation = null) }
+        requestPendingReviewIfReady()
     }
 
     fun shareInvitation(gameName: String) {
@@ -346,6 +461,7 @@ class FamilyGamesCoordinator(
 
     fun dismissCameraExplanation() {
         mutableState.update { it.copy(cameraExplanationVisible = false) }
+        requestPendingReviewIfReady()
     }
 
     fun showVoiceExplanation() {
@@ -359,6 +475,7 @@ class FamilyGamesCoordinator(
 
     fun dismissVoiceExplanation() {
         mutableState.update { it.copy(voiceExplanationVisible = false) }
+        requestPendingReviewIfReady()
     }
 
     fun requestVoiceChat() = launchAction { voiceConsent?.request() }
@@ -473,6 +590,139 @@ class FamilyGamesCoordinator(
         if (result.status != "completed") haptics.perform(HapticEvent.GameEvent)
     }
 
+    fun updateAutobusAnswer(categoryKey: String, answer: String) {
+        dirtyAutobusDraftKeys += categoryKey
+        mutableState.update {
+            it.copy(
+                autobusDrafts = it.autobusDrafts + (categoryKey to answer.take(48)),
+                errorCode = null,
+            )
+        }
+    }
+
+    fun submitAutobusAnswers() = launchAction {
+        val submittedDrafts = currentAutobusDrafts()
+        performAutobusCommand(retryAfterRecovery = true) { game ->
+            val autobus = game.autobus ?: error("autobus_state_missing")
+            gateway.submitAutobusAnswers(
+                AutobusSubmitAnswersRequest(
+                    game.sessionId,
+                    commandId(),
+                    game.version,
+                    game.matchNumber,
+                    autobus.currentRound,
+                    autobus.categories.associate { it.key to submittedDrafts[it.key].orEmpty() },
+                ),
+            )
+        }?.let { snapshot ->
+            acknowledgeAutobusDrafts(submittedDrafts)
+            onAuthoritativeSnapshot(snapshot)
+        }
+        haptics.perform(HapticEvent.Selection)
+    }
+
+    fun finishAutobusRound() {
+        val requestedScope = mutableState.value.game?.autobusActionScope()
+            ?.takeIf { it.phase in setOf("active", "grace") }
+            ?: return
+        val runningAction = actionJob
+        if (runningAction?.isActive == true) {
+            if (pendingAutobusFinishJob?.isActive != true) {
+                pendingAutobusFinishJob = scope.launch {
+                    runningAction.join()
+                    pendingAutobusFinishJob = null
+                    if (mutableState.value.game?.autobusActionScope() == requestedScope) {
+                        finishAutobusRound()
+                    }
+                }
+            }
+            return
+        }
+
+        launchAction {
+            val current = requireGame()
+            if (current.autobusActionScope() != requestedScope) return@launchAction
+            val submittedDrafts = currentAutobusDrafts()
+            val draftsSubmitted = current.autobus?.acceptsDraftsAt(Clock.System.now()) == true
+            val submitted = if (draftsSubmitted) {
+                performAutobusCommand(retryAfterRecovery = true) { game ->
+                    val autobus = game.autobus ?: error("autobus_state_missing")
+                    gateway.submitAutobusAnswers(
+                        AutobusSubmitAnswersRequest(
+                            game.sessionId,
+                            commandId(),
+                            game.version,
+                            game.matchNumber,
+                            autobus.currentRound,
+                            autobus.categories.associate { it.key to submittedDrafts[it.key].orEmpty() },
+                        ),
+                    )
+                } ?: return@launchAction
+            } else {
+                current
+            }
+            if (draftsSubmitted) acknowledgeAutobusDrafts(submittedDrafts)
+            onAuthoritativeSnapshot(submitted)
+            if (submitted.autobusActionScope() != requestedScope) return@launchAction
+            performAutobusCommand { game ->
+                gateway.finishAutobusRound(
+                    AutobusFinishRoundRequest(game.sessionId, commandId(), game.version),
+                )
+            }?.let(::onAuthoritativeSnapshot)
+            haptics.perform(HapticEvent.ImportantAction)
+        }
+    }
+
+    fun revealAutobus() {
+        val requestedScope = mutableState.value.game?.autobusActionScope()
+            ?.takeIf { it.phase == "reveal" }
+            ?: return
+        val runningAction = actionJob
+        if (runningAction?.isActive == true) {
+            if (pendingAutobusRevealJob?.isActive != true) {
+                pendingAutobusRevealJob = scope.launch {
+                    runningAction.join()
+                    pendingAutobusRevealJob = null
+                    if (mutableState.value.game?.autobusActionScope() == requestedScope) {
+                        revealAutobus()
+                    }
+                }
+            }
+            return
+        }
+
+        launchAction {
+            if (requireGame().autobusActionScope() != requestedScope) return@launchAction
+            performAutobusCommand(
+                retryAfterRecovery = true,
+                canRetryAfterRecovery = { _, recovered ->
+                    recovered.autobusActionScope() == requestedScope
+                },
+            ) { game ->
+                gateway.revealAutobus(
+                    AutobusRevealRequest(game.sessionId, commandId(), game.version),
+                )
+            }?.let(::onAuthoritativeSnapshot)
+            haptics.perform(HapticEvent.GameEvent)
+        }
+    }
+
+    fun voteAutobus(answerOwnerMembershipId: String, categoryKey: String, accept: Boolean) = launchAction {
+        performAutobusCommand { game ->
+            gateway.voteAutobus(
+                AutobusVoteRequest(
+                    game.sessionId,
+                    commandId(),
+                    game.version,
+                    answerOwnerMembershipId,
+                    categoryKey,
+                    accept,
+                ),
+            )
+        }?.let(::onAuthoritativeSnapshot)
+        haptics.perform(HapticEvent.Selection)
+    }
+
     fun requestRematch() = launchAction {
         onAuthoritativeSnapshot(gateway.requestRematch(requireGame().sessionId))
         haptics.perform(HapticEvent.ImportantAction)
@@ -516,6 +766,7 @@ class FamilyGamesCoordinator(
             -> Unit
             else -> restartRealtimeTransport(sessionId, RealtimeConnectSource.Foreground)
         }
+        requestReviewIfReady(ReviewTrigger.Foreground)
     }
 
     fun pauseForBackground() {
@@ -529,6 +780,8 @@ class FamilyGamesCoordinator(
         voice?.leave()
         voiceConsent?.end()
         realtime.stop()
+        recentGameSessionPreferences.clear()
+        dirtyAutobusDraftKeys.clear()
         mutableState.update {
             it.copy(
                 game = null,
@@ -540,8 +793,10 @@ class FamilyGamesCoordinator(
                 errorCode = null,
                 voice = VoiceRoomSnapshot(),
                 voiceConsent = VoiceConsentSnapshot(),
+                autobusDrafts = emptyMap(),
             )
         }
+        requestReviewIfReady(ReviewTrigger.ExplicitExit)
     }
 
     fun beginAccountDeletion() {
@@ -561,6 +816,7 @@ class FamilyGamesCoordinator(
         if (mutableState.value.busy || actionJob?.isActive == true ||
             mutableState.value.accountDeletionAcceptance != null) return
         mutableState.update { it.copy(accountDeletionConfirmation = null, accountDeletionFailed = false) }
+        requestPendingReviewIfReady()
     }
 
     fun deleteAccount() {
@@ -595,6 +851,7 @@ class FamilyGamesCoordinator(
         runCatching { voiceConsent?.end() }
         runCatching { realtime.stop() }
         gateway.logout()
+        recentGameSessionPreferences.clear()
         mutableState.value = FamilyGamesUiState(
             screen = AppScreen.Welcome,
             language = mutableState.value.language,
@@ -634,6 +891,7 @@ class FamilyGamesCoordinator(
         }
 
         if (progress.credentialsClear == AccountDeletionCleanupStepState.Completed) {
+            recentGameSessionPreferences.clear()
             mutableState.update { it.copy(mobileSession = null, game = null, invitation = null) }
         }
         if (progress.completed) {
@@ -656,6 +914,8 @@ class FamilyGamesCoordinator(
 
     fun dispose() {
         actionJob?.cancel()
+        pendingAutobusFinishJob?.cancel()
+        pendingAutobusRevealJob?.cancel()
         realtimeEventsJob?.cancel()
         realtimeStateJob?.cancel()
         networkAvailabilityJob?.cancel()
@@ -1012,6 +1272,7 @@ class FamilyGamesCoordinator(
                 isOlderSessionRevision(snapshot, current)
             ) return false
         }
+        recentGameSessionPreferences.save(snapshot.sessionId)
         val screen = when (snapshot.status) {
             "completed" -> AppScreen.Result
             "started" -> AppScreen.Gameplay
@@ -1019,15 +1280,113 @@ class FamilyGamesCoordinator(
         }
         emitGameFeedback(current, snapshot)
         mutableState.update {
+            val localMembershipId = it.mobileSession?.identity?.membershipId
+            val ownAnswers = snapshot.autobus?.answers
+                ?.filter { answer -> answer.playerMembershipId == localMembershipId }
+                .orEmpty()
+                .associate { answer -> answer.categoryKey to answer.displayAnswer }
+            val sameAutobusRound = current?.sessionId == snapshot.sessionId &&
+                current.matchNumber == snapshot.matchNumber &&
+                current.autobus?.currentRound == snapshot.autobus?.currentRound
+            val activeAutobusDrafts = when {
+                snapshot.autobus?.phase !in setOf("active", "grace") -> {
+                    dirtyAutobusDraftKeys.clear()
+                    emptyMap()
+                }
+                sameAutobusRound -> (snapshot.autobus?.categories.orEmpty().map { category -> category.key } +
+                    it.autobusDrafts.keys + ownAnswers.keys).distinct().associateWith { categoryKey ->
+                    val localDraft = it.autobusDrafts[categoryKey].orEmpty()
+                    if (categoryKey in dirtyAutobusDraftKeys) {
+                        localDraft
+                    } else {
+                        ownAnswers[categoryKey] ?: localDraft
+                    }
+                }
+                else -> {
+                    dirtyAutobusDraftKeys.clear()
+                    ownAnswers
+                }
+            }
             it.copy(
                 game = snapshot,
                 screen = screen,
                 opponentConnection = snapshot.opponentConnectionState(it.mobileSession?.identity?.membershipId),
                 errorCode = null,
                 recoveredFromInterruption = recoveredFromInterruption,
+                autobusDrafts = activeAutobusDrafts,
             )
         }
+        if (current?.status != "completed" && snapshot.status == "completed") {
+            pendingReviewTrigger = ReviewTrigger.CompletedExperience
+            scope.launch {
+                reviews?.recordMeaningfulEvent("lamma:${snapshot.sessionId}:${snapshot.matchNumber}")
+                requestPendingReviewIfReady()
+            }
+        }
         return true
+    }
+
+    private suspend fun restoreRecentGameSession(): GameSessionSnapshot? {
+        val sessionId = recentGameSessionPreferences.restore()?.takeIf { it.isNotBlank() } ?: return null
+        return try {
+            gateway.rejoin(sessionId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: ApiException) {
+            if (error.code in AuthoritativeUnrecoverableRecoveryErrors) {
+                recentGameSessionPreferences.clear()
+            }
+            null
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun currentAutobusDrafts(): Map<String, String> =
+        mutableState.value.autobusDrafts.toMap()
+
+    private fun acknowledgeAutobusDrafts(submittedDrafts: Map<String, String>) {
+        val currentDrafts = mutableState.value.autobusDrafts
+        submittedDrafts.forEach { (categoryKey, submittedValue) ->
+            if (currentDrafts[categoryKey].orEmpty() == submittedValue) {
+                dirtyAutobusDraftKeys -= categoryKey
+            }
+        }
+    }
+
+    private fun requestReviewIfReady(trigger: ReviewTrigger) {
+        pendingReviewTrigger = trigger
+        requestPendingReviewIfReady()
+    }
+
+    private fun requestPendingReviewIfReady() {
+        val trigger = pendingReviewTrigger ?: return
+        if (!isReviewReadyForLaunch(trigger)) return
+        scope.launch {
+            when (reviews?.tryRequest(trigger) { isReviewReadyForLaunch(trigger) }) {
+                ReviewAttemptResult.Launched,
+                ReviewAttemptResult.Failed,
+                null,
+                -> pendingReviewTrigger = null
+                ReviewAttemptResult.AlreadyRunning,
+                ReviewAttemptResult.Deferred,
+                ReviewAttemptResult.NotEligible,
+                -> Unit
+            }
+        }
+    }
+
+    private fun isReviewReadyForLaunch(trigger: ReviewTrigger): Boolean {
+        val state = mutableState.value
+        if (state.screen != AppScreen.Result && trigger != ReviewTrigger.ExplicitExit) return false
+        return !state.busy &&
+            state.accountDeletionConfirmation == null &&
+            state.accountDeletionCleanup == null &&
+            state.invitation == null &&
+            !state.cameraExplanationVisible &&
+            !state.voiceExplanationVisible &&
+            state.voice.state in setOf(VoiceRoomState.Idle, VoiceRoomState.Unavailable, VoiceRoomState.Failed) &&
+            state.voiceConsent.state in setOf(VoiceConsentState.Idle, VoiceConsentState.Ended, VoiceConsentState.Unavailable)
     }
 
     private fun isOlderSessionRevision(
@@ -1057,6 +1416,30 @@ class FamilyGamesCoordinator(
     private fun requireGame(): GameSessionSnapshot =
         mutableState.value.game ?: error("game_session_missing")
 
+    private suspend fun performAutobusCommand(
+        retryAfterRecovery: Boolean = false,
+        canRetryAfterRecovery: (GameSessionSnapshot, GameSessionSnapshot) -> Boolean = { attempted, recovered ->
+            attempted.isSameAutobusRound(recovered) &&
+                recovered.autobus?.phase in setOf("active", "grace")
+        },
+        command: suspend (GameSessionSnapshot) -> GameSessionSnapshot,
+    ): GameSessionSnapshot? {
+        val game = requireGame()
+        return try {
+            command(game)
+        } catch (error: ApiException) {
+            if (error.code !in AuthoritativeRefreshErrors) throw error
+            val recovered = gateway.rejoin(game.sessionId)
+            onAuthoritativeSnapshot(recovered, recoveredFromInterruption = true)
+            haptics.perform(HapticEvent.Warning)
+            if (retryAfterRecovery && canRetryAfterRecovery(game, recovered)) {
+                command(recovered)
+            } else {
+                null
+            }
+        }
+    }
+
     private fun launchAction(action: suspend () -> Unit) {
         if (actionJob?.isActive == true) return
         actionJob = scope.launch {
@@ -1071,6 +1454,7 @@ class FamilyGamesCoordinator(
                 haptics.perform(HapticEvent.Error)
             } finally {
                 mutableState.update { it.copy(busy = false) }
+                requestPendingReviewIfReady()
             }
         }
     }
@@ -1079,13 +1463,46 @@ class FamilyGamesCoordinator(
         repeat(32) { append("0123456789abcdef"[Random.nextInt(16)]) }
     }
 
+    private fun com.botglobal.lamma.app.data.AutobusSnapshot.acceptsDraftsAt(now: Instant): Boolean {
+        val deadlineText = if (phase == "grace") graceEndsAtUtc else roundDeadlineAtUtc
+        val deadline = deadlineText?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return true
+        val extensionMillis = if (phase == "active") 5_000 else 0
+        return now.toEpochMilliseconds() <= deadline.toEpochMilliseconds() + extensionMillis
+    }
+
+    private fun GameSessionSnapshot.isSameAutobusRound(other: GameSessionSnapshot): Boolean =
+        sessionId == other.sessionId &&
+            matchNumber == other.matchNumber &&
+            autobus?.currentRound == other.autobus?.currentRound
+
+    private fun GameSessionSnapshot.autobusActionScope(): AutobusActionScope? {
+        val state = autobus ?: return null
+        val deadline = when (state.phase) {
+            "active" -> state.roundDeadlineAtUtc
+            "grace" -> state.graceEndsAtUtc
+            "reveal" -> state.voteDeadlineAtUtc
+            else -> null
+        }
+        return AutobusActionScope(
+            sessionId = sessionId,
+            matchNumber = matchNumber,
+            round = state.currentRound,
+            phase = state.phase,
+            revealCategoryKey = state.revealCategoryKey,
+            deadlineAtUtc = deadline,
+        )
+    }
+
     private companion object {
         val GameScreens = setOf(AppScreen.Lobby, AppScreen.Gameplay, AppScreen.Result)
+        val DefaultAutobusCategories = listOf("boy_name", "girl_name", "animal", "plant", "object", "country_city")
         val AuthoritativeRefreshErrors = setOf(
             "stale_version",
             "duplicate_command",
             "concurrent_move",
             "duplicate_or_concurrent_move",
+            "concurrent_command",
+            "duplicate_or_concurrent_command",
             "game_completed",
         )
         val AuthoritativeUnrecoverableRecoveryErrors = setOf(

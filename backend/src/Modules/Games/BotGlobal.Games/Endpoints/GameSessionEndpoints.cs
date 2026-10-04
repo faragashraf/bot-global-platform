@@ -79,6 +79,70 @@ internal static class GameSessionEndpoints
             return ToResult(await service.MoveAsync(ToIdentity(principal), request, cancellationToken));
         });
 
+        group.MapPost("/{sessionId:guid}/autobus/answers", async (
+            Guid sessionId,
+            AutobusSubmitAnswersRequest request,
+            ClaimsPrincipal principal,
+            IGameSessionService service,
+            CancellationToken cancellationToken) =>
+        {
+            if (request.SessionId != sessionId)
+            {
+                return Results.ValidationProblem(
+                    new Dictionary<string, string[]> { ["sessionId"] = ["Route and command session ids must match."] });
+            }
+
+            return ToResult(await service.SubmitAutobusAnswersAsync(ToIdentity(principal), request, cancellationToken));
+        });
+
+        group.MapPost("/{sessionId:guid}/autobus/finish", async (
+            Guid sessionId,
+            AutobusFinishRoundRequest request,
+            ClaimsPrincipal principal,
+            IGameSessionService service,
+            CancellationToken cancellationToken) =>
+        {
+            if (request.SessionId != sessionId)
+            {
+                return Results.ValidationProblem(
+                    new Dictionary<string, string[]> { ["sessionId"] = ["Route and command session ids must match."] });
+            }
+
+            return ToResult(await service.FinishAutobusRoundAsync(ToIdentity(principal), request, cancellationToken));
+        });
+
+        group.MapPost("/{sessionId:guid}/autobus/reveal", async (
+            Guid sessionId,
+            AutobusRevealRequest request,
+            ClaimsPrincipal principal,
+            IGameSessionService service,
+            CancellationToken cancellationToken) =>
+        {
+            if (request.SessionId != sessionId)
+            {
+                return Results.ValidationProblem(
+                    new Dictionary<string, string[]> { ["sessionId"] = ["Route and command session ids must match."] });
+            }
+
+            return ToResult(await service.RevealAutobusAsync(ToIdentity(principal), request, cancellationToken));
+        });
+
+        group.MapPost("/{sessionId:guid}/autobus/votes", async (
+            Guid sessionId,
+            AutobusVoteRequest request,
+            ClaimsPrincipal principal,
+            IGameSessionService service,
+            CancellationToken cancellationToken) =>
+        {
+            if (request.SessionId != sessionId)
+            {
+                return Results.ValidationProblem(
+                    new Dictionary<string, string[]> { ["sessionId"] = ["Route and command session ids must match."] });
+            }
+
+            return ToResult(await service.VoteAutobusAsync(ToIdentity(principal), request, cancellationToken));
+        });
+
         group.MapPost("/{sessionId:guid}/rematch/request", async (
             Guid sessionId,
             ClaimsPrincipal principal,

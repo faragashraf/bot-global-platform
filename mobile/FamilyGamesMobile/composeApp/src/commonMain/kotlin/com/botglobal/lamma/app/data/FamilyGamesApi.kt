@@ -2,6 +2,9 @@ package com.botglobal.lamma.app.data
 
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.identity.SessionVault
+import com.botglobal.mobile.platform.identity.FederatedCredential
+import com.botglobal.mobile.platform.identity.FederatedCredentialType
+import com.botglobal.mobile.platform.identity.FederatedIdentityProvider
 import com.botglobal.mobile.platform.invitations.GameInvitation
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -12,6 +15,7 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.client.request.patch
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
@@ -19,6 +23,9 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -31,19 +38,31 @@ interface FamilyGamesGateway {
     suspend fun versionPolicy(currentVersion: String, platform: String): AppVersionPolicy
     suspend fun restore(): MobileSession?
     suspend fun continueAsGuest(displayName: String): MobileSession
+    suspend fun authenticateFederated(credential: FederatedCredential): MobileSession
     suspend fun login(userNameOrEmail: String, password: String): MobileSession
     suspend fun register(request: RegistrationRequest): MobileSession
+    suspend fun updateProfile(displayName: String): MobileSession
     suspend fun deleteAccount(): AccountDeletionAcceptance
     suspend fun clearLocalSession()
     suspend fun logout()
     suspend fun activeSession(): GameSessionSnapshot?
     suspend fun createSession(rulesetKey: String): GameSessionSnapshot
+    suspend fun createAutobusSession(
+        rounds: Int,
+        seconds: Int,
+        difficulty: String,
+        categories: List<String>,
+    ): GameSessionSnapshot
     suspend fun joinSession(code: String): GameSessionSnapshot
     suspend fun createInvitation(sessionId: String): GameInvitation
     suspend fun resolveInvitation(token: String): GameSessionSnapshot
     suspend fun ready(sessionId: String): GameSessionSnapshot
     suspend fun rejoin(sessionId: String): GameSessionSnapshot
     suspend fun move(request: MoveRequest): GameSessionSnapshot
+    suspend fun submitAutobusAnswers(request: AutobusSubmitAnswersRequest): GameSessionSnapshot
+    suspend fun finishAutobusRound(request: AutobusFinishRoundRequest): GameSessionSnapshot
+    suspend fun revealAutobus(request: AutobusRevealRequest): GameSessionSnapshot
+    suspend fun voteAutobus(request: AutobusVoteRequest): GameSessionSnapshot
     suspend fun requestRematch(sessionId: String): GameSessionSnapshot
     suspend fun acceptRematch(sessionId: String): GameSessionSnapshot
 }
@@ -54,6 +73,8 @@ class FamilyGamesApi(
     private val vault: SessionVault,
 ) : FamilyGamesGateway {
     private val json = Json { ignoreUnknownKeys = true }
+    private val sessionMutex = Mutex()
+    private var sessionGeneration = 0L
     private val client = platformClient.config {
         install(ContentNegotiation) { json(json) }
     }
@@ -65,32 +86,83 @@ class FamilyGamesApi(
             parameter("currentVersion", currentVersion)
         }.expect<AppVersionPolicyDto>().toDomain()
 
-    override suspend fun restore(): MobileSession? = vault.restore()
+    override suspend fun restore(): MobileSession? {
+        val snapshot = sessionSnapshot() ?: return null
+        val identity = try {
+            client.get(environment.endpoint("/api/mobile/family-games/identity/me")) {
+                authorize(snapshot.session.accessToken)
+            }.expect<IdentityDto>()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            return snapshot.session
+        }
+        return saveIfCurrent(
+            snapshot,
+            snapshot.session.copy(identity = identity.toDomain(snapshot.session.identity.kind)),
+        )
+    }
 
     override suspend fun continueAsGuest(displayName: String): MobileSession =
-        save(client.post(environment.endpoint("/api/mobile/family-games/identity/guest")) {
+        saveNewSession(beginSessionReplacement(), client.post(environment.endpoint("/api/mobile/family-games/identity/guest")) {
             jsonRequest()
             setBody(GuestRequest(displayName))
         }.expect())
 
+    override suspend fun authenticateFederated(credential: FederatedCredential): MobileSession {
+        require(credential.provider == FederatedIdentityProvider.Google) { "provider_not_supported" }
+        require(credential.type == FederatedCredentialType.IdToken) { "credential_type_not_supported" }
+        return saveNewSession(beginSessionReplacement(), client.post(environment.endpoint("/api/mobile/family-games/identity/federated")) {
+            jsonRequest()
+            setBody(FederatedIdentityRequest("google", credential.value))
+        }.expect())
+    }
+
     override suspend fun login(userNameOrEmail: String, password: String): MobileSession =
-        save(client.post(environment.endpoint("/api/mobile/family-games/identity/login")) {
+        saveNewSession(beginSessionReplacement(), client.post(environment.endpoint("/api/mobile/family-games/identity/login")) {
             jsonRequest()
             setBody(LoginRequest(userNameOrEmail, password))
         }.expect())
 
     override suspend fun register(request: RegistrationRequest): MobileSession =
-        save(client.post(environment.endpoint("/api/mobile/family-games/identity/register")) {
+        saveNewSession(beginSessionReplacement(), client.post(environment.endpoint("/api/mobile/family-games/identity/register")) {
             jsonRequest()
             setBody(request)
         }.expect())
 
-    override suspend fun logout() {
-        runCatching { authorizedPost("/api/mobile/family-games/identity/logout") }
-        clearLocalSession()
+    override suspend fun updateProfile(displayName: String): MobileSession {
+        val snapshot = sessionSnapshot() ?: throw ApiException("session_missing", 401, "No mobile session is available.")
+        val response = withRefresh { access ->
+            client.patch(environment.endpoint("/api/mobile/family-games/identity/profile")) {
+                jsonRequest()
+                authorize(access)
+                setBody(ProfileUpdateRequest(displayName))
+            }
+        }.expect<IdentityDto>()
+        val current = sessionSnapshot() ?: throw ApiException("session_missing", 401, "No mobile session is available.")
+        if (!current.session.sameAccountAs(snapshot.session)) throw supersededSession()
+        return saveIfCurrent(
+            current,
+            current.session.copy(identity = response.toDomain(current.session.identity.kind)),
+        )
     }
 
-    override suspend fun clearLocalSession() = vault.clear()
+    override suspend fun logout() {
+        val retired = retireLocalSession()
+        if (retired != null) {
+            try {
+                client.post(environment.endpoint("/api/mobile/family-games/identity/logout")) {
+                    authorize(retired.accessToken)
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) { }
+        }
+    }
+
+    override suspend fun clearLocalSession() {
+        retireLocalSession()
+    }
 
     override suspend fun deleteAccount(): AccountDeletionAcceptance {
         val response = withRefresh { access ->
@@ -112,6 +184,24 @@ class FamilyGamesApi(
 
     override suspend fun createSession(rulesetKey: String): GameSessionSnapshot =
         authorizedPost("/api/games/sessions", CreateSessionRequest(rulesetKey)).expect()
+
+    override suspend fun createAutobusSession(
+        rounds: Int,
+        seconds: Int,
+        difficulty: String,
+        categories: List<String>,
+    ): GameSessionSnapshot =
+        authorizedPost(
+            "/api/games/sessions",
+            CreateSessionRequest(
+                rulesetKey = "autobus-${rounds}x$seconds-$difficulty",
+                gameType = "autobus",
+                roundCount = rounds,
+                roundSeconds = seconds,
+                difficulty = difficulty,
+                categories = categories,
+            ),
+        ).expect()
 
     override suspend fun joinSession(code: String): GameSessionSnapshot =
         authorizedPost("/api/games/sessions/join", JoinSessionRequest(code.trim().uppercase())).expect()
@@ -136,14 +226,23 @@ class FamilyGamesApi(
     override suspend fun move(request: MoveRequest): GameSessionSnapshot =
         authorizedPost("/api/games/sessions/${request.sessionId}/moves", request).expect()
 
+    override suspend fun submitAutobusAnswers(request: AutobusSubmitAnswersRequest): GameSessionSnapshot =
+        authorizedPost("/api/games/sessions/${request.sessionId}/autobus/answers", request).expect()
+
+    override suspend fun finishAutobusRound(request: AutobusFinishRoundRequest): GameSessionSnapshot =
+        authorizedPost("/api/games/sessions/${request.sessionId}/autobus/finish", request).expect()
+
+    override suspend fun revealAutobus(request: AutobusRevealRequest): GameSessionSnapshot =
+        authorizedPost("/api/games/sessions/${request.sessionId}/autobus/reveal", request).expect()
+
+    override suspend fun voteAutobus(request: AutobusVoteRequest): GameSessionSnapshot =
+        authorizedPost("/api/games/sessions/${request.sessionId}/autobus/votes", request).expect()
+
     override suspend fun requestRematch(sessionId: String): GameSessionSnapshot =
         authorizedPost("/api/games/sessions/$sessionId/rematch/request").expect()
 
     override suspend fun acceptRematch(sessionId: String): GameSessionSnapshot =
         authorizedPost("/api/games/sessions/$sessionId/rematch/accept").expect()
-
-    private suspend fun save(dto: MobileSessionDto): MobileSession =
-        dto.toDomain().also { vault.save(it) }
 
     private suspend fun authorizedGet(path: String): HttpResponse =
         withRefresh { access -> client.get(environment.endpoint(path)) { authorize(access) } }
@@ -164,16 +263,65 @@ class FamilyGamesApi(
         }
 
     private suspend fun withRefresh(block: suspend (String) -> HttpResponse): HttpResponse {
-        val session = vault.restore() ?: throw ApiException("session_missing", 401, "No mobile session is available.")
-        val initial = block(session.accessToken)
+        val snapshot = sessionSnapshot() ?: throw ApiException("session_missing", 401, "No mobile session is available.")
+        val initial = block(snapshot.session.accessToken)
         if (initial.status != HttpStatusCode.Unauthorized) return initial
         val refreshed = client.post(environment.endpoint("/api/mobile/family-games/identity/refresh")) {
             jsonRequest()
-            setBody(RefreshRequest(session.refreshToken))
+            setBody(RefreshRequest(snapshot.session.refreshToken))
         }.expect<MobileSessionDto>()
-        val domain = save(refreshed)
+        val domain = saveIfCurrent(snapshot, refreshed.toDomain())
         return block(domain.accessToken)
     }
+
+    private suspend fun sessionSnapshot(): SessionSnapshot? =
+        sessionMutex.withLock {
+            vault.restore()?.let { SessionSnapshot(it, sessionGeneration) }
+        }
+
+    private suspend fun beginSessionReplacement(): Long =
+        sessionMutex.withLock {
+            ++sessionGeneration
+        }
+
+    private suspend fun saveNewSession(generation: Long, dto: MobileSessionDto): MobileSession =
+        dto.toDomain().also { session ->
+            sessionMutex.withLock {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (sessionGeneration != generation) throw supersededSession()
+                vault.save(session)
+            }
+        }
+
+    private suspend fun saveIfCurrent(snapshot: SessionSnapshot, session: MobileSession): MobileSession =
+        sessionMutex.withLock {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val current = vault.restore() ?: throw ApiException("session_missing", 401, "No mobile session is available.")
+            if (sessionGeneration != snapshot.generation || !current.sameAccountAs(snapshot.session)) {
+                throw supersededSession()
+            }
+            vault.save(session)
+            session
+        }
+
+    private suspend fun retireLocalSession(): MobileSession? =
+        sessionMutex.withLock {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            sessionGeneration++
+            vault.restore().also { vault.clear() }
+        }
+
+    private fun MobileSession.sameAccountAs(other: MobileSession): Boolean =
+        identity.membershipId == other.identity.membershipId &&
+            identity.applicationKey == other.identity.applicationKey
+
+    private fun supersededSession(): ApiException =
+        ApiException("session_superseded", 409, "The mobile session changed while the request was in flight.")
+
+    private data class SessionSnapshot(
+        val session: MobileSession,
+        val generation: Long,
+    )
 
     private fun HttpRequestBuilder.jsonRequest() {
         contentType(ContentType.Application.Json)

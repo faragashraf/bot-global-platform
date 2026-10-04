@@ -77,6 +77,7 @@ public static class IdentityModule
         services.AddScoped<IMobileApplicationSessionAuthenticator, MobileApplicationSessionAuthenticator>();
         services.AddScoped<IMobileIdentityService, MobileIdentityService>();
         services.AddScoped<IMobileIdentityProfileReader, MobileIdentityProfileReader>();
+        services.AddScoped<IMobileIdentityProfileService, MobileIdentityProfileService>();
         services.Configure<GoogleFederatedIdentityOptions>(
             configuration.GetSection(GoogleFederatedIdentityOptions.SectionName));
         services.AddSingleton<IGoogleIdTokenVerifier, GoogleIdTokenVerifier>();

@@ -17,7 +17,7 @@ internal sealed class MobileFederatedIdentityService(
         MobileFederatedIdentityRequest request,
         CancellationToken cancellationToken)
     {
-        var validated = await validator.ValidateAsync(request.Provider, request.IdToken, cancellationToken);
+        var validated = await validator.ValidateAsync(applicationKey, request.Provider, request.IdToken, cancellationToken);
         if (validated.Identity is not { } external)
         {
             return MobileIdentityResult.Failure("federatedIdentity", validated.Error ?? "federated_identity_rejected");

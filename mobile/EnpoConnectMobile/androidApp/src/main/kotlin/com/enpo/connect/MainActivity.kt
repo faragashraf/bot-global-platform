@@ -24,6 +24,9 @@ import com.botglobal.mobile.platform.invitations.QrScanResult
 import com.botglobal.mobile.platform.invitations.QrScannerCapability
 import com.botglobal.mobile.platform.notifications.SemanticNotificationDestination
 import com.botglobal.mobile.platform.preferences.AndroidPreferenceStore
+import com.botglobal.mobile.platform.reviews.AndroidPlayReviewPromptLauncher
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
+import com.botglobal.mobile.platform.reviews.ReviewPolicy
 import com.enpo.connect.app.EnpoConnectApp
 import com.enpo.connect.app.network.EnpoConnectV2PairingApi
 import com.enpo.connect.app.network.EnpoNetworkConfiguration
@@ -103,6 +106,7 @@ class MainActivity : ComponentActivity() {
         val enpoApplication = application as EnpoApplication
 
         val preferences = enpoApplication.preferences
+        val reviewPreferences = AndroidPreferenceStore(applicationContext, "enpo_review")
         val installationPreferences = AndroidPreferenceStore(
             applicationContext,
             EnpoLegacyStorageCompatibility.InstallationPreferencesFile,
@@ -162,6 +166,16 @@ class MainActivity : ComponentActivity() {
                 notificationActionHandler = notificationActionHandler(),
                 onPairingCompleted = enpoApplication::activatePushIfPaired,
                 onResolvedAppearanceChanged = ::applySystemBarAppearance,
+                reviews = ReviewCoordinator(
+                    preferenceStore = reviewPreferences,
+                    storageKey = "play_review_policy",
+                    policy = ReviewPolicy(
+                        minimumMeaningfulEvents = 1,
+                        minimumMeaningfulEventSpanMillis = 0,
+                    ),
+                    launcher = AndroidPlayReviewPromptLauncher { if (!isFinishing && !isDestroyed) this else null },
+                    nowMillis = System::currentTimeMillis,
+                ),
             )
         }
     }

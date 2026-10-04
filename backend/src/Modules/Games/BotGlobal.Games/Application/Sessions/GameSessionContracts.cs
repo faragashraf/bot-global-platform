@@ -2,7 +2,13 @@ using BotGlobal.Games.Domain.Xo;
 
 namespace BotGlobal.Games.Application.Sessions;
 
-public sealed record CreateGameSessionRequest(string RulesetKey);
+public sealed record CreateGameSessionRequest(
+    string RulesetKey,
+    string? GameType = null,
+    int? RoundCount = null,
+    int? RoundSeconds = null,
+    string? Difficulty = null,
+    IReadOnlyList<string>? Categories = null);
 public sealed record JoinGameSessionRequest(string JoinCode);
 public sealed record ReadyGameSessionRequest(Guid SessionId);
 public sealed record XoMoveRequest(
@@ -12,6 +18,28 @@ public sealed record XoMoveRequest(
     int Column,
     long ExpectedVersion);
 public sealed record RematchRequest(Guid SessionId);
+public sealed record AutobusSubmitAnswersRequest(
+    Guid SessionId,
+    string CommandId,
+    long ExpectedVersion,
+    int MatchNumber,
+    int Round,
+    IReadOnlyDictionary<string, string> Answers);
+public sealed record AutobusFinishRoundRequest(
+    Guid SessionId,
+    string CommandId,
+    long ExpectedVersion);
+public sealed record AutobusRevealRequest(
+    Guid SessionId,
+    string CommandId,
+    long ExpectedVersion);
+public sealed record AutobusVoteRequest(
+    Guid SessionId,
+    string CommandId,
+    long ExpectedVersion,
+    Guid AnswerOwnerMembershipId,
+    string CategoryKey,
+    bool Accept);
 
 public sealed record GameRulesetSnapshot(
     string Key,
@@ -46,7 +74,55 @@ public sealed record GameSessionSnapshot(
     string MatchStatus,
     Guid? RematchRequestedByMembershipId,
     DateTimeOffset LastActivityAtUtc,
-    long Revision);
+    long Revision,
+    AutobusSnapshot? Autobus = null);
+
+public sealed record AutobusSnapshot(
+    int SchemaVersion,
+    string Difficulty,
+    int RoundCount,
+    int RoundSeconds,
+    IReadOnlyList<AutobusCategorySnapshot> Categories,
+    int CurrentRound,
+    string? CurrentLetter,
+    string Phase,
+    DateTimeOffset? RoundStartedAtUtc,
+    DateTimeOffset? RoundDeadlineAtUtc,
+    DateTimeOffset? GraceEndsAtUtc,
+    DateTimeOffset? VoteDeadlineAtUtc,
+    string? RevealCategoryKey,
+    IReadOnlyList<AutobusAnswerSnapshot> Answers,
+    IReadOnlyList<AutobusScoreSnapshot> Scores,
+    IReadOnlyList<AutobusVoteSnapshot> Votes,
+    string? TieMessageCode);
+
+public sealed record AutobusCategorySnapshot(
+    string Key,
+    string ArabicName,
+    string EnglishName);
+
+public sealed record AutobusAnswerSnapshot(
+    Guid PlayerMembershipId,
+    string CategoryKey,
+    string DisplayAnswer,
+    string Outcome,
+    string ReasonCode,
+    string FriendlyMessageCode,
+    string? CanonicalValue,
+    int Score,
+    bool Scored,
+    bool NeedsVote,
+    bool Duplicate);
+
+public sealed record AutobusScoreSnapshot(
+    Guid PlayerMembershipId,
+    int Score);
+
+public sealed record AutobusVoteSnapshot(
+    Guid AnswerOwnerMembershipId,
+    string CategoryKey,
+    Guid VoterMembershipId,
+    bool Accept);
 
 public sealed record GameCommandResult<T>(
     T? Value,

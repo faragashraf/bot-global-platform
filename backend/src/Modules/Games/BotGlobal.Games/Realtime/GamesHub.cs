@@ -103,6 +103,18 @@ public sealed class GamesHub(
     public async Task<GameSessionSnapshot> Move(XoMoveRequest request) =>
         RequireSuccess(await sessions.MoveAsync(RequireIdentity(), request, Context.ConnectionAborted));
 
+    public async Task<GameSessionSnapshot> SubmitAutobusAnswers(AutobusSubmitAnswersRequest request) =>
+        RequireSuccess(await sessions.SubmitAutobusAnswersAsync(RequireIdentity(), request, Context.ConnectionAborted));
+
+    public async Task<GameSessionSnapshot> FinishAutobusRound(AutobusFinishRoundRequest request) =>
+        RequireSuccess(await sessions.FinishAutobusRoundAsync(RequireIdentity(), request, Context.ConnectionAborted));
+
+    public async Task<GameSessionSnapshot> RevealAutobus(AutobusRevealRequest request) =>
+        RequireSuccess(await sessions.RevealAutobusAsync(RequireIdentity(), request, Context.ConnectionAborted));
+
+    public async Task<GameSessionSnapshot> VoteAutobus(AutobusVoteRequest request) =>
+        RequireSuccess(await sessions.VoteAutobusAsync(RequireIdentity(), request, Context.ConnectionAborted));
+
     public async Task<GameSessionSnapshot> RequestRematch(Guid sessionId) =>
         RequireSuccess(await sessions.RequestRematchAsync(RequireIdentity(), sessionId, Context.ConnectionAborted));
 

@@ -11,9 +11,16 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.botglobal.lamma.app.platform.AndroidApplicationLanguagePreferences
+import com.botglobal.lamma.app.platform.AndroidRecentGameSessionPreferences
 import com.botglobal.lamma.app.platform.AndroidSecureSessionVault
 import com.botglobal.lamma.app.platform.AndroidSemanticHaptics
 import com.botglobal.lamma.app.ui.FamilyGamesApp
+import com.botglobal.mobile.platform.identity.AndroidGoogleCredentialProvider
+import com.botglobal.mobile.platform.preferences.AndroidPreferenceStore
+import com.botglobal.mobile.platform.reviews.AndroidPlayReviewPromptLauncher
+import com.botglobal.mobile.platform.reviews.ReviewCoordinator
+import com.botglobal.mobile.platform.reviews.ReviewPolicy
+import com.botglobal.mobile.platform.reviews.ReviewTrigger
 import com.botglobal.mobile.platform.voice.AndroidVoiceMediaPeerFactory
 import com.botglobal.mobile.platform.device.PermissionController
 import com.botglobal.mobile.platform.device.PermissionKind
@@ -147,8 +154,23 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         val vault = AndroidSecureSessionVault(applicationContext)
         val languagePreferences = AndroidApplicationLanguagePreferences(applicationContext)
+        val recentGameSessionPreferences = AndroidRecentGameSessionPreferences(applicationContext)
         val haptics = AndroidSemanticHaptics(applicationContext)
         val networkAvailability = AndroidNetworkAvailability(applicationContext)
+        val preferences = AndroidPreferenceStore(applicationContext, "lamma_review")
+        val reviews = ReviewCoordinator(
+            preferenceStore = preferences,
+            storageKey = "play_review_policy",
+            policy = ReviewPolicy(
+                triggers = setOf(
+                    ReviewTrigger.CompletedExperience,
+                    ReviewTrigger.Foreground,
+                    ReviewTrigger.ExplicitExit,
+                ),
+            ),
+            launcher = AndroidPlayReviewPromptLauncher { if (!isFinishing && !isDestroyed) this else null },
+            nowMillis = System::currentTimeMillis,
+        )
         val voiceMedia = AndroidVoiceMediaPeerFactory(
             applicationContext,
             if (BuildConfig.VOICE_ICE_POLICY == "relay") VoiceIcePolicy.Relay else VoiceIcePolicy.All,
@@ -175,6 +197,12 @@ class MainActivity : FragmentActivity() {
                 permissions = permissionController,
                 networkAvailability = networkAvailability,
                 languagePreferences = languagePreferences,
+                recentGameSessionPreferences = recentGameSessionPreferences,
+                federatedCredentials = AndroidGoogleCredentialProvider(
+                    this,
+                    BuildConfig.LAMMA_GOOGLE_SERVER_CLIENT_ID,
+                ),
+                reviews = reviews,
                 voiceMediaFactory = voiceMedia,
                 diagnosticsEnabled = BuildConfig.DEBUG,
                 invitationQr = { content, description, modifier ->

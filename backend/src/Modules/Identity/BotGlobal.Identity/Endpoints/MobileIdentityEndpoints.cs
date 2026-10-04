@@ -110,6 +110,13 @@ internal static class MobileIdentityEndpoints
             ToResult(await service.ContinueAsGuestAsync(applicationKey, request, cancellationToken)))
             .AllowAnonymous();
 
+        group.MapPost("/federated", async (
+            MobileFederatedIdentityRequest request,
+            IMobileFederatedIdentityService service,
+            CancellationToken cancellationToken) =>
+            ToFederatedResult(await service.AuthenticateAsync(applicationKey, request, cancellationToken)))
+            .AllowAnonymous();
+
         group.MapPost("/register", async (
             MobileRegistrationRequest request,
             IMobileIdentityService service,
@@ -145,6 +152,27 @@ internal static class MobileIdentityEndpoints
                     "true",
                     StringComparison.OrdinalIgnoreCase),
                 applicationKey));
+        }).RequireAuthorization(ApplicationIdentityPolicies.For(applicationKey));
+
+        group.MapPatch("/profile", async (
+            MobileIdentityProfileUpdateRequest request,
+            ClaimsPrincipal principal,
+            IMobileIdentityProfileService profiles,
+            CancellationToken cancellationToken) =>
+        {
+            var identity = TryFamilyGamesProfileUpdateIdentity(principal);
+            if (identity is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var result = await profiles.UpdateAsync(
+                identity,
+                request,
+                cancellationToken);
+            return result.Succeeded
+                ? Results.Ok(result.Identity)
+                : Results.ValidationProblem(result.Errors);
         }).RequireAuthorization(ApplicationIdentityPolicies.For(applicationKey));
 
         group.MapPost("/upgrade", async (
@@ -259,9 +287,42 @@ internal static class MobileIdentityEndpoints
             principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
             principal.FindFirstValue(ApplicationIdentityDefaults.ApplicationKeyClaim) ?? string.Empty,
             principal.Identity?.Name ?? string.Empty,
-            string.Equals(
-                principal.FindFirstValue(ApplicationIdentityDefaults.GuestClaim),
-                "true",
-                StringComparison.OrdinalIgnoreCase));
+            IsGuest(principal));
     }
+
+    private static ApplicationIdentityDescriptor? TryFamilyGamesProfileUpdateIdentity(ClaimsPrincipal principal)
+    {
+        if (!Guid.TryParse(
+                principal.FindFirstValue(ApplicationIdentityDefaults.MembershipIdClaim),
+                out var membershipId))
+        {
+            return null;
+        }
+
+        var isGuest = IsGuest(principal);
+        var sid = principal.FindFirstValue(ClaimTypes.Sid);
+        Guid? globalUserId = null;
+        if (Guid.TryParse(sid, out var parsedGlobalUserId))
+        {
+            globalUserId = parsedGlobalUserId;
+        }
+        else if (!isGuest || !string.IsNullOrWhiteSpace(sid))
+        {
+            return null;
+        }
+
+        return new ApplicationIdentityDescriptor(
+            membershipId,
+            globalUserId,
+            principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
+            principal.FindFirstValue(ApplicationIdentityDefaults.ApplicationKeyClaim) ?? string.Empty,
+            principal.Identity?.Name ?? string.Empty,
+            isGuest);
+    }
+
+    private static bool IsGuest(ClaimsPrincipal principal) =>
+        string.Equals(
+            principal.FindFirstValue(ApplicationIdentityDefaults.GuestClaim),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
 }

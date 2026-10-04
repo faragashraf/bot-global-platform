@@ -30,6 +30,7 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.credentials)
             implementation(libs.androidx.credentials.playServicesAuth)
+            implementation(libs.google.play.review)
             implementation(libs.google.identity.googleId)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.webrtc.android)

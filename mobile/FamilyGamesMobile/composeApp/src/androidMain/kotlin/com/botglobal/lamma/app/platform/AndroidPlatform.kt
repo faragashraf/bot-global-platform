@@ -11,6 +11,7 @@ import android.util.Base64
 import com.botglobal.lamma.app.data.MobileSessionDto
 import com.botglobal.lamma.app.state.AppLanguage
 import com.botglobal.lamma.app.state.ApplicationLanguagePreferences
+import com.botglobal.lamma.app.state.RecentGameSessionPreferences
 import com.botglobal.lamma.app.state.appLanguageFromPreference
 import com.botglobal.lamma.app.state.preferenceValue
 import com.botglobal.mobile.platform.device.HapticEvent
@@ -108,6 +109,27 @@ class AndroidApplicationLanguagePreferences(context: Context) : ApplicationLangu
     private companion object {
         const val PREFERENCES = "botglobal_family_games_preferences"
         const val KEY_LANGUAGE = "application_language"
+    }
+}
+
+class AndroidRecentGameSessionPreferences(context: Context) : RecentGameSessionPreferences {
+    private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+
+    override fun restore(): String? = preferences.getString(KEY_SESSION_ID, null)
+
+    override fun save(sessionId: String) {
+        if (preferences.getString(KEY_SESSION_ID, null) == sessionId) return
+        preferences.edit().putString(KEY_SESSION_ID, sessionId).apply()
+    }
+
+    override fun clear() {
+        if (!preferences.contains(KEY_SESSION_ID)) return
+        preferences.edit().remove(KEY_SESSION_ID).apply()
+    }
+
+    private companion object {
+        const val PREFERENCES = "botglobal_family_games_preferences"
+        const val KEY_SESSION_ID = "recent_game_session_id"
     }
 }
 

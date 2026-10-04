@@ -56,6 +56,16 @@ public sealed class ApplicationMembership
 
     public void Deactivate() => IsActive = false;
 
+    public void UpdateDisplayName(string displayName)
+    {
+        if (!IsActive)
+        {
+            throw new InvalidOperationException("Inactive memberships cannot be updated.");
+        }
+
+        DisplayName = Require(displayName, nameof(displayName), 120);
+    }
+
     private static string Require(string value, string name, int maxLength)
     {
         var normalized = value?.Trim();
