@@ -97,6 +97,7 @@ app.MapAdminCatalogEndpoints();
 app.MapIdentityModuleEndpoints();
 
 await app.InitializeIdentityAsync();
+await app.InitializeGamesAsync();
 
 app.MapCallingModule();
 

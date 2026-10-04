@@ -85,4 +85,13 @@ public static class GamesModule
         endpoints.MapHub<GamesHub>("/hubs/games");
         return endpoints;
     }
+
+    public static async Task InitializeGamesAsync(
+        this WebApplication app,
+        CancellationToken cancellationToken = default)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<GamesDbContext>();
+        await dbContext.Database.MigrateAsync(cancellationToken);
+    }
 }
