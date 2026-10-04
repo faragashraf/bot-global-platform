@@ -23,10 +23,43 @@ class CallingDirectoryControllerTests {
         runCurrent()
 
         assertEquals(CallingDirectoryStatus.Loading, controller.state.value.status)
+        assertEquals(true, controller.state.value.isRefreshing)
 
         result.complete(emptyList())
         runCurrent()
         assertEquals(CallingDirectoryStatus.Empty, controller.state.value.status)
+        assertEquals(false, controller.state.value.isRefreshing)
+    }
+
+    @Test
+    fun refresh_keeps_previous_directory_visible_while_loading_and_after_failure() = runTest {
+        val cached = CallableParticipant("remote", "Remote user")
+        val refresh = CompletableDeferred<List<CallableParticipant>>()
+        var requests = 0
+        val controller = CallingDirectoryController(
+            object : CallingDirectory {
+                override suspend fun loadCallableParticipants(): List<CallableParticipant> {
+                    requests++
+                    return if (requests == 1) listOf(cached) else refresh.await()
+                }
+            },
+        )
+        controller.refresh("self")
+
+        backgroundScope.launch { controller.refresh("self") }
+        runCurrent()
+
+        assertEquals(CallingDirectoryStatus.Ready, controller.state.value.status)
+        assertEquals(listOf(cached), controller.state.value.participants)
+        assertEquals(true, controller.state.value.isRefreshing)
+
+        refresh.completeExceptionally(IllegalStateException("temporarily unavailable"))
+        runCurrent()
+
+        assertEquals(CallingDirectoryStatus.Ready, controller.state.value.status)
+        assertEquals(listOf(cached), controller.state.value.participants)
+        assertEquals(false, controller.state.value.isRefreshing)
+        assertEquals(true, controller.state.value.refreshFailed)
     }
 
     @Test

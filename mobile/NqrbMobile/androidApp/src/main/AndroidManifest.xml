@@ -28,6 +28,7 @@
             android:foregroundServiceType="microphone" />
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:exported="true"
             android:launchMode="singleTop">
             <intent-filter>

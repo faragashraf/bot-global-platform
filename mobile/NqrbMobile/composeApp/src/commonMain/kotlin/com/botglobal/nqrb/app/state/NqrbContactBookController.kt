@@ -49,6 +49,7 @@ data class NqrbContactBookSnapshot(
     val blockState: NqrbBlockState = NqrbBlockState.Idle,
     val blockErrorIsLoad: Boolean = false,
     val contactsState: NqrbContactBookLoadState = NqrbContactBookLoadState.Idle,
+    val contactsRefreshing: Boolean = false,
     val contactsRefreshFailed: Boolean = false,
     val contacts: List<NqrbContact> = emptyList(),
     val resolvedCallContacts: Map<String, NqrbContact> = emptyMap(),
@@ -150,8 +151,13 @@ class NqrbContactBookController(
 
     suspend fun load(session: MobileSession) {
         val request = begin(session, ContactBookRequestLane.Contacts) {
+            val canRefreshInBackground = contactsState in setOf(
+                NqrbContactBookLoadState.Ready,
+                NqrbContactBookLoadState.Empty,
+            )
             copy(
-                contactsState = NqrbContactBookLoadState.Loading,
+                contactsState = if (canRefreshInBackground) contactsState else NqrbContactBookLoadState.Loading,
+                contactsRefreshing = canRefreshInBackground,
                 contactsLoadingMore = false,
                 contactsRefreshFailed = false,
             )
@@ -168,11 +174,16 @@ class NqrbContactBookController(
                     contacts = result.page.items,
                     contactsPage = result.page.page,
                     contactsHasMore = result.page.hasMore,
+                    contactsRefreshing = false,
                     contactsRefreshFailed = false,
                 )
-                NqrbContactBookResult.AuthenticationRequired -> copy(contactsState = NqrbContactBookLoadState.Error)
+                NqrbContactBookResult.AuthenticationRequired -> copy(
+                    contactsState = NqrbContactBookLoadState.Error,
+                    contactsRefreshing = false,
+                )
                 NqrbContactBookResult.RetryableFailure -> copy(
                     contactsState = if (contacts.isEmpty()) NqrbContactBookLoadState.Error else NqrbContactBookLoadState.Ready,
+                    contactsRefreshing = false,
                     contactsRefreshFailed = contacts.isNotEmpty(),
                 )
             }

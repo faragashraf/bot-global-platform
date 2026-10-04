@@ -577,7 +577,7 @@ class NqrbAppStateTests {
             stats = VoiceMediaStats(outboundBytes = 100, inboundBytes = 200, available = true),
         )
         runCurrent()
-        advanceTimeBy(31_000)
+        advanceTimeBy(61_000)
         voice.snapshot.value = VoiceRoomSnapshot(
             state = VoiceRoomState.Connected,
             stats = VoiceMediaStats(outboundBytes = 700, inboundBytes = 900, available = true),
@@ -619,7 +619,7 @@ class NqrbAppStateTests {
     }
 
     @Test
-    fun review_counts_only_connected_final_calls_at_least_thirty_seconds_once() = runTest {
+    fun review_counts_only_connected_final_calls_at_least_sixty_seconds_once() = runTest {
         var now = 0L
         val launcher = CountingReviewLauncher()
         val reviews = ReviewCoordinator(
@@ -676,7 +676,7 @@ class NqrbAppStateTests {
             stats = VoiceMediaStats(outboundBytes = 100, inboundBytes = 100, available = true),
         )
         runCurrent()
-        now = 29_000L
+        now = 59_000L
         state.endCall()
         runCurrent()
         assertEquals(0, launcher.launches)
@@ -690,7 +690,7 @@ class NqrbAppStateTests {
             stats = VoiceMediaStats(outboundBytes = 200, inboundBytes = 200, available = true),
         )
         runCurrent()
-        now = 131_000L
+        now = 161_000L
         voice.snapshot.value = VoiceRoomSnapshot(
             state = VoiceRoomState.Connected,
             stats = VoiceMediaStats(outboundBytes = 900, inboundBytes = 1_100, available = true),

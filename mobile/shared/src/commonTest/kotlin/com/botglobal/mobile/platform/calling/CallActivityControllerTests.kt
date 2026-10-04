@@ -32,7 +32,42 @@ class CallActivityControllerTests {
         assertEquals(CallActivityLoadState.Empty, controller.state.value.historyState)
         gateway.failHistory = true
         controller.loadHistory()
-        assertEquals(CallActivityLoadState.Error, controller.state.value.historyState)
+        assertEquals(CallActivityLoadState.Empty, controller.state.value.historyState)
+        assertEquals(true, controller.state.value.historyRefreshFailed)
+
+        val firstLoadFailure = CallActivityController(gateway)
+        firstLoadFailure.loadHistory()
+        assertEquals(CallActivityLoadState.Error, firstLoadFailure.state.value.historyState)
+    }
+
+    @Test
+    fun history_refresh_keeps_existing_items_visible_while_loading_and_after_failure() = runTest {
+        val cached = CallHistoryItem("cached", "outgoing", "Remote", "completed", "2026-09-01T12:00:00Z", 60, 100)
+        val refresh = CompletableDeferred<CallHistoryPage>()
+        var requests = 0
+        val gateway = object : CallActivityGateway by FakeGateway() {
+            override suspend fun history(page: Int, pageSize: Int, filter: CallHistoryFilter): CallHistoryPage {
+                requests++
+                return if (requests == 1) CallHistoryPage(listOf(cached), 1, pageSize, false) else refresh.await()
+            }
+        }
+        val controller = CallActivityController(gateway)
+        controller.loadHistory()
+
+        backgroundScope.launch { controller.loadHistory() }
+        runCurrent()
+
+        assertEquals(CallActivityLoadState.Ready, controller.state.value.historyState)
+        assertEquals(listOf(cached), controller.state.value.history)
+        assertEquals(true, controller.state.value.historyRefreshing)
+
+        refresh.completeExceptionally(IllegalStateException("temporarily unavailable"))
+        runCurrent()
+
+        assertEquals(CallActivityLoadState.Ready, controller.state.value.historyState)
+        assertEquals(listOf(cached), controller.state.value.history)
+        assertEquals(false, controller.state.value.historyRefreshing)
+        assertEquals(true, controller.state.value.historyRefreshFailed)
     }
 
     @Test
@@ -187,6 +222,62 @@ class CallActivityControllerTests {
 
         assertEquals(newPeriod, controller.state.value.usage)
         assertEquals(listOf(item), controller.state.value.history)
+    }
+
+    @Test
+    fun usage_refresh_keeps_existing_period_visible_while_loading_and_after_failure() = runTest {
+        val cached = UsagePeriod("cached", "2026-09-01T00:00:00Z", null, 100, 200, null, null)
+        val refresh = CompletableDeferred<UsagePeriod>()
+        var requests = 0
+        val gateway = object : CallActivityGateway by FakeGateway() {
+            override suspend fun currentUsage(): UsagePeriod {
+                requests++
+                return if (requests == 1) cached else refresh.await()
+            }
+        }
+        val controller = CallActivityController(gateway)
+        controller.loadUsage()
+
+        backgroundScope.launch { controller.loadUsage() }
+        runCurrent()
+
+        assertEquals(cached, controller.state.value.usage)
+        assertEquals(true, controller.state.value.usageRefreshing)
+
+        refresh.completeExceptionally(IllegalStateException("temporarily unavailable"))
+        runCurrent()
+
+        assertEquals(CallActivityLoadState.Ready, controller.state.value.usageState)
+        assertEquals(cached, controller.state.value.usage)
+        assertEquals(false, controller.state.value.usageRefreshing)
+        assertEquals(true, controller.state.value.usageRefreshFailed)
+    }
+
+    @Test
+    fun overlapping_usage_requests_ignore_the_stale_response() = runTest {
+        val stale = CompletableDeferred<UsagePeriod>()
+        val fresh = CompletableDeferred<UsagePeriod>()
+        var requests = 0
+        val gateway = object : CallActivityGateway by FakeGateway() {
+            override suspend fun currentUsage(): UsagePeriod {
+                requests++
+                return if (requests == 1) stale.await() else fresh.await()
+            }
+        }
+        val controller = CallActivityController(gateway)
+        val stalePeriod = UsagePeriod("stale", "2026-09-01T00:00:00Z", null, 100, 200, null, null)
+        val freshPeriod = UsagePeriod("fresh", "2026-09-02T00:00:00Z", null, 300, 400, null, null)
+
+        backgroundScope.launch { controller.loadUsage() }
+        runCurrent()
+        backgroundScope.launch { controller.loadUsage() }
+        runCurrent()
+        fresh.complete(freshPeriod)
+        runCurrent()
+        stale.complete(stalePeriod)
+        runCurrent()
+
+        assertEquals(freshPeriod, controller.state.value.usage)
     }
 
     private class MemoryPendingStore : PendingCallUsageStore {

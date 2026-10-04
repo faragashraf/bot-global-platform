@@ -103,12 +103,16 @@ object UnavailablePendingCallUsageStore : PendingCallUsageStore {
 
 data class CallActivitySnapshot(
     val historyState: CallActivityLoadState = CallActivityLoadState.Idle,
+    val historyRefreshing: Boolean = false,
+    val historyRefreshFailed: Boolean = false,
     val history: List<CallHistoryItem> = emptyList(),
     val historyPage: Int = 0,
     val historyHasMore: Boolean = false,
     val historyFilter: CallHistoryFilter = CallHistoryFilter.All,
     val selected: CallHistoryDetail? = null,
     val usageState: CallActivityLoadState = CallActivityLoadState.Idle,
+    val usageRefreshing: Boolean = false,
+    val usageRefreshFailed: Boolean = false,
     val usage: UsagePeriod? = null,
 )
 
@@ -119,28 +123,47 @@ class CallActivityController(
     private val mutableState = MutableStateFlow(CallActivitySnapshot())
     val state = mutableState.asStateFlow()
     private var historyRequestGeneration = 0L
+    private var usageRequestGeneration = 0L
 
     suspend fun loadHistory(filter: CallHistoryFilter = mutableState.value.historyFilter) {
         val requestGeneration = ++historyRequestGeneration
-        mutableState.value = mutableState.value.copy(
-            historyState = CallActivityLoadState.Loading,
-            history = emptyList(),
-            historyPage = 0,
-            historyHasMore = false,
-            historyFilter = filter,
-        )
+        val previous = mutableState.value
+        val canRefreshInBackground = filter == previous.historyFilter &&
+            previous.historyState in setOf(CallActivityLoadState.Ready, CallActivityLoadState.Empty)
+        mutableState.value = if (canRefreshInBackground) {
+            previous.copy(historyRefreshing = true, historyRefreshFailed = false)
+        } else {
+            previous.copy(
+                historyState = CallActivityLoadState.Loading,
+                historyRefreshing = false,
+                historyRefreshFailed = false,
+                history = emptyList(),
+                historyPage = 0,
+                historyHasMore = false,
+                historyFilter = filter,
+            )
+        }
         runCatching { gateway.history(filter = filter) }.fold(
             onSuccess = { page ->
                 if (requestGeneration == historyRequestGeneration) {
                     mutableState.value = mutableState.value.copy(
                         historyState = if (page.items.isEmpty()) CallActivityLoadState.Empty else CallActivityLoadState.Ready,
+                        historyRefreshing = false,
+                        historyRefreshFailed = false,
                         history = page.items, historyPage = page.page, historyHasMore = page.hasMore,
                     )
                 }
             },
             onFailure = {
                 if (requestGeneration == historyRequestGeneration) {
-                    mutableState.value = mutableState.value.copy(historyState = CallActivityLoadState.Error)
+                    mutableState.value = if (canRefreshInBackground) {
+                        mutableState.value.copy(historyRefreshing = false, historyRefreshFailed = true)
+                    } else {
+                        mutableState.value.copy(
+                            historyState = CallActivityLoadState.Error,
+                            historyRefreshing = false,
+                        )
+                    }
                 }
             },
         )
@@ -165,21 +188,61 @@ class CallActivityController(
     fun clearDetail() { mutableState.value = mutableState.value.copy(selected = null) }
     fun clear() {
         historyRequestGeneration++
+        usageRequestGeneration++
         mutableState.value = CallActivitySnapshot()
     }
     suspend fun loadUsage() {
-        mutableState.value = mutableState.value.copy(usageState = CallActivityLoadState.Loading)
+        val requestGeneration = ++usageRequestGeneration
+        val previous = mutableState.value
+        val canRefreshInBackground = previous.usageState == CallActivityLoadState.Ready && previous.usage != null
+        mutableState.value = if (canRefreshInBackground) {
+            previous.copy(usageRefreshing = true, usageRefreshFailed = false)
+        } else {
+            previous.copy(
+                usageState = CallActivityLoadState.Loading,
+                usageRefreshing = false,
+                usageRefreshFailed = false,
+            )
+        }
         runCatching { gateway.currentUsage() }.fold(
-            onSuccess = { mutableState.value = mutableState.value.copy(usageState = CallActivityLoadState.Ready, usage = it) },
-            onFailure = { mutableState.value = mutableState.value.copy(usageState = CallActivityLoadState.Error) },
+            onSuccess = {
+                if (requestGeneration == usageRequestGeneration) {
+                    mutableState.value = mutableState.value.copy(
+                        usageState = CallActivityLoadState.Ready,
+                        usageRefreshing = false,
+                        usageRefreshFailed = false,
+                        usage = it,
+                    )
+                }
+            },
+            onFailure = {
+                if (requestGeneration == usageRequestGeneration) {
+                    mutableState.value = if (canRefreshInBackground) {
+                        mutableState.value.copy(usageRefreshing = false, usageRefreshFailed = true)
+                    } else {
+                        mutableState.value.copy(
+                            usageState = CallActivityLoadState.Error,
+                            usageRefreshing = false,
+                        )
+                    }
+                }
+            },
         )
     }
     suspend fun resetUsage() {
-        runCatching { gateway.resetUsage() }.onSuccess { mutableState.value = mutableState.value.copy(usageState = CallActivityLoadState.Ready, usage = it) }
+        val requestGeneration = ++usageRequestGeneration
+        runCatching { gateway.resetUsage() }.onSuccess {
+            if (requestGeneration == usageRequestGeneration) {
+                mutableState.value = mutableState.value.copy(usageState = CallActivityLoadState.Ready, usage = it)
+            }
+        }
     }
     suspend fun scheduleUsageReset(schedule: UsageResetSchedule) {
+        val requestGeneration = ++usageRequestGeneration
         runCatching { gateway.scheduleUsageReset(schedule) }.onSuccess {
-            mutableState.value = mutableState.value.copy(usageState = CallActivityLoadState.Ready, usage = it)
+            if (requestGeneration == usageRequestGeneration) {
+                mutableState.value = mutableState.value.copy(usageState = CallActivityLoadState.Ready, usage = it)
+            }
         }
     }
     suspend fun submit(usage: FinalCallUsage, ownerMembershipId: String) {
