@@ -1011,20 +1011,11 @@ private fun NqrbServerContactCard(
                 }
             }
             if (callLabel != null) {
-                IconButton(
-                    modifier = Modifier.size(48.dp).clip(CircleShape).background(
-                        if (callEnabled) colors.accent else colors.accentSoft,
-                    ),
+                NqrbCallIconButton(
+                    label = callLabel,
                     enabled = callEnabled,
                     onClick = onCall,
-                ) {
-                    NqrbIcon(
-                        NqrbGlyph.Call,
-                        callLabel,
-                        if (callEnabled) MaterialTheme.colorScheme.onPrimary else colors.textSecondary,
-                        Modifier.size(20.dp),
-                    )
-                }
+                )
                 Box {
                     IconButton(
                         modifier = Modifier.size(48.dp),
@@ -1084,20 +1075,17 @@ private fun NqrbSwipeToCallBox(
     val swipeThreshold = 80.dp
     val swipeModifier = if (callLabel != null && callEnabled) {
         Modifier
-            .pointerInput(callEnabled, layoutDirection) {
+            .pointerInput(callEnabled) {
                 val thresholdPx = swipeThreshold.toPx()
                 val maxRevealPx = 112.dp.toPx()
-                val direction = if (layoutDirection == LayoutDirection.Rtl) 1f else -1f
                 detectHorizontalDragGestures(
                     onDragStart = { swipeOffsetPx = 0f },
                     onHorizontalDrag = { change, dragAmount ->
                         change.consume()
-                        val progress = (swipeOffsetPx * direction + dragAmount * direction)
-                            .coerceIn(0f, maxRevealPx)
-                        swipeOffsetPx = progress * direction
+                        swipeOffsetPx = (swipeOffsetPx + dragAmount).coerceIn(0f, maxRevealPx)
                     },
                     onDragEnd = {
-                        val shouldCall = shouldStartCallFromSwipe(swipeOffsetPx, thresholdPx, layoutDirection)
+                        val shouldCall = shouldStartCallFromSwipe(swipeOffsetPx, thresholdPx)
                         swipeOffsetPx = 0f
                         if (shouldCall) onCall()
                     },
@@ -1110,7 +1098,9 @@ private fun NqrbSwipeToCallBox(
     Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(colors.accentSoft).then(swipeModifier)) {
         if (callLabel != null && callEnabled) {
             Row(
-                Modifier.align(Alignment.CenterEnd).padding(horizontal = NqrbSpacing.Sm),
+                Modifier.align(
+                    if (layoutDirection == LayoutDirection.Rtl) Alignment.CenterEnd else Alignment.CenterStart,
+                ).padding(horizontal = NqrbSpacing.Sm),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs),
             ) {
@@ -1122,8 +1112,30 @@ private fun NqrbSwipeToCallBox(
     }
 }
 
-internal fun shouldStartCallFromSwipe(offsetPx: Float, thresholdPx: Float, layoutDirection: LayoutDirection): Boolean =
-    if (layoutDirection == LayoutDirection.Rtl) offsetPx >= thresholdPx else offsetPx <= -thresholdPx
+internal fun shouldStartCallFromSwipe(offsetPx: Float, thresholdPx: Float): Boolean = offsetPx >= thresholdPx
+
+@Composable
+private fun NqrbCallIconButton(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = LocalNqrbColors.current
+    IconButton(
+        modifier = Modifier.size(48.dp).clip(CircleShape).background(
+            if (enabled) colors.accent else colors.accentSoft,
+        ),
+        enabled = enabled,
+        onClick = onClick,
+    ) {
+        NqrbIcon(
+            NqrbGlyph.Call,
+            label,
+            if (enabled) MaterialTheme.colorScheme.onPrimary else colors.textSecondary,
+            Modifier.size(20.dp),
+        )
+    }
+}
 
 internal fun shouldShowHistoryContactAdd(
     isGuestCall: Boolean,
@@ -1655,6 +1667,7 @@ private fun CallingDirectorySection(
         }
 
         CallingDirectoryStatus.Ready -> {
+            InfoNote(strings.swipeToCallHint)
             directory.participants.forEach { participant ->
                 CallableParticipantCard(
                     participant = participant,
@@ -1694,27 +1707,36 @@ private fun CallableParticipantCard(
     onCall: () -> Unit,
 ) {
     val colors = LocalNqrbColors.current
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = colors.surface,
-        shape = RoundedCornerShape(20.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
-    ) {
-        Row(
-            modifier = Modifier.padding(NqrbSpacing.Md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
+    NqrbSwipeToCallBox(callLabel, canCall, onCall) { swipeModifier ->
+        Surface(
+            modifier = swipeModifier,
+            color = colors.surface,
+            shape = RoundedCornerShape(20.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
         ) {
-            ParticipantAvatar(displayName)
-            Column(Modifier.weight(1f)) {
-                Text(displayName, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-                Text(status, style = MaterialTheme.typography.bodySmall,
-                    color = if (participant.availability == CallingParticipantAvailability.Online) colors.positive else colors.textSecondary)
-            }
-            Button(onClick = onCall, enabled = canCall) {
-                NqrbIcon(NqrbGlyph.Call, callLabel, MaterialTheme.colorScheme.onPrimary, Modifier.size(20.dp))
-                Spacer(Modifier.width(NqrbSpacing.Xs))
-                Text(callLabel)
+            Row(
+                modifier = Modifier.padding(NqrbSpacing.Md),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
+            ) {
+                ParticipantAvatar(displayName)
+                Column(Modifier.weight(1f)) {
+                    Text(displayName, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                    Text(
+                        status,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (participant.availability == CallingParticipantAvailability.Online) {
+                            colors.positive
+                        } else {
+                            colors.textSecondary
+                        },
+                    )
+                }
+                NqrbCallIconButton(
+                    label = callLabel,
+                    enabled = canCall,
+                    onClick = onCall,
+                )
             }
         }
     }
