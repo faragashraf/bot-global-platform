@@ -16,6 +16,7 @@ services:
       retries: 12
 
   backend:
+    image: ${BOTGLOBAL_BACKEND_IMAGE:-apps-prod-01-backend}
     build:
       context: ../..
       dockerfile: backend/src/BotGlobal.Api/Dockerfile
@@ -26,6 +27,10 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      DataProtection__ApplicationName: BotGlobal.Platform
+      DataProtection__KeysPath: /var/lib/botglobal/data-protection-keys
+      DataProtection__CertificatePath: /run/secrets/botglobal-data-protection.pfx
+      DataProtection__CertificatePassword: ${DATA_PROTECTION_CERTIFICATE_PASSWORD:?DATA_PROTECTION_CERTIFICATE_PASSWORD is required}
       Database__Provider: PostgreSql
       Database__CanarySchema__EnsureCreated: "true"
       PlatformHttpSecurity__AllowInsecureHttpCookies: "false"
@@ -43,14 +48,17 @@ services:
       ConnectionStrings__Pairing: Host=postgres;Port=5432;Database=botglobal_pairing;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false
       ConnectionStrings__Notifications: Host=postgres;Port=5432;Database=botglobal_notifications;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false
       ConnectionStrings__Games: Host=postgres;Port=5432;Database=botglobal_games;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false
+    volumes:
+      - data-protection-keys:/var/lib/botglobal/data-protection-keys
+      - ./secrets/data-protection.pfx:/run/secrets/botglobal-data-protection.pfx:ro
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped
     depends_on:
       backend:
         condition: service_started
-    ports:
-      - "18080:80"
+    expose:
+      - "80"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ../../frontend/dist/frontend/browser:/srv/frontend:ro
@@ -64,6 +72,7 @@ services:
 
 volumes:
   postgres-data:
+  data-protection-keys:
   caddy-data:
   caddy-config:
 

@@ -26,6 +26,7 @@ yarn-error.log*
 !.env.example
 appsettings.Local.json
 appsettings.*.Local.json
+infra/apps-prod-01/secrets/
 
 # Logs
 logs/
