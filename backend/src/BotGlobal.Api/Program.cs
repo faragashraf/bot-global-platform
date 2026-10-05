@@ -17,6 +17,7 @@ using BotGlobal.PlatformClients.Authentication;
 using BotGlobal.PlatformClients.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -68,6 +69,17 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddPlatformHttpSecurity();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor
+        | ForwardedHeaders.XForwardedHost
+        | ForwardedHeaders.XForwardedProto;
+
+    // The backend is only reached from the Docker-hosted reverse proxies whose
+    // addresses can change when the stack is recreated.
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 var app = builder.Build();
 
@@ -80,6 +92,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseExceptionHandler();
+app.UseForwardedHeaders();
 app.UseHttpsRedirection();
 
 app.UseCors(FrontendCorsPolicy);
