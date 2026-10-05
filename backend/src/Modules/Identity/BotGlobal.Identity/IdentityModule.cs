@@ -27,6 +27,8 @@ public static class IdentityModule
 {
     public const string MobileAccountDeletionRateLimitPolicy = "nqrb-mobile-account-deletion";
     public const string PublicNqrbAccountDeletionRateLimitPolicy = "nqrb-public-account-deletion";
+    private const string AllowInsecureHttpCookiesConfigurationKey =
+        "PlatformHttpSecurity:AllowInsecureHttpCookies";
 
     public static IServiceCollection AddIdentityModule(
         this IServiceCollection services,
@@ -125,16 +127,20 @@ public static class IdentityModule
         services.ConfigureApplicationCookie(
             options =>
             {
-                options.Cookie.Name =
-                    "__Host-BotGlobal.Admin";
+                var allowInsecureHttpCookies =
+                    configuration.GetValue<bool>(AllowInsecureHttpCookiesConfigurationKey);
+
+                options.Cookie.Name = allowInsecureHttpCookies
+                    ? "BotGlobal.Admin.Canary"
+                    : "__Host-BotGlobal.Admin";
 
                 options.Cookie.Path = "/";
                 options.Cookie.HttpOnly = true;
-                options.Cookie.SameSite =
-                    SameSiteMode.Lax;
+                options.Cookie.SameSite = SameSiteMode.Lax;
 
-                options.Cookie.SecurePolicy =
-                    CookieSecurePolicy.Always;
+                options.Cookie.SecurePolicy = allowInsecureHttpCookies
+                    ? CookieSecurePolicy.SameAsRequest
+                    : CookieSecurePolicy.Always;
 
                 options.SlidingExpiration = true;
 

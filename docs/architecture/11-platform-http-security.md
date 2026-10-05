@@ -50,6 +50,11 @@ This changes only the new antiforgery cookie; the authentication cookie remains
 Secure and HttpOnly. Production, Staging, and other environments use the secure
 antiforgery configuration.
 
+The explicit `PlatformHttpSecurity:AllowInsecureHttpCookies` override is reserved
+for short-lived HTTP canary environments that cannot use a production hostname
+yet. It switches browser authentication and antiforgery cookies to canary-only
+names with `SecurePolicy=SameAsRequest`. Do not enable it for production domains.
+
 ## Angular integration
 
 The runtime API base URL supports a separately hosted API. Angular's native

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 
@@ -9,19 +10,29 @@ public static class PlatformHttpSecurity
 {
     public const string TokenPath = "/api/security/antiforgery";
     public const string HeaderName = "X-XSRF-TOKEN";
+    public const string AllowInsecureHttpCookiesConfigurationKey =
+        "PlatformHttpSecurity:AllowInsecureHttpCookies";
 
     public static IServiceCollection AddPlatformHttpSecurity(
         this IServiceCollection services)
     {
         // Preserve the existing separate-origin browser login configuration.
-        services.ConfigureApplicationCookie(options =>
-        {
-            options.Cookie.SameSite = SameSiteMode.None;
-            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-        });
+        services.AddOptions<CookieAuthenticationOptions>(IdentityConstants.ApplicationScheme)
+            .Configure<IConfiguration>((options, configuration) =>
+            {
+                if (configuration.GetValue<bool>(AllowInsecureHttpCookiesConfigurationKey))
+                {
+                    options.Cookie.SameSite = SameSiteMode.Lax;
+                    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+                    return;
+                }
+
+                options.Cookie.SameSite = SameSiteMode.None;
+                options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            });
 
         services.AddAntiforgery();
-        services.AddOptions<AntiforgeryOptions>().Configure<IHostEnvironment>((options, environment) =>
+        services.AddOptions<AntiforgeryOptions>().Configure<IHostEnvironment, IConfiguration>((options, environment, configuration) =>
         {
             options.HeaderName = HeaderName;
             options.Cookie.Name = "__Host-BotGlobal.Antiforgery";
@@ -33,6 +44,12 @@ public static class PlatformHttpSecurity
             {
                 // ng serve proxies /api to the existing local HTTP endpoint.
                 options.Cookie.Name = "BotGlobal.Antiforgery.Development";
+                options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+                options.Cookie.SameSite = SameSiteMode.Lax;
+            }
+            else if (configuration.GetValue<bool>(AllowInsecureHttpCookiesConfigurationKey))
+            {
+                options.Cookie.Name = "BotGlobal.Antiforgery.Canary";
                 options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                 options.Cookie.SameSite = SameSiteMode.Lax;
             }

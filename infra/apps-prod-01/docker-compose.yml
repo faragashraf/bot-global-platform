@@ -28,6 +28,7 @@ services:
       ASPNETCORE_URLS: http://+:8080
       Database__Provider: PostgreSql
       Database__CanarySchema__EnsureCreated: "true"
+      PlatformHttpSecurity__AllowInsecureHttpCookies: "true"
       Notifications__Worker__Enabled: "false"
       Firebase__Enabled: "false"
       Identity__Federated__Google__ServerClientIds__nqrb: 235804274047-bb8tmlbfttdm8irq9hl8br4mac1su1pu.apps.googleusercontent.com

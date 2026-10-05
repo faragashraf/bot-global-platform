@@ -199,6 +199,30 @@ public sealed class PlatformHttpSecurityTests
     }
 
     [Fact]
+    public async Task Explicit_canary_HTTP_cookie_override_can_bootstrap_on_plain_HTTP()
+    {
+        await using var app = await CreateAppAsync(allowInsecureHttpCookies: true);
+        var client = app.GetTestClient();
+        client.BaseAddress = new Uri("http://localhost");
+
+        var signIn = await client.PostAsync("/test/sign-in/admin", null);
+        signIn.EnsureSuccessStatusCode();
+        Assert.Contains(signIn.Headers.GetValues("Set-Cookie"), cookie =>
+            cookie.StartsWith("BotGlobal.Admin.Canary=")
+            && cookie.Contains("httponly")
+            && !cookie.Contains("secure", StringComparison.OrdinalIgnoreCase));
+
+        var response = await client.GetAsync(PlatformHttpSecurity.TokenPath);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(response.Headers.GetValues("Set-Cookie"), cookie =>
+            cookie.StartsWith("BotGlobal.Antiforgery.Canary=")
+            && cookie.Contains("httponly")
+            && cookie.Contains("samesite=lax")
+            && !cookie.Contains("secure", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Host_prefixed_admin_cookie_keeps_root_path_when_hosted_under_backend_path()
     {
         await using var app = await CreateAppAsync(pathBase: "/backend");
@@ -304,7 +328,10 @@ public sealed class PlatformHttpSecurityTests
     }
 
     private static async Task<WebApplication> CreateAppAsync(
-        string environment = "Production", bool includeProtection = true, string? pathBase = null)
+        string environment = "Production",
+        bool includeProtection = true,
+        string? pathBase = null,
+        bool allowInsecureHttpCookies = false)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environment });
         builder.Configuration.Sources.Clear();
@@ -313,7 +340,8 @@ public sealed class PlatformHttpSecurityTests
             ["ConnectionStrings:Identity"] = "Server=localhost;Database=SecurityTests;Integrated Security=True",
             ["ConnectionStrings:PlatformClients"] = "Server=localhost;Database=SecurityTests;Integrated Security=True",
             ["ConnectionStrings:Notifications"] = "Server=localhost;Database=SecurityTests;Integrated Security=True",
-            ["Notifications:Worker:Enabled"] = "false"
+            ["Notifications:Worker:Enabled"] = "false",
+            [PlatformHttpSecurity.AllowInsecureHttpCookiesConfigurationKey] = allowInsecureHttpCookies.ToString()
         });
         builder.WebHost.UseTestServer();
         builder.Logging.ClearProviders();
