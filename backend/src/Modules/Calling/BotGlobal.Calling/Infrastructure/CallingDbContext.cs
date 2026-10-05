@@ -20,7 +20,7 @@ public sealed class CallingDbContext(DbContextOptions<CallingDbContext> options)
         calls.HasKey(x => x.Id);
         calls.Property(x => x.ApplicationKey).HasMaxLength(80).IsUnicode(false).IsRequired();
         calls.Property(x => x.CreatedAtUtc).HasColumnType("datetimeoffset");
-        calls.Property(x => x.IsGuestCall).HasDefaultValue(false);
+        calls.Property(x => x.IsGuestCall).ValueGeneratedNever();
         calls.Property(x => x.AnsweredAtUtc).HasColumnType("datetimeoffset");
         calls.Property(x => x.EndedAtUtc).HasColumnType("datetimeoffset");
         calls.Property(x => x.State).HasConversion<string>().HasMaxLength(16).IsUnicode(false);

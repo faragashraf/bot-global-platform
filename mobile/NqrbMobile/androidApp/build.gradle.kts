@@ -4,7 +4,7 @@ fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\
 
 val googleServerClientId = providers.gradleProperty("nqrbGoogleServerClientId")
     .orElse(providers.environmentVariable("NQRB_GOOGLE_SERVER_CLIENT_ID"))
-    .getOrElse("235804274047-bb8tmlbfttdm8irq9hl8br4mac1su1pu.apps.googleusercontent.com")
+    .getOrElse("470964330068-4q9469h04hb9e41j0r8ijhfqphpdmc8k.apps.googleusercontent.com")
 
 plugins {
     alias(libs.plugins.androidApplication)
