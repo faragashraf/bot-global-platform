@@ -8,5 +8,11 @@
 		reverse_proxy backend:8080
 	}
 
-	respond "Bot Global apps-prod-01 canary" 200
+	handle {
+		root * /srv/frontend
+		header /index.html Cache-Control "no-store"
+		header /runtime-config.js Cache-Control "no-store"
+		try_files {path} /index.html
+		file_server
+	}
 }

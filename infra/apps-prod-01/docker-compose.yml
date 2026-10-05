@@ -49,6 +49,7 @@ services:
       - "18080:80"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../frontend/dist/frontend/browser:/srv/frontend:ro
       - caddy-data:/data
       - caddy-config:/config
 
