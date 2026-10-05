@@ -53,7 +53,7 @@ write_status() {
       }
       END { printf "]" }')"
 
-  host_name="$(cat /host/proc/sys/kernel/hostname | json_escape)"
+  host_name="$(printf "%s" "${SERVER_NAME:-$(cat /host/proc/sys/kernel/hostname)}" | json_escape)"
   kernel="$(cat /host/proc/sys/kernel/osrelease | json_escape)"
 
   cat > /out/status.json.tmp <<JSON

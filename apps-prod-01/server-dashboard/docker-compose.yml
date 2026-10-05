@@ -12,6 +12,8 @@ services:
     image: docker:27-cli
     restart: unless-stopped
     command: ["/bin/sh", "/metrics/metrics.sh"]
+    environment:
+      SERVER_NAME: apps-prod-01
     volumes:
       - ./metrics:/metrics:ro
       - ./www:/out
