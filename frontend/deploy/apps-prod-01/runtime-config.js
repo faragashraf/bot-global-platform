@@ -1,3 +1,3 @@
 window.__BOT_GLOBAL_CONFIG__ = {
-  apiBaseUrl: '/backend'
+  apiBaseUrl: 'https://api.botglobalservice.com'
 };

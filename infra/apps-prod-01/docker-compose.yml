@@ -28,7 +28,10 @@ services:
       ASPNETCORE_URLS: http://+:8080
       Database__Provider: PostgreSql
       Database__CanarySchema__EnsureCreated: "true"
-      PlatformHttpSecurity__AllowInsecureHttpCookies: "true"
+      PlatformHttpSecurity__AllowInsecureHttpCookies: "false"
+      Frontend__AllowedOrigins__0: https://botglobalservice.com
+      Frontend__AllowedOrigins__1: https://www.botglobalservice.com
+      Frontend__AllowedOrigins__2: https://faragashraf.github.io
       Notifications__Worker__Enabled: "false"
       Firebase__Enabled: "false"
       Identity__Federated__Google__ServerClientIds__nqrb: 470964330068-4q9469h04hb9e41j0r8ijhfqphpdmc8k.apps.googleusercontent.com
@@ -53,8 +56,17 @@ services:
       - ../../frontend/dist/frontend/browser:/srv/frontend:ro
       - caddy-data:/data
       - caddy-config:/config
+    networks:
+      default:
+      reverse_proxy:
+        aliases:
+          - botglobal-apps-prod-01
 
 volumes:
   postgres-data:
   caddy-data:
   caddy-config:
+
+networks:
+  reverse_proxy:
+    external: true

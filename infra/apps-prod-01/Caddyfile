@@ -1,4 +1,8 @@
-:80 {
+{
+	auto_https off
+}
+
+(frontend_site) {
 	handle /backend {
 		rewrite * /health
 		reverse_proxy backend:8080
@@ -15,4 +19,31 @@
 		try_files {path} /index.html
 		file_server
 	}
+}
+
+(api_site) {
+	handle /backend {
+		rewrite * /health
+		reverse_proxy backend:8080
+	}
+
+	handle_path /backend/* {
+		reverse_proxy backend:8080
+	}
+
+	handle {
+		reverse_proxy backend:8080
+	}
+}
+
+http://botglobalservice.com, http://www.botglobalservice.com {
+	import frontend_site
+}
+
+http://api.botglobalservice.com, http://backend.botglobalservice.com {
+	import api_site
+}
+
+:80 {
+	import frontend_site
 }
