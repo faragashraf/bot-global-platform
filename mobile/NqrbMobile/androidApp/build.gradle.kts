@@ -59,11 +59,11 @@ android {
         create("canary") {
             initWith(getByName("debug"))
             versionNameSuffix = "-canary"
-            manifestPlaceholders["usesCleartextTraffic"] = "true"
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
             matchingFallbacks += listOf("debug")
             val apiUrl = providers.gradleProperty("nqrbCanaryApiBaseUrl")
                 .orElse(providers.environmentVariable("NQRB_CANARY_API_BASE_URL"))
-                .getOrElse("http://134.209.241.35:18080/backend")
+                .getOrElse("https://api.botglobalservice.com")
             buildConfigField("String", "API_BASE_URL", apiUrl.asBuildConfigString())
         }
         getByName("release") {
@@ -71,7 +71,7 @@ android {
             buildConfigField(
                 "String",
                 "API_BASE_URL",
-                "https://botglobalservice.com/backend".asBuildConfigString(),
+                "https://api.botglobalservice.com".asBuildConfigString(),
             )
         }
     }
