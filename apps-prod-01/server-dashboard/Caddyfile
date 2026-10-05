@@ -1,9 +1,0 @@
-:80 {
-	root * /srv
-	file_server
-	header {
-		X-Content-Type-Options nosniff
-		Referrer-Policy no-referrer
-		Cache-Control "no-store"
-	}
-}

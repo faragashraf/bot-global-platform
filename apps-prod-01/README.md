@@ -7,6 +7,7 @@ This folder is intentionally separate from application source code. Keep
 server utilities here when they are meant to support the host itself rather
 than a single Bot Global application.
 
-## Contents
+## Related Projects
 
-- `server-dashboard/` - standalone Docker-based host dashboard.
+- `/Users/ashraffarag/Repo/apps-prod-01-dashboard` - standalone Docker-based
+  host dashboard for this server.
