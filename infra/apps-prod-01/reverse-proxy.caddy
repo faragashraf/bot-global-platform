@@ -1,4 +1,4 @@
-botglobalservice.com, www.botglobalservice.com, api.botglobalservice.com, backend.botglobalservice.com {
+botglobalservice.com, www.botglobalservice.com, api.botglobalservice.com, backend.botglobalservice.com, nqrb.botglobalservice.com {
 	import proxy_common
 	reverse_proxy botglobal-apps-prod-01:80
 }

@@ -41,6 +41,7 @@ services:
       Firebase__Enabled: "false"
       Identity__Federated__Google__ServerClientIds__nqrb: 470964330068-4q9469h04hb9e41j0r8ijhfqphpdmc8k.apps.googleusercontent.com
       Identity__Federated__Google__NqrbWebClientId: 235804274047-bb8tmlbfttdm8irq9hl8br4mac1su1pu.apps.googleusercontent.com
+      Identity__Federated__Google__ServerClientIds__family-games: 470964330068-4q9469h04hb9e41j0r8ijhfqphpdmc8k.apps.googleusercontent.com
       ConnectionStrings__Catalog: Host=postgres;Port=5432;Database=botglobal_catalog;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false
       ConnectionStrings__Identity: Host=postgres;Port=5432;Database=botglobal_identity;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false
       ConnectionStrings__Communication: Host=postgres;Port=5432;Database=botglobal_communication;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Include Error Detail=false

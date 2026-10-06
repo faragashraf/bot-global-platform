@@ -24,6 +24,29 @@
 	}
 }
 
+(nqrb_guest_site) {
+	handle /guest-call {
+		rewrite * /nqrb/guest-call
+		reverse_proxy backend:8080
+	}
+
+	handle /api/public/nqrb/guest-call-invites/* {
+		reverse_proxy backend:8080
+	}
+
+	handle /hubs/calling {
+		reverse_proxy backend:8080
+	}
+
+	handle /hubs/calling/* {
+		reverse_proxy backend:8080
+	}
+
+	handle {
+		redir https://botglobalservice.com/ 302
+	}
+}
+
 (api_site) {
 	handle /backend {
 		rewrite * /health
@@ -41,6 +64,10 @@
 
 http://botglobalservice.com, http://www.botglobalservice.com {
 	import frontend_site
+}
+
+http://nqrb.botglobalservice.com {
+	import nqrb_guest_site
 }
 
 http://api.botglobalservice.com, http://backend.botglobalservice.com {
