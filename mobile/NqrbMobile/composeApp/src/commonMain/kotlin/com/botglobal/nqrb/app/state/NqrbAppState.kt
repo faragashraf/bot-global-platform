@@ -32,6 +32,10 @@ import com.botglobal.mobile.platform.navigation.BackStackNavigator
 import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
 import com.botglobal.mobile.platform.notifications.UnavailablePushRegistrationLifecycle
 import com.botglobal.mobile.platform.notifications.PushRegistrationOutcome
+import com.botglobal.mobile.platform.notifications.InMemoryNotificationInbox
+import com.botglobal.mobile.platform.notifications.NotificationInbox
+import com.botglobal.mobile.platform.update.UpdateMode
+import com.botglobal.mobile.platform.update.UpdatePolicyEngine
 import com.botglobal.mobile.platform.reviews.ReviewCoordinator
 import com.botglobal.mobile.platform.reviews.ReviewAttemptResult
 import com.botglobal.mobile.platform.reviews.ReviewTrigger
@@ -42,6 +46,8 @@ import com.botglobal.nqrb.app.data.NqrbAccountProfile
 import com.botglobal.nqrb.app.data.NqrbAccountProfileGateway
 import com.botglobal.nqrb.app.data.NqrbAccountProfileResult
 import com.botglobal.nqrb.app.data.UnavailableNqrbAccountProfileGateway
+import com.botglobal.nqrb.app.data.AllowCurrentNqrbUpdatePolicyGateway
+import com.botglobal.nqrb.app.data.NqrbUpdatePolicyGateway
 import com.botglobal.mobile.platform.voice.ManagedVoiceRoomController
 import com.botglobal.mobile.platform.voice.VoiceIceConfiguration
 import com.botglobal.mobile.platform.voice.VoiceJoinResult
@@ -68,8 +74,10 @@ import kotlin.time.Instant
 
 enum class NqrbDestination {
     SignIn,
+    RequiredUpdate,
     Home,
     History,
+    Notifications,
     People,
     Profile,
     Settings,
@@ -115,12 +123,16 @@ class NqrbAppState(
     ),
     val contactBook: NqrbContactBookController = NqrbContactBookController(),
     val callActivity: CallActivityController = CallActivityController(UnavailableCallActivityGateway),
+    val notificationInbox: NotificationInbox = InMemoryNotificationInbox(),
     private val push: PushRegistrationLifecycle = UnavailablePushRegistrationLifecycle,
     private val accountDeletion: NqrbAccountDeletionGateway = UnavailableNqrbAccountDeletionGateway,
     private val accountProfile: NqrbAccountProfileGateway = UnavailableNqrbAccountProfileGateway,
     private val localAccountDataCleaner: NqrbLocalAccountDataCleaner = UnavailableNqrbLocalAccountDataCleaner,
     private val permissions: PermissionController = UnavailablePermissionController,
     private val reviews: ReviewCoordinator? = null,
+    private val updatePolicy: NqrbUpdatePolicyGateway = AllowCurrentNqrbUpdatePolicyGateway,
+    private val currentVersion: String = "0.0.0",
+    private val platform: String = "android",
     private val callActionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     private val startupMutex = Mutex()
@@ -135,6 +147,10 @@ class NqrbAppState(
     val accountActionState = mutableAccountActionState.asStateFlow()
     private val mutableAccountProfileState = MutableStateFlow<NqrbAccountProfileState>(NqrbAccountProfileState.Hidden)
     val accountProfileState = mutableAccountProfileState.asStateFlow()
+    private val mutableRequiredUpdateMessage = MutableStateFlow<String?>(null)
+    val requiredUpdateMessage = mutableRequiredUpdateMessage.asStateFlow()
+    private val mutableRequiredUpdateDestination = MutableStateFlow<String?>(null)
+    val requiredUpdateDestination = mutableRequiredUpdateDestination.asStateFlow()
     private val accountProfileLifecycleMutex = Mutex()
     private var accountProfileRequestGeneration = 0L
     private var pendingMicrophoneAction = PendingMicrophoneAction.Outgoing
@@ -145,6 +161,11 @@ class NqrbAppState(
     private val pendingHistoryContactAdds = mutableSetOf<String>()
     private val mutableAddedHistoryContactCalls = MutableStateFlow<Set<String>>(emptySet())
     val addedHistoryContactCalls = mutableAddedHistoryContactCalls.asStateFlow()
+    val notifications = notificationInbox.notifications
+    private val acknowledgedMissedCallIds = mutableSetOf<String>()
+    private val transientMissedCallIds = mutableSetOf<String>()
+    private val mutableMissedCallBadgeCount = MutableStateFlow(0)
+    val missedCallBadgeCount = mutableMissedCallBadgeCount.asStateFlow()
     private val sessionRenewalMutex = Mutex()
     private var foregroundRefreshJob: Job? = null
     private var foreground = false
@@ -156,6 +177,7 @@ class NqrbAppState(
             calling.state.collect { snapshot ->
                 val callId = snapshot.callId?.value ?: return@collect
                 queueIncomingContactLookup(snapshot)
+                if (snapshot.state == CallState.Missed) markMissedCall(callId)
                 val usage = snapshot.networkUsage
                 if (usage.isFinal && usage.measurementAvailable) {
                     val membershipId = (identity.state.value as? FederatedAuthenticationState.SignedIn)
@@ -171,12 +193,21 @@ class NqrbAppState(
                 }
             }
         }
+        callActionScope.launch {
+            callActivity.state.collect { snapshot ->
+                refreshMissedCallBadgeFromHistory(snapshot.history)
+            }
+        }
     }
 
     suspend fun startup() = startupMutex.withLock {
         if (startupCompleted) return@withLock
         mutableStartupState.value = NqrbStartupState.RestoringSession
         try {
+            if (requiresUpdate()) {
+                navigation.reset(NqrbDestination.RequiredUpdate)
+                return@withLock
+            }
             invalidateAccountProfileRequests(hideProfile = true)
             identity.restore()
             val authenticated = identity.state.value as? FederatedAuthenticationState.SignedIn
@@ -254,6 +285,9 @@ class NqrbAppState(
         pendingInviteCode = null
         callActivity.clear()
         submittedUsageCalls.clear()
+        acknowledgedMissedCallIds.clear()
+        transientMissedCallIds.clear()
+        mutableMissedCallBadgeCount.value = 0
         pendingHistoryContactAdds.clear()
         reviewWorkflowBlockers.value = emptySet()
         mutableAddedHistoryContactCalls.value = emptySet()
@@ -312,6 +346,9 @@ class NqrbAppState(
         pendingInviteCode = null
         callActivity.clear()
         submittedUsageCalls.clear()
+        acknowledgedMissedCallIds.clear()
+        transientMissedCallIds.clear()
+        mutableMissedCallBadgeCount.value = 0
         pendingHistoryContactAdds.clear()
         reviewWorkflowBlockers.value = emptySet()
         mutableAddedHistoryContactCalls.value = emptySet()
@@ -334,13 +371,54 @@ class NqrbAppState(
             refreshCallingDirectory()
         }
         if (destination == NqrbDestination.History) {
+            markCallHistorySeen()
             refreshCallingDirectory()
             refreshCallHistory()
         }
+        if (destination == NqrbDestination.Notifications) markAllNotificationsRead()
         if (destination == NqrbDestination.Profile) refreshAccountProfile()
         callActionScope.launch { requestPendingReviewIfReady() }
         return true
     }
+
+    fun markAllNotificationsRead() {
+        callActionScope.launch { notificationInbox.markAllRead() }
+    }
+
+    private fun markMissedCall(callId: String) {
+        if (navigation.current == NqrbDestination.History) {
+            acknowledgedMissedCallIds += callId
+            transientMissedCallIds -= callId
+            mutableMissedCallBadgeCount.value = 0
+            return
+        }
+        if (callId !in acknowledgedMissedCallIds && transientMissedCallIds.add(callId)) {
+            mutableMissedCallBadgeCount.value = unseenMissedCallIds(callActivity.state.value.history).size
+        }
+    }
+
+    private fun refreshMissedCallBadgeFromHistory(history: List<com.botglobal.mobile.platform.calling.CallHistoryItem>) {
+        if (navigation.current == NqrbDestination.History) {
+            markCallHistorySeen(history)
+        } else {
+            mutableMissedCallBadgeCount.value = unseenMissedCallIds(history).size
+        }
+    }
+
+    private fun markCallHistorySeen(history: List<com.botglobal.mobile.platform.calling.CallHistoryItem> = callActivity.state.value.history) {
+        acknowledgedMissedCallIds += history.filter(::isMissedCallHistoryItem).map { it.callId }
+        acknowledgedMissedCallIds += transientMissedCallIds
+        transientMissedCallIds.clear()
+        mutableMissedCallBadgeCount.value = 0
+    }
+
+    private fun unseenMissedCallIds(history: List<com.botglobal.mobile.platform.calling.CallHistoryItem>): Set<String> =
+        (transientMissedCallIds + history.filter(::isMissedCallHistoryItem).map { it.callId })
+            .filterNot { it in acknowledgedMissedCallIds }
+            .toSet()
+
+    private fun isMissedCallHistoryItem(item: com.botglobal.mobile.platform.calling.CallHistoryItem): Boolean =
+        item.outcome.equals("missed", ignoreCase = true)
 
     fun refreshAccountProfile() {
         callActionScope.launch { loadAccountProfileForCurrentSession() }
@@ -411,6 +489,21 @@ class NqrbAppState(
     }
 
     fun canUseHome(): Boolean = identity.state.value is FederatedAuthenticationState.SignedIn
+
+    private suspend fun requiresUpdate(): Boolean {
+        val decision = runCatching {
+            UpdatePolicyEngine.decide(updatePolicy.versionPolicy(currentVersion, platform))
+        }.getOrNull() ?: return false
+        return if (decision.mode == UpdateMode.Required) {
+            mutableRequiredUpdateMessage.value = decision.message
+            mutableRequiredUpdateDestination.value = decision.storeDestination
+            true
+        } else {
+            mutableRequiredUpdateMessage.value = decision.message.takeIf { decision.mode == UpdateMode.Optional }
+            mutableRequiredUpdateDestination.value = decision.storeDestination.takeIf { decision.mode == UpdateMode.Optional }
+            false
+        }
+    }
 
     private fun isCurrentSession(session: MobileSession): Boolean =
         (identity.state.value as? FederatedAuthenticationState.SignedIn)?.session == session
@@ -869,6 +962,7 @@ class NqrbAppState(
         val TOP_LEVEL_DESTINATIONS = setOf(
             NqrbDestination.Home,
             NqrbDestination.History,
+            NqrbDestination.Notifications,
             NqrbDestination.People,
             NqrbDestination.Profile,
         )

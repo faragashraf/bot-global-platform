@@ -8,6 +8,7 @@ import com.botglobal.mobile.platform.identity.FederatedSignInResult
 import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.identity.SessionVault
+import com.botglobal.mobile.platform.update.AppVersionPolicy
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -15,6 +16,7 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.accept
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -32,7 +34,7 @@ class NqrbIdentityApi(
     private val apiBaseUrl: String,
     private val vault: SessionVault,
     private val diagnostic: (String) -> Unit = {},
-) : FederatedIdentityGateway, NqrbAccountProfileGateway {
+) : FederatedIdentityGateway, NqrbAccountProfileGateway, NqrbUpdatePolicyGateway {
     private val restoreMutex = Mutex()
     private val client = platformClient.config {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
@@ -139,6 +141,13 @@ class NqrbIdentityApi(
         }
     }
 
+    override suspend fun versionPolicy(currentVersion: String, platform: String): AppVersionPolicy =
+        client.get(endpoint("/api/mobile/nqrb/version-policy")) {
+            accept(ContentType.Application.Json)
+            parameter("platform", platform)
+            parameter("currentVersion", currentVersion)
+        }.body<NqrbVersionPolicyDto>().toDomain()
+
     private fun endpoint(path: String) = apiBaseUrl.trimEnd('/') + path
 
     private fun io.ktor.client.request.HttpRequestBuilder.jsonRequest() {
@@ -160,6 +169,23 @@ private data class AccountProfileDto(
     val displayName: String,
     val email: String,
 )
+
+@Serializable
+private data class NqrbVersionPolicyDto(
+    val currentVersion: String,
+    val latestVersion: String,
+    val minimumSupportedVersion: String,
+    val message: String? = null,
+    val storeDestination: String? = null,
+) {
+    fun toDomain() = AppVersionPolicy(
+        currentVersion,
+        latestVersion,
+        minimumSupportedVersion,
+        message,
+        storeDestination,
+    )
+}
 
 @Serializable
 private data class IdentityDto(

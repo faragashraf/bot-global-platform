@@ -81,6 +81,9 @@ public static class IdentityModule
         services.AddScoped<IMobileIdentityService, MobileIdentityService>();
         services.AddScoped<IMobileIdentityProfileReader, MobileIdentityProfileReader>();
         services.AddScoped<IMobileIdentityProfileService, MobileIdentityProfileService>();
+        services.Configure<NqrbVersionPolicyOptions>(
+            configuration.GetSection(NqrbVersionPolicyOptions.SectionName));
+        services.AddSingleton<NqrbVersionPolicyReader>();
         services.Configure<GoogleFederatedIdentityOptions>(
             configuration.GetSection(GoogleFederatedIdentityOptions.SectionName));
         services.AddSingleton<IGoogleIdTokenVerifier, GoogleIdTokenVerifier>();

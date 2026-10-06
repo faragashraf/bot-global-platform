@@ -21,6 +21,31 @@ import kotlin.test.assertIs
 
 class NqrbIdentityApiTests {
     @Test
+    fun versionPolicyUsesNqrbEndpointWithCurrentVersionAndPlatform() = runTest {
+        val engine = MockEngine { request ->
+            assertEquals(HttpMethod.Get, request.method)
+            assertEquals("/api/mobile/nqrb/version-policy", request.url.encodedPath)
+            assertEquals("android", request.url.parameters["platform"])
+            assertEquals("0.2.5", request.url.parameters["currentVersion"])
+            respond(
+                """{"currentVersion":"0.2.5","latestVersion":"0.2.6","minimumSupportedVersion":"0.2.6","message":"Update required","storeDestination":"https://play.google.com/store/apps/details?id=com.botglobal.nqrb"}""",
+                HttpStatusCode.OK,
+                headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+
+        val policy = NqrbIdentityApi(
+            HttpClient(engine),
+            "https://api.example",
+            RecordingSessionVault(null),
+        ).versionPolicy("0.2.5", "android")
+
+        assertEquals("0.2.6", policy.latestVersion)
+        assertEquals("0.2.6", policy.minimumSupportedVersion)
+        assertEquals("Update required", policy.message)
+    }
+
+    @Test
     fun authenticatedProfileUsesCanonicalBackendNameAndEmail() = runTest {
         val vault = RecordingSessionVault(session())
         val engine = MockEngine { request ->

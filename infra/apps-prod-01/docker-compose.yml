@@ -37,8 +37,24 @@ services:
       Frontend__AllowedOrigins__0: https://botglobalservice.com
       Frontend__AllowedOrigins__1: https://www.botglobalservice.com
       Frontend__AllowedOrigins__2: https://faragashraf.github.io
-      Notifications__Worker__Enabled: "false"
+      Calling__NqrbGuestInvites__PublicPageUrl: https://nqrb.botglobalservice.com/guest-call
+      Notifications__Worker__Enabled: "true"
+      Notifications__PushProviders__Providers__0__ApplicationId: 0706c770-a934-40e1-b45f-07aeac996042
+      Notifications__PushProviders__Providers__0__Provider: fcm
+      Notifications__PushProviders__Providers__0__Enabled: "true"
+      Notifications__PushProviders__Providers__0__ConfigurationReference: nqrb-firebase
+      Notifications__PushProviders__Providers__0__FirebaseProjectId: nqrb-12dbb
+      Notifications__PushProviders__Providers__0__AndroidPackageName: com.botglobal.nqrb
+      Nqrb__VersionPolicy__Android__LatestVersion: 0.2.5
+      Nqrb__VersionPolicy__Android__MinimumSupportedVersion: 0.2.5
+      Nqrb__VersionPolicy__Android__Message: "يتوفر تحديث جديد لتطبيق نقرب. حدّث التطبيق للمتابعة."
+      Nqrb__VersionPolicy__Android__StoreDestination: https://play.google.com/store/apps/details?id=com.botglobal.nqrb
       Firebase__Enabled: "false"
+      Firebase__Profiles__0__Enabled: "true"
+      Firebase__Profiles__0__ApplicationId: 0706c770-a934-40e1-b45f-07aeac996042
+      Firebase__Profiles__0__ConfigurationReference: nqrb-firebase
+      Firebase__Profiles__0__ProjectId: nqrb-12dbb
+      Firebase__Profiles__0__CredentialPath: /run/secrets/nqrb-firebase-admin.json
       Identity__Federated__Google__ServerClientIds__nqrb: 470964330068-4q9469h04hb9e41j0r8ijhfqphpdmc8k.apps.googleusercontent.com
       Identity__Federated__Google__NqrbWebClientId: 235804274047-bb8tmlbfttdm8irq9hl8br4mac1su1pu.apps.googleusercontent.com
       Identity__Federated__Google__ServerClientIds__family-games: 470964330068-4q9469h04hb9e41j0r8ijhfqphpdmc8k.apps.googleusercontent.com
@@ -52,6 +68,7 @@ services:
     volumes:
       - data-protection-keys:/var/lib/botglobal/data-protection-keys
       - ./secrets/data-protection.pfx:/run/secrets/botglobal-data-protection.pfx:ro
+      - ./secrets/nqrb-firebase-admin.json:/run/secrets/nqrb-firebase-admin.json:ro
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped

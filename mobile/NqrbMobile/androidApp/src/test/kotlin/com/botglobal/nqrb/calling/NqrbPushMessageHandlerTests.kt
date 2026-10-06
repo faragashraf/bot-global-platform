@@ -110,18 +110,72 @@ class NqrbPushMessageHandlerTests {
     @Test
     fun invalidCallIdIsIgnored() = runTest {
         val session = RecordingPushSession()
+        val notifications = RecordingGeneralNotifications()
 
-        handler(session).onMessage(message("incoming_call", "not-a-call-id"))
+        handler(session, notifications = notifications)
+            .onMessage(message("incoming_call", "not-a-call-id"))
 
         assertEquals(emptyList(), session.received)
         assertEquals(emptyList(), session.dismissed)
+        assertEquals(emptyList(), notifications.shown)
+    }
+
+    @Test
+    fun generalCampaignPushShowsNotification() = runTest {
+        val session = RecordingPushSession()
+        val notifications = RecordingGeneralNotifications()
+
+        handler(session, notifications = notifications).onMessage(
+            PushMessage(
+                messageId = "campaign-1",
+                data = mapOf(
+                    "title" to "Welcome to Nqrb",
+                    "body" to "Thanks for trying Nqrb.",
+                ),
+                sentAtEpochMilliseconds = 1_000,
+                timeToLiveSeconds = 30,
+            ),
+        )
+
+        assertEquals(emptyList(), session.received)
+        assertEquals(emptyList(), session.dismissed)
+        assertEquals(
+            listOf(ShownNotification("campaign-1", "Welcome to Nqrb", "Thanks for trying Nqrb.")),
+            notifications.shown,
+        )
+    }
+
+    @Test
+    fun incomingCallPushDoesNotShowGeneralNotification() = runTest {
+        val session = RecordingPushSession()
+        val notifications = RecordingGeneralNotifications()
+        val callId = validCallId()
+
+        handler(session, notifications = notifications).onMessage(
+            PushMessage(
+                messageId = "call-1",
+                data = mapOf(
+                    "type" to "incoming_call",
+                    "callId" to callId,
+                    "title" to "Incoming call",
+                    "body" to "Someone is calling",
+                ),
+                sentAtEpochMilliseconds = 1_000,
+                timeToLiveSeconds = 30,
+            ),
+        )
+
+        assertEquals(listOf(CallId(callId)), session.received)
+        assertEquals(emptyList(), notifications.shown)
     }
 
     private fun handler(
         session: RecordingPushSession,
         nowEpochMillis: Long = 2_000,
+        notifications: NqrbGeneralPushNotificationSink = RecordingGeneralNotifications(),
     ) = NqrbPushMessageHandler(
         session = session,
+        generalNotifications = notifications,
         nowEpochMillis = { nowEpochMillis },
         logger = { _, _ -> },
     )
@@ -155,6 +209,20 @@ class NqrbPushMessageHandlerTests {
 
         override suspend fun dismissIncoming(callId: CallId, reason: CallTerminationReason) {
             dismissed += callId to reason
+        }
+    }
+
+    private data class ShownNotification(
+        val messageId: String?,
+        val title: String,
+        val body: String,
+    )
+
+    private class RecordingGeneralNotifications : NqrbGeneralPushNotificationSink {
+        val shown = mutableListOf<ShownNotification>()
+
+        override suspend fun show(messageId: String?, title: String, body: String) {
+            shown += ShownNotification(messageId, title, body)
         }
     }
 }

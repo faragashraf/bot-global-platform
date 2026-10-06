@@ -114,6 +114,7 @@ class MainActivity : ComponentActivity() {
                 AndroidPreferenceStore(this, NqrbOngoingCallService.RingtonePreferences),
             ),
             callActivity = nqrbApplication.callActivity,
+            notificationInbox = nqrbApplication.notificationInbox,
             push = nqrbApplication.firebaseMessagingRuntime,
             accountDeletion = nqrbApplication.accountDeletionApi,
             accountProfile = nqrbApplication.identityApi,
@@ -126,6 +127,9 @@ class MainActivity : ComponentActivity() {
                 launcher = AndroidPlayReviewPromptLauncher { if (!isFinishing && !isDestroyed) this else null },
                 nowMillis = System::currentTimeMillis,
             ),
+            updatePolicy = nqrbApplication.identityApi,
+            currentVersion = BuildConfig.VERSION_NAME,
+            platform = "android",
         )
         setContent {
             NqrbApp(
@@ -137,6 +141,7 @@ class MainActivity : ComponentActivity() {
                 onNotificationPermissionNeeded = ::requestNotificationPermission,
                 notificationsEnabled = notificationsEnabled,
                 onOpenNotificationSettings = ::openNotificationSettings,
+                onOpenStoreDestination = ::openStoreDestination,
                 callTime = ::androidCallTime,
             )
         }
@@ -219,6 +224,12 @@ class MainActivity : ComponentActivity() {
             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
         }
         startActivity(settingsIntent)
+    }
+
+    private fun openStoreDestination(destination: String) {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(destination)))
+        }
     }
 
     private fun callNotificationsEnabled(): Boolean {

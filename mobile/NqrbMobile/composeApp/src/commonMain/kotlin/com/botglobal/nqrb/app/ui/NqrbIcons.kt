@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 enum class NqrbGlyph {
     Home,
     History,
+    Notifications,
     Call,
     People,
     Profile,
@@ -77,6 +78,13 @@ fun NqrbIcon(
                 drawLine(tint, center, Offset(size.width * .66f, size.height * .58f), strokeWidth = stroke.width, cap = StrokeCap.Round)
                 drawLine(tint, Offset(size.width * .17f, size.height * .31f), Offset(size.width * .17f, size.height * .52f), strokeWidth = stroke.width)
                 drawLine(tint, Offset(size.width * .17f, size.height * .31f), Offset(size.width * .37f, size.height * .31f), strokeWidth = stroke.width)
+            }
+            NqrbGlyph.Notifications -> {
+                drawArc(tint, 200f, 140f, false, Offset(size.width * .27f, size.height * .2f), Size(size.width * .46f, size.height * .42f), style = stroke)
+                drawLine(tint, Offset(size.width * .31f, size.height * .56f), Offset(size.width * .2f, size.height * .76f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .69f, size.height * .56f), Offset(size.width * .8f, size.height * .76f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .2f, size.height * .76f), Offset(size.width * .8f, size.height * .76f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawCircle(tint, size.minDimension * .04f, Offset(center.x, size.height * .84f))
             }
             NqrbGlyph.Call -> {
                 val path = Path().apply {

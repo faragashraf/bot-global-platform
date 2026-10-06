@@ -5,6 +5,7 @@ import android.util.Log
 import com.botglobal.mobile.platform.identity.AndroidSecureSessionVault
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.notifications.PushRegistrationController
+import com.botglobal.mobile.platform.notifications.AndroidPreferenceNotificationInbox
 import com.botglobal.mobile.platform.notifications.firebase.AndroidFirebaseMessagingRuntime
 import com.botglobal.mobile.platform.notifications.firebase.AndroidPushDeviceInstallation
 import com.botglobal.mobile.platform.notifications.firebase.FirebaseMessageDeliveryPolicy
@@ -16,6 +17,7 @@ import com.botglobal.nqrb.app.data.NqrbCallingDirectoryApi
 import com.botglobal.nqrb.app.data.NqrbContactBookApi
 import com.botglobal.nqrb.app.data.createNqrbHttpClient
 import com.botglobal.nqrb.calling.NqrbCallRuntime
+import com.botglobal.nqrb.calling.AndroidNqrbGeneralNotificationPresenter
 import com.botglobal.nqrb.calling.NqrbPushMessageHandler
 import com.botglobal.nqrb.calling.AndroidPendingCallUsageStore
 import com.botglobal.nqrb.app.data.NqrbCallActivityApi
@@ -44,6 +46,8 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
         private set
     lateinit var localAccountDataCleaner: NqrbLocalAccountDataCleaner
         private set
+    lateinit var notificationInbox: AndroidPreferenceNotificationInbox
+        private set
     override lateinit var firebaseMessagingRuntime: AndroidFirebaseMessagingRuntime
         private set
 
@@ -69,6 +73,7 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
             sessionVault,
         )
         val pendingCallUsageStore = AndroidPendingCallUsageStore(this)
+        notificationInbox = AndroidPreferenceNotificationInbox(this, "nqrb_notifications")
         callActivity = CallActivityController(
             NqrbCallActivityApi(createNqrbHttpClient(), BuildConfig.API_BASE_URL, sessionVault),
             pendingCallUsageStore,
@@ -97,13 +102,17 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
         firebaseMessagingRuntime = AndroidFirebaseMessagingRuntime(
             context = this,
             registrationController = PushRegistrationController(pushRegistration),
-            messageHandler = NqrbPushMessageHandler(callRuntime),
+            messageHandler = NqrbPushMessageHandler(
+                callRuntime,
+                AndroidNqrbGeneralNotificationPresenter(this, notificationInbox),
+            ),
             messageDeliveryPolicy = FirebaseMessageDeliveryPolicy(blockOnMessage = true),
         )
         localAccountDataCleaner = NqrbLocalAccountDataCleaner {
             runCatching { sessionVault.clear() }
             runCatching { deviceCredentialVault.clear() }
             runCatching { pendingCallUsageStore.clearAll() }
+            runCatching { notificationInbox.clearAll() }
             NqrbOngoingCallService.clearStoredPresentation(this)
         }
     }

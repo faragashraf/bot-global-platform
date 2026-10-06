@@ -19,6 +19,7 @@ import com.botglobal.mobile.platform.calling.CallActivityController
 import com.botglobal.mobile.platform.calling.CallActivityGateway
 import com.botglobal.mobile.platform.calling.CallHistoryDetail
 import com.botglobal.mobile.platform.calling.CallHistoryFilter
+import com.botglobal.mobile.platform.calling.CallHistoryItem
 import com.botglobal.mobile.platform.calling.CallHistoryPage
 import com.botglobal.mobile.platform.calling.FinalCallUsage
 import com.botglobal.mobile.platform.calling.PendingCallUsageStore
@@ -41,8 +42,12 @@ import com.botglobal.mobile.platform.identity.FederatedSignInResult
 import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.localization.ContentDirection
+import com.botglobal.mobile.platform.notifications.InMemoryNotificationInbox
 import com.botglobal.mobile.platform.notifications.PushRegistrationLifecycle
 import com.botglobal.mobile.platform.notifications.PushRegistrationOutcome
+import com.botglobal.mobile.platform.notifications.SemanticNotification
+import com.botglobal.mobile.platform.notifications.SemanticNotificationPriority
+import com.botglobal.mobile.platform.update.AppVersionPolicy
 import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
 import com.botglobal.mobile.platform.reviews.ReviewCoordinator
 import com.botglobal.mobile.platform.reviews.ReviewLaunchOutcome
@@ -63,6 +68,7 @@ import com.botglobal.nqrb.app.data.NqrbContactPage
 import com.botglobal.nqrb.app.data.NqrbGuestCallInvite
 import com.botglobal.nqrb.app.data.NqrbGuestCallInviteCreateResult
 import com.botglobal.nqrb.app.data.NqrbGuestCallInviteRevokeResult
+import com.botglobal.nqrb.app.data.NqrbUpdatePolicyGateway
 import com.botglobal.mobile.platform.voice.VoiceRoomController
 import com.botglobal.mobile.platform.voice.VoiceRoomSnapshot
 import com.botglobal.mobile.platform.voice.VoiceRoomState
@@ -250,6 +256,51 @@ class NqrbAppStateTests {
         assertTrue(state.identity.state.value is FederatedAuthenticationState.AuthenticationError)
         assertEquals(NqrbDestination.SignIn, state.navigation.current)
         assertFalse(state.selectTopLevel(NqrbDestination.Home))
+    }
+
+    @Test
+    fun requiredUpdateBlocksStartupBeforeSessionRestore() = runTest {
+        val identityGateway = CountingIdentityGateway(session())
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, identityGateway),
+            updatePolicy = FixedUpdatePolicy(
+                AppVersionPolicy(
+                    currentVersion = "0.2.5",
+                    latestVersion = "0.2.6",
+                    minimumSupportedVersion = "0.2.6",
+                    message = "Update required",
+                    storeDestination = "https://play.google.com/store/apps/details?id=com.botglobal.nqrb",
+                ),
+            ),
+            currentVersion = "0.2.5",
+            callActionScope = backgroundScope,
+        )
+
+        state.startup()
+
+        assertEquals(NqrbDestination.RequiredUpdate, state.navigation.current)
+        assertEquals("Update required", state.requiredUpdateMessage.value)
+        assertEquals(0, identityGateway.restores)
+    }
+
+    @Test
+    fun optionalUpdateDoesNotBlockStartup() = runTest {
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, FixedIdentityGateway(session(), FederatedSignInResult.Rejected)),
+            updatePolicy = FixedUpdatePolicy(
+                AppVersionPolicy(
+                    currentVersion = "0.2.5",
+                    latestVersion = "0.2.6",
+                    minimumSupportedVersion = "0.2.5",
+                ),
+            ),
+            currentVersion = "0.2.5",
+            callActionScope = backgroundScope,
+        )
+
+        state.startup()
+
+        assertEquals(NqrbDestination.Home, state.navigation.current)
     }
 
     @Test
@@ -854,6 +905,60 @@ class NqrbAppStateTests {
         assertEquals(3, signaling.connects)
     }
 
+    @Test
+    fun missed_call_badge_clears_when_history_is_opened() = runTest {
+        val gateway = FixedCallActivityGateway(
+            listOf(CallHistoryItem("missed-call", "incoming", "Remote", "missed", "2026-10-06T10:00:00Z", null, null)),
+        )
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, FixedIdentityGateway(session(), FederatedSignInResult.Rejected)),
+            callActivity = CallActivityController(gateway),
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+
+        state.refreshCallHistory()
+        runCurrent()
+        assertEquals(1, state.missedCallBadgeCount.value)
+
+        assertTrue(state.selectTopLevel(NqrbDestination.History))
+        runCurrent()
+        assertEquals(0, state.missedCallBadgeCount.value)
+    }
+
+    @Test
+    fun notification_badge_clears_when_notifications_screen_is_opened() = runTest {
+        val inbox = InMemoryNotificationInbox(
+            listOf(
+                SemanticNotification(
+                    id = "11111111-1111-4111-8111-111111111111",
+                    type = "general",
+                    titleAr = "أهلًا",
+                    titleEn = "Welcome",
+                    bodyAr = "رسالة ترحيب",
+                    bodyEn = "Welcome message",
+                    createdAtUtc = "2026-10-06T10:00:00Z",
+                    priority = SemanticNotificationPriority.Normal,
+                    destination = null,
+                    soundKey = null,
+                    isRead = false,
+                ),
+            ),
+        )
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(FixedCredentials, FixedIdentityGateway(session(), FederatedSignInResult.Rejected)),
+            notificationInbox = inbox,
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+        assertEquals(1, inbox.unreadCount())
+
+        assertTrue(state.selectTopLevel(NqrbDestination.Notifications))
+        runCurrent()
+
+        assertEquals(0, inbox.unreadCount())
+    }
+
     private fun state(
         restored: MobileSession? = null,
         signIn: FederatedSignInResult = FederatedSignInResult.Rejected,
@@ -906,6 +1011,13 @@ class NqrbAppStateTests {
         }
         override suspend fun authenticate(credential: FederatedCredential) = FederatedSignInResult.Failed
         override suspend fun logout() = Unit
+    }
+
+    private class FixedUpdatePolicy(
+        private val policy: AppVersionPolicy,
+    ) : NqrbUpdatePolicyGateway {
+        override suspend fun versionPolicy(currentVersion: String, platform: String) =
+            policy.copy(currentVersion = currentVersion)
     }
 
     private class FixedPermission(private val result: PermissionState) : PermissionController {
@@ -1042,6 +1154,18 @@ class NqrbAppStateTests {
         override suspend fun history(page: Int, pageSize: Int, filter: CallHistoryFilter) = CallHistoryPage(emptyList(), page, pageSize, false)
         override suspend fun detail(callId: String): CallHistoryDetail? = null
         override suspend fun finalizeUsage(usage: FinalCallUsage) { finalized += usage }
+        override suspend fun currentUsage() = UsagePeriod("period", "2026-09-01T00:00:00Z", null, 0, 0, null, null)
+        override suspend fun resetUsage() = currentUsage()
+        override suspend fun scheduleUsageReset(schedule: com.botglobal.mobile.platform.calling.UsageResetSchedule) = currentUsage()
+    }
+
+    private class FixedCallActivityGateway(
+        private val items: List<CallHistoryItem>,
+    ) : CallActivityGateway {
+        override suspend fun history(page: Int, pageSize: Int, filter: CallHistoryFilter) =
+            CallHistoryPage(items, page, pageSize, false)
+        override suspend fun detail(callId: String): CallHistoryDetail? = null
+        override suspend fun finalizeUsage(usage: FinalCallUsage) = Unit
         override suspend fun currentUsage() = UsagePeriod("period", "2026-09-01T00:00:00Z", null, 0, 0, null, null)
         override suspend fun resetUsage() = currentUsage()
         override suspend fun scheduleUsageReset(schedule: com.botglobal.mobile.platform.calling.UsageResetSchedule) = currentUsage()

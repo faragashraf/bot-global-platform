@@ -105,6 +105,7 @@ import com.botglobal.mobile.platform.calling.speakerControlTarget
 import com.botglobal.mobile.platform.identity.FederatedAuthenticationError
 import com.botglobal.mobile.platform.identity.FederatedAuthenticationState
 import com.botglobal.mobile.platform.localization.ContentDirection
+import com.botglobal.mobile.platform.notifications.SemanticNotification
 import com.botglobal.nqrb.app.state.NqrbAppState
 import com.botglobal.nqrb.app.state.NqrbContactBookLoadState
 import com.botglobal.nqrb.app.state.NqrbContactBookSnapshot
@@ -147,6 +148,7 @@ fun NqrbApp(
     onNotificationPermissionNeeded: () -> Unit = {},
     notificationsEnabled: Boolean = true,
     onOpenNotificationSettings: () -> Unit = {},
+    onOpenStoreDestination: (String) -> Unit = {},
     callTime: (String, String) -> NqrbCallTime = ::basicCallTime,
 ) {
     val locale by appState.locale.state.collectAsState()
@@ -158,6 +160,10 @@ fun NqrbApp(
     val call by appState.calling.state.collectAsState()
     val callingDirectory by appState.callingDirectory.state.collectAsState()
     val callActivity by appState.callActivity.state.collectAsState()
+    val notifications by appState.notifications.collectAsState()
+    val missedCallBadgeCount by appState.missedCallBadgeCount.collectAsState()
+    val requiredUpdateMessage by appState.requiredUpdateMessage.collectAsState()
+    val requiredUpdateDestination by appState.requiredUpdateDestination.collectAsState()
     val microphoneExplanation by appState.microphoneExplanationVisible.collectAsState()
     val microphoneBlocked by appState.microphonePermissionBlocked.collectAsState()
     var minimizedCallId by remember { mutableStateOf<String?>(null) }
@@ -213,6 +219,10 @@ fun NqrbApp(
                 onRestoreCall = { minimizedCallId = null },
                 callingDirectory = callingDirectory,
                 callActivity = callActivity,
+                notifications = notifications,
+                missedCallBadgeCount = missedCallBadgeCount,
+                requiredUpdateMessage = requiredUpdateMessage,
+                requiredUpdateDestination = requiredUpdateDestination,
                 microphoneExplanation = microphoneExplanation,
                 microphoneBlocked = microphoneBlocked,
                 onShareInvite = onShareInvite,
@@ -220,6 +230,7 @@ fun NqrbApp(
                 onChoosePhoneRingtone = onChoosePhoneRingtone,
                 notificationsEnabled = notificationsEnabled,
                 onOpenNotificationSettings = onOpenNotificationSettings,
+                onOpenStoreDestination = onOpenStoreDestination,
                 callTime = callTime,
             )
         }
@@ -242,6 +253,10 @@ private fun NqrbShell(
     onRestoreCall: () -> Unit,
     callingDirectory: CallingDirectorySnapshot,
     callActivity: CallActivitySnapshot,
+    notifications: List<SemanticNotification>,
+    missedCallBadgeCount: Int,
+    requiredUpdateMessage: String?,
+    requiredUpdateDestination: String?,
     microphoneExplanation: Boolean,
     microphoneBlocked: Boolean,
     onShareInvite: (String) -> Boolean,
@@ -249,6 +264,7 @@ private fun NqrbShell(
     onChoosePhoneRingtone: () -> Unit,
     notificationsEnabled: Boolean,
     onOpenNotificationSettings: () -> Unit,
+    onOpenStoreDestination: (String) -> Unit,
     callTime: (String, String) -> NqrbCallTime,
 ) {
     val colors = LocalNqrbColors.current
@@ -267,7 +283,13 @@ private fun NqrbShell(
             if (destination in NQRB_TOP_LEVEL_DESTINATIONS &&
                 (call.state !in VisibleCallStates || isCallMinimized) && !microphoneExplanation
             ) {
-                NqrbBottomBar(destination, strings, appState::selectTopLevel)
+                NqrbBottomBar(
+                    current = destination,
+                    strings = strings,
+                    notifications = notifications,
+                    missedCallBadgeCount = missedCallBadgeCount,
+                    onSelect = appState::selectTopLevel,
+                )
             }
         },
     ) { contentPadding ->
@@ -292,6 +314,12 @@ private fun NqrbShell(
                     } else {
                         RestoringSessionScreen(strings, appState)
                     }
+                    NqrbDestination.RequiredUpdate -> RequiredUpdateScreen(
+                        strings = strings,
+                        message = requiredUpdateMessage,
+                        storeDestination = requiredUpdateDestination,
+                        onOpenStoreDestination = onOpenStoreDestination,
+                    )
                     NqrbDestination.Home -> HomeScreen(
                         strings,
                         appState,
@@ -312,6 +340,7 @@ private fun NqrbShell(
                         callTime = callTime,
                     )
                     NqrbDestination.History -> CallHistoryScreen(strings, languageTag, appState, callActivity, contactBook, callingDirectory, callTime)
+                    NqrbDestination.Notifications -> NotificationsScreen(strings, languageTag, appState, notifications)
                     NqrbDestination.People -> PeopleScreen(strings, languageTag, contactBook, callingDirectory, appState, onShareInvite, callTime)
                     NqrbDestination.Profile -> ProfileScreen(strings, appState, contactBook)
                 } }
@@ -327,6 +356,34 @@ private fun RestoringSessionScreen(strings: NqrbStrings, appState: NqrbAppState)
         FlowHero(NqrbGlyph.Profile, strings.restoringTitle, strings.restoringBody)
         Box(Modifier.fillMaxWidth().padding(NqrbSpacing.Lg), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = colors.accent)
+        }
+    }
+}
+
+@Composable
+private fun RequiredUpdateScreen(
+    strings: NqrbStrings,
+    message: String?,
+    storeDestination: String?,
+    onOpenStoreDestination: (String) -> Unit,
+) {
+    val colors = LocalNqrbColors.current
+    BrandedFlowFrame(strings, {}) {
+        FlowHero(
+            NqrbGlyph.Notifications,
+            strings.updateRequiredTitle,
+            message?.takeIf(String::isNotBlank) ?: strings.updateRequiredBody,
+        )
+        Button(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = NqrbSpacing.Lg),
+            enabled = !storeDestination.isNullOrBlank(),
+            onClick = { storeDestination?.let(onOpenStoreDestination) },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = colors.accent,
+                contentColor = Color.White,
+            ),
+        ) {
+            Text(strings.updateNow)
         }
     }
 }
@@ -2388,6 +2445,77 @@ private fun CallHistoryScreen(
 }
 
 @Composable
+private fun NotificationsScreen(
+    strings: NqrbStrings,
+    languageTag: String,
+    appState: NqrbAppState,
+    notifications: List<SemanticNotification>,
+) {
+    val colors = LocalNqrbColors.current
+    LaunchedEffect(Unit) { appState.markAllNotificationsRead() }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(NqrbSpacing.Lg),
+        verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
+    ) {
+        ProductHeader(strings, appState::openSettings)
+        Text(strings.notificationInboxTitle, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
+        Text(strings.notificationInboxBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+        if (notifications.isEmpty()) {
+            InfoNote(strings.notificationInboxEmpty)
+        } else {
+            notifications.forEach { notification ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = if (notification.isRead) colors.surface else colors.accentSoft,
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = NqrbSpacing.Md, vertical = NqrbSpacing.Sm),
+                        horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        NqrbIcon(NqrbGlyph.Notifications, strings.notifications, colors.accent, Modifier.size(24.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
+                            Text(
+                                notificationTitle(notification, languageTag),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = colors.textPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            val body = notificationBody(notification, languageTag)
+                            if (body.isNotBlank()) {
+                                Text(
+                                    body,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.textSecondary,
+                                    maxLines = 4,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun notificationTitle(notification: SemanticNotification, languageTag: String): String =
+    if (languageTag.startsWith("ar")) {
+        notification.titleAr.ifBlank { notification.titleEn }
+    } else {
+        notification.titleEn.ifBlank { notification.titleAr }
+    }.ifBlank { "Nqrb" }
+
+private fun notificationBody(notification: SemanticNotification, languageTag: String): String =
+    if (languageTag.startsWith("ar")) {
+        notification.bodyAr.ifBlank { notification.bodyEn }
+    } else {
+        notification.bodyEn.ifBlank { notification.bodyAr }
+    }
+
+@Composable
 private fun HistoryFilterRow(
     strings: NqrbStrings,
     selected: CallHistoryFilter,
@@ -2614,14 +2742,17 @@ private fun Choice(
 private fun NqrbBottomBar(
     current: NqrbDestination,
     strings: NqrbStrings,
+    notifications: List<SemanticNotification>,
+    missedCallBadgeCount: Int,
     onSelect: (NqrbDestination) -> Unit,
 ) {
     val colors = LocalNqrbColors.current
     val items = listOf(
-        Triple(NqrbDestination.Home, NqrbGlyph.Home, strings.home),
-        Triple(NqrbDestination.History, NqrbGlyph.History, strings.history),
-        Triple(NqrbDestination.People, NqrbGlyph.People, strings.people),
-        Triple(NqrbDestination.Profile, NqrbGlyph.Profile, strings.profile),
+        BottomNavItem(NqrbDestination.Home, NqrbGlyph.Home, strings.home),
+        BottomNavItem(NqrbDestination.History, NqrbGlyph.History, strings.history, missedCallBadgeCount),
+        BottomNavItem(NqrbDestination.Notifications, NqrbGlyph.Notifications, strings.notifications, notifications.count { !it.isRead }),
+        BottomNavItem(NqrbDestination.People, NqrbGlyph.People, strings.people),
+        BottomNavItem(NqrbDestination.Profile, NqrbGlyph.Profile, strings.profile),
     )
     Surface(color = colors.surface, shadowElevation = 16.dp) {
         Row(
@@ -2629,18 +2760,23 @@ private fun NqrbBottomBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            items.forEach { (destination, glyph, label) ->
-                BottomItem(destination, glyph, label, current == destination, colors, onSelect)
+            items.forEach { item ->
+                BottomItem(item, current == item.destination, colors, onSelect)
             }
         }
     }
 }
 
+private data class BottomNavItem(
+    val destination: NqrbDestination,
+    val glyph: NqrbGlyph,
+    val label: String,
+    val badgeCount: Int = 0,
+)
+
 @Composable
 private fun BottomItem(
-    destination: NqrbDestination,
-    glyph: NqrbGlyph,
-    label: String,
+    item: BottomNavItem,
     isSelected: Boolean,
     colors: NqrbColors,
     onSelect: (NqrbDestination) -> Unit,
@@ -2648,18 +2784,35 @@ private fun BottomItem(
     Column(
         Modifier
             .clip(RoundedCornerShape(14.dp))
-            .clickable { onSelect(destination) }
+            .clickable { onSelect(item.destination) }
             .semantics {
                 role = Role.Tab
                 selected = isSelected
             }
-            .padding(horizontal = 9.dp, vertical = 6.dp),
+            .padding(horizontal = 6.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        NqrbIcon(glyph, label, if (isSelected) colors.accent else colors.textSecondary, Modifier.size(23.dp))
+        Box {
+            NqrbIcon(item.glyph, item.label, if (isSelected) colors.accent else colors.textSecondary, Modifier.size(23.dp))
+            if (item.badgeCount > 0) {
+                Surface(
+                    modifier = Modifier.align(Alignment.TopEnd).absoluteOffset(x = 9.dp, y = (-6).dp),
+                    color = colors.destructive,
+                    shape = CircleShape,
+                ) {
+                    Text(
+                        if (item.badgeCount > 9) "9+" else item.badgeCount.toString(),
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
         Text(
-            label,
+            item.label,
             style = MaterialTheme.typography.labelMedium,
             color = if (isSelected) colors.accent else colors.textSecondary,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,

@@ -16,6 +16,12 @@ internal static class MobileIdentityEndpoints
         const string applicationKey = BotGlobalApplications.Nqrb;
         var group = endpoints.MapGroup("/api/mobile/nqrb/identity");
 
+        endpoints.MapGet(
+                "/api/mobile/nqrb/version-policy",
+                (string platform, string currentVersion, NqrbVersionPolicyReader reader) =>
+                    Results.Ok(reader.Read(platform, currentVersion)))
+            .AllowAnonymous();
+
         group.MapPost("/federated", async (
             MobileFederatedIdentityRequest request,
             IMobileFederatedIdentityService service,

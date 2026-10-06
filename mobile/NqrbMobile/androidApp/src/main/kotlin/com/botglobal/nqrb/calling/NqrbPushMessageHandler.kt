@@ -15,8 +15,13 @@ internal interface NqrbIncomingCallPushSession {
     suspend fun dismissIncoming(callId: CallId, reason: CallTerminationReason)
 }
 
+internal interface NqrbGeneralPushNotificationSink {
+    suspend fun show(messageId: String?, title: String, body: String)
+}
+
 internal class NqrbPushMessageHandler(
     private val session: NqrbIncomingCallPushSession,
+    private val generalNotifications: NqrbGeneralPushNotificationSink = IgnoreGeneralPushNotifications,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
     private val pause: suspend (Long) -> Unit = ::delay,
     private val logger: (String, Throwable?) -> Unit = { message, error ->
@@ -25,9 +30,32 @@ internal class NqrbPushMessageHandler(
 ) : PushMessageHandler {
     constructor(runtime: NqrbCallRuntime) : this(NqrbCallSessionPushAdapter(runtime.session))
 
+    constructor(
+        runtime: NqrbCallRuntime,
+        generalNotifications: NqrbGeneralPushNotificationSink,
+    ) : this(NqrbCallSessionPushAdapter(runtime.session), generalNotifications)
+
     override suspend fun onMessage(message: PushMessage) {
-        val callId = message.data["callId"]?.takeIf(::isOpaqueCallId)?.let(::CallId) ?: return
-        when (message.data["type"]) {
+        val type = message.data["type"]
+        if (type in CallPushTypes) {
+            val callId = message.data["callId"]?.takeIf(::isOpaqueCallId)?.let(::CallId) ?: return
+            handleCallPush(type, callId, message)
+            return
+        }
+
+        val title = firstNonBlank(message.data, "title", "titleAr", "titleEn")
+        val body = firstNonBlank(message.data, "body", "bodyAr", "bodyEn")
+        if (title != null || body != null) {
+            generalNotifications.show(
+                message.messageId,
+                title ?: "Nqrb",
+                body ?: "",
+            )
+        }
+    }
+
+    private suspend fun handleCallPush(type: String?, callId: CallId, message: PushMessage) {
+        when (type) {
             "incoming_call" -> {
                 if (message.isExpired()) {
                     session.dismissIncoming(callId, CallTerminationReason.Expired)
@@ -72,12 +100,25 @@ internal class NqrbPushMessageHandler(
         return nowEpochMillis() >= sentAt + ttl * 1_000L
     }
 
+    private fun firstNonBlank(data: Map<String, String>, vararg keys: String): String? =
+        keys.firstNotNullOfOrNull { key -> data[key]?.trim()?.takeIf(String::isNotEmpty) }
+
     private fun isOpaqueCallId(value: String) = runCatching { java.util.UUID.fromString(value) }.isSuccess
 
     private companion object {
         const val MaxIncomingAttempts = 3
         const val RetryDelayMillis = 500L
+        val CallPushTypes = setOf(
+            "incoming_call",
+            "incoming_call_cancelled",
+            "incoming_call_answered_elsewhere",
+            "incoming_call_expired",
+        )
     }
+}
+
+private object IgnoreGeneralPushNotifications : NqrbGeneralPushNotificationSink {
+    override suspend fun show(messageId: String?, title: String, body: String) = Unit
 }
 
 private class NqrbCallSessionPushAdapter(
