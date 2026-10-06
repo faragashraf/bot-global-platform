@@ -37,7 +37,7 @@ fun requirePublicHttpsEndpoint(value: String) {
     }
 }
 
-val releaseApiBaseUrl = "https://www.botglobalservice.com/backend".also(::requirePublicHttpsEndpoint)
+val releaseApiBaseUrl = "https://api.botglobalservice.com".also(::requirePublicHttpsEndpoint)
 val uploadStoreFile = releaseSetting("familyGamesUploadStoreFile", "LAMMA_UPLOAD_STORE_FILE")
 val uploadStorePassword = releaseSetting("familyGamesUploadStorePassword", "LAMMA_UPLOAD_STORE_PASSWORD")
 val uploadKeyAlias = releaseSetting("familyGamesUploadKeyAlias", "LAMMA_UPLOAD_KEY_ALIAS")

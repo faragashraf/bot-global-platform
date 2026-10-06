@@ -117,6 +117,7 @@ import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
 import com.botglobal.mobile.platform.realtime.NetworkAvailability
 import com.botglobal.mobile.platform.realtime.UnavailableNetworkAvailability
 import com.botglobal.mobile.platform.reviews.ReviewCoordinator
+import com.botglobal.mobile.platform.reviews.RatingInvitationCoordinator
 import com.botglobal.mobile.platform.voice.VoiceMediaPeerFactory
 import com.botglobal.mobile.platform.voice.VoiceRoomState
 import com.botglobal.mobile.platform.voice.VoiceConsentState
@@ -143,6 +144,7 @@ fun FamilyGamesApp(
     recentGameSessionPreferences: RecentGameSessionPreferences = UnavailableRecentGameSessionPreferences,
     federatedCredentials: FederatedCredentialProvider = UnavailableFederatedCredentialProvider,
     reviews: ReviewCoordinator? = null,
+    ratingInvitation: RatingInvitationCoordinator? = null,
     voiceMediaFactory: VoiceMediaPeerFactory? = null,
     diagnosticsEnabled: Boolean = false,
     invitationQr: @Composable (String, String, Modifier) -> Unit = { _, description, modifier ->
@@ -171,6 +173,7 @@ fun FamilyGamesApp(
         recentGameSessionPreferences,
         federatedCredentials,
         reviews,
+        ratingInvitation,
         voiceMediaFactory,
         diagnosticsEnabled,
     ) {
@@ -192,13 +195,18 @@ fun FamilyGamesApp(
             federatedCredentials,
             reviews,
             voiceMediaFactory,
+            ratingInvitation = ratingInvitation,
         )
     }
     val state by coordinator.state.collectAsState()
+    val ratingInvitationVisible = ratingInvitation?.visible?.collectAsState()?.value == true
     val text = strings(state.language)
     val direction = if (state.language == AppLanguage.Arabic) LayoutDirection.Rtl else LayoutDirection.Ltr
 
-    LaunchedEffect(coordinator) { coordinator.startup() }
+    LaunchedEffect(coordinator) {
+        ratingInvitation?.refresh()
+        coordinator.startup()
+    }
     LaunchedEffect(coordinator, foregroundEvents) {
         foregroundEvents.collect { coordinator.resumeAfterForeground() }
     }
@@ -245,6 +253,24 @@ fun FamilyGamesApp(
                         modifier = Modifier.align(Alignment.BottomCenter),
                     ) {
                         ErrorBanner(text.error(state.errorCode))
+                    }
+                    if (ratingInvitationVisible && state.screen == AppScreen.Result && !state.busy &&
+                        state.accountDeletionConfirmation == null && state.accountDeletionCleanup == null &&
+                        state.invitation == null && !state.cameraExplanationVisible &&
+                        !state.voiceExplanationVisible &&
+                        state.voice.state in setOf(VoiceRoomState.Idle, VoiceRoomState.Unavailable, VoiceRoomState.Failed) &&
+                        state.voiceConsent.state in setOf(VoiceConsentState.Idle, VoiceConsentState.Ended, VoiceConsentState.Unavailable)
+                    ) {
+                        LammaRatingInvitationCard(
+                            isArabic = state.language == AppLanguage.Arabic,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            onRate = {
+                                if (runCatching {
+                                    openExternalUrl("https://play.google.com/store/apps/details?id=com.botglobal.lamma")
+                                }.isSuccess) ratingInvitation?.openedStore()
+                            },
+                            onLater = { ratingInvitation?.later() },
+                        )
                     }
                     if (state.busy && state.accountDeletionConfirmation == null) LoadingOverlay(text.loading)
                     if (state.accountDeletionConfirmation != null) {

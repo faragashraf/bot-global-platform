@@ -33,6 +33,8 @@ import com.botglobal.mobile.platform.reviews.ReviewCoordinator
 import com.botglobal.mobile.platform.reviews.ReviewLaunchOutcome
 import com.botglobal.mobile.platform.reviews.ReviewPolicy
 import com.botglobal.mobile.platform.reviews.ReviewPromptLauncher
+import com.botglobal.mobile.platform.reviews.RatingInvitationCoordinator
+import com.botglobal.mobile.platform.reviews.RatingInvitationPolicy
 import com.botglobal.mobile.platform.realtime.RealtimeConnectionState
 import com.botglobal.mobile.platform.realtime.NetworkAvailabilitySnapshot
 import com.botglobal.mobile.platform.realtime.NetworkAvailabilityState
@@ -60,6 +62,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import com.botglobal.lamma.app.data.ApiException
 import com.botglobal.mobile.platform.update.AppVersionPolicy
 import com.botglobal.mobile.platform.realtime.NetworkAvailability
@@ -74,6 +77,28 @@ import com.botglobal.mobile.platform.voice.VoiceMediaPeerListener
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FamilyGamesCoordinatorTests {
+    @Test
+    fun expired_server_session_returns_to_welcome_with_a_clear_message() = runTest {
+        val gateway = FakeGateway(
+            restored = mobileSession,
+            createError = ApiException("session_expired", 401, "Expired"),
+        )
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(gateway, realtime, SilentHaptics, this)
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.createClassicGame()
+        advanceUntilIdle()
+
+        assertEquals(AppScreen.Welcome, coordinator.state.value.screen)
+        assertNull(coordinator.state.value.mobileSession)
+        assertEquals("session_expired", coordinator.state.value.errorCode)
+        assertEquals(1, gateway.clearCalls)
+        assertEquals(1, realtime.stopCalls)
+        coordinator.dispose()
+    }
+
     @Test
     fun microphone_permission_and_media_are_not_started_before_remote_acceptance() = runTest {
         val realtime = FakeRealtime()
@@ -622,6 +647,49 @@ class FamilyGamesCoordinatorTests {
         advanceUntilIdle()
 
         assertEquals(1, launcher.launches)
+        coordinator.dispose()
+    }
+
+    @Test
+    fun completed_round_shows_rating_card_without_a_competing_native_prompt() = runTest {
+        val store = InMemoryPreferenceStore()
+        val launcher = CountingReviewLauncher()
+        val reviews = ReviewCoordinator(
+            store,
+            "reviews",
+            ReviewPolicy(firstUseAgeMillis = 0, minimumMeaningfulEvents = 1, minimumMeaningfulEventSpanMillis = 0),
+            launcher,
+        ) { 0L }
+        val invitation = RatingInvitationCoordinator(
+            store,
+            "rating",
+            RatingInvitationPolicy(minimumEvents = 1, minimumEventSpanMillis = 0, firstEventAgeMillis = 0),
+        ) { 0L }
+        val started = game(version = 4, status = "started", activePlayer = membershipId)
+        val completed = started.copy(
+            status = "completed",
+            version = 5,
+            matchStatus = "won",
+            winnerMembershipId = membershipId,
+        )
+        val realtime = FakeRealtime()
+        val coordinator = FamilyGamesCoordinator(
+            FakeGateway(restored = mobileSession, active = started, moveResult = completed),
+            realtime,
+            SilentHaptics,
+            this,
+            reviews = reviews,
+            ratingInvitation = invitation,
+        )
+        coordinator.startup()
+        advanceUntilIdle()
+
+        coordinator.play(0, 0)
+        realtime.emit(completed)
+        advanceUntilIdle()
+
+        assertTrue(invitation.visible.value)
+        assertEquals(0, launcher.launches)
         coordinator.dispose()
     }
 
@@ -1834,6 +1902,7 @@ class FamilyGamesCoordinatorTests {
         private val rejoinResult: GameSessionSnapshot? = null,
         private val rejoinBehavior: (suspend (Int) -> GameSessionSnapshot)? = null,
         private val moveError: ApiException? = null,
+        private val createError: ApiException? = null,
         private val autobusSubmitFailuresBeforeSuccess: Int = 0,
         private val autobusSubmitBehavior: (suspend (Int, AutobusSubmitAnswersRequest) -> GameSessionSnapshot)? = null,
         private val autobusRevealFailuresBeforeSuccess: Int = 0,
@@ -1875,7 +1944,8 @@ class FamilyGamesCoordinatorTests {
         override suspend fun register(request: RegistrationRequest) = mobileSession
         override suspend fun logout() = Unit
         override suspend fun activeSession() = active
-        override suspend fun createSession(rulesetKey: String) = game()
+        override suspend fun createSession(rulesetKey: String): GameSessionSnapshot =
+            createError?.let { throw it } ?: game()
         override suspend fun createAutobusSession(
             rounds: Int,
             seconds: Int,

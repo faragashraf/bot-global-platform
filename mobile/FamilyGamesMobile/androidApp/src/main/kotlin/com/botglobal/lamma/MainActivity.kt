@@ -21,6 +21,8 @@ import com.botglobal.mobile.platform.reviews.AndroidPlayReviewPromptLauncher
 import com.botglobal.mobile.platform.reviews.ReviewCoordinator
 import com.botglobal.mobile.platform.reviews.ReviewPolicy
 import com.botglobal.mobile.platform.reviews.ReviewTrigger
+import com.botglobal.mobile.platform.reviews.RatingInvitationCoordinator
+import com.botglobal.mobile.platform.reviews.RatingInvitationPolicy
 import com.botglobal.mobile.platform.voice.AndroidVoiceMediaPeerFactory
 import com.botglobal.mobile.platform.device.PermissionController
 import com.botglobal.mobile.platform.device.PermissionKind
@@ -171,6 +173,16 @@ class MainActivity : FragmentActivity() {
             launcher = AndroidPlayReviewPromptLauncher { if (!isFinishing && !isDestroyed) this else null },
             nowMillis = System::currentTimeMillis,
         )
+        val ratingInvitation = RatingInvitationCoordinator(
+            preferences = preferences,
+            storageKey = "store_rating_invitation",
+            policy = RatingInvitationPolicy(
+                minimumEvents = 3,
+                minimumEventSpanMillis = 3L * 24 * 60 * 60 * 1_000,
+                firstEventAgeMillis = 3L * 24 * 60 * 60 * 1_000,
+            ),
+            nowMillis = System::currentTimeMillis,
+        )
         val voiceMedia = AndroidVoiceMediaPeerFactory(
             applicationContext,
             if (BuildConfig.VOICE_ICE_POLICY == "relay") VoiceIcePolicy.Relay else VoiceIcePolicy.All,
@@ -203,6 +215,7 @@ class MainActivity : FragmentActivity() {
                     BuildConfig.LAMMA_GOOGLE_SERVER_CLIENT_ID,
                 ),
                 reviews = reviews,
+                ratingInvitation = ratingInvitation,
                 voiceMediaFactory = voiceMedia,
                 diagnosticsEnabled = BuildConfig.DEBUG,
                 invitationQr = { content, description, modifier ->

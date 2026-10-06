@@ -185,6 +185,133 @@ class FamilyGamesSessionRaceTests {
         assertEquals("access-b", offlineVault.restore()?.accessToken)
     }
 
+    @Test
+    fun restore_discards_credentials_rejected_by_the_new_server() = runTest {
+        val vault = RaceVault(session("old-access", "old-refresh", "member-a", "Player A"))
+        val api = api(vault) { request ->
+            assertEquals(
+                when (request.url.encodedPath) {
+                    "/api/mobile/family-games/identity/me" -> "Bearer old-access"
+                    "/api/mobile/family-games/identity/refresh" -> null
+                    else -> error("Unexpected ${request.url.encodedPath}")
+                },
+                request.headers[HttpHeaders.Authorization],
+            )
+            respond("", HttpStatusCode.Unauthorized)
+        }
+
+        assertNull(api.restore())
+        assertNull(vault.restore())
+    }
+
+    @Test
+    fun rejected_refresh_clears_only_the_expired_session() = runTest {
+        val vault = RaceVault(session("old-access", "old-refresh", "member-a", "Player A"))
+        val api = api(vault) { request ->
+            when (request.url.encodedPath) {
+                "/api/games/sessions" -> respond("", HttpStatusCode.Unauthorized)
+                "/api/mobile/family-games/identity/refresh" -> respond("", HttpStatusCode.Unauthorized)
+                else -> error("Unexpected ${request.url.encodedPath}")
+            }
+        }
+
+        val error = assertFailsWith<ApiException> { api.createSession("classic-3x3") }
+        assertEquals("session_expired", error.code)
+        assertNull(vault.restore())
+    }
+
+    @Test
+    fun rejected_concurrent_refresh_cannot_clear_a_newer_session() = runTest {
+        val firstRefreshStarted = CompletableDeferred<Unit>()
+        val secondRefreshStarted = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val releaseSecond = CompletableDeferred<Unit>()
+        val vault = RaceVault(session("old-access", "old-refresh", "member-a", "Player A"))
+        var refreshCalls = 0
+        val api = api(vault) { request ->
+            when (request.url.encodedPath) {
+                "/api/games/sessions/active" -> {
+                    if (request.headers[HttpHeaders.Authorization] == "Bearer old-access") {
+                        respond("", HttpStatusCode.Unauthorized)
+                    } else {
+                        jsonResponse(activeSessionJson("member-a", "Player A"))
+                    }
+                }
+                "/api/mobile/family-games/identity/refresh" -> {
+                    if (++refreshCalls == 1) {
+                        firstRefreshStarted.complete(Unit)
+                        releaseFirst.await()
+                        jsonResponse(sessionJson("new-access", "new-refresh", "member-a", "Player A"))
+                    } else {
+                        secondRefreshStarted.complete(Unit)
+                        releaseSecond.await()
+                        respond("", HttpStatusCode.Unauthorized)
+                    }
+                }
+                else -> error("Unexpected ${request.method.value} ${request.url.encodedPath}")
+            }
+        }
+
+        supervisorScope {
+            val first = async { api.activeSession() }
+            firstRefreshStarted.await()
+            val second = async { api.activeSession() }
+            secondRefreshStarted.await()
+            releaseFirst.complete(Unit)
+            first.await()
+            releaseSecond.complete(Unit)
+            assertEquals("session_superseded", assertFailsWith<ApiException> { second.await() }.code)
+        }
+        assertEquals("new-access", vault.restore()?.accessToken)
+        assertEquals("new-refresh", vault.restore()?.refreshToken)
+    }
+
+    @Test
+    fun successful_concurrent_refresh_cannot_overwrite_a_newer_token_pair() = runTest {
+        val firstRefreshStarted = CompletableDeferred<Unit>()
+        val secondRefreshStarted = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val releaseSecond = CompletableDeferred<Unit>()
+        val vault = RaceVault(session("old-access", "old-refresh", "member-a", "Player A"))
+        var refreshCalls = 0
+        val api = api(vault) { request ->
+            when (request.url.encodedPath) {
+                "/api/games/sessions/active" -> {
+                    if (request.headers[HttpHeaders.Authorization] == "Bearer old-access") {
+                        respond("", HttpStatusCode.Unauthorized)
+                    } else {
+                        jsonResponse(activeSessionJson("member-a", "Player A"))
+                    }
+                }
+                "/api/mobile/family-games/identity/refresh" -> {
+                    if (++refreshCalls == 1) {
+                        firstRefreshStarted.complete(Unit)
+                        releaseFirst.await()
+                        jsonResponse(sessionJson("new-access", "new-refresh", "member-a", "Player A"))
+                    } else {
+                        secondRefreshStarted.complete(Unit)
+                        releaseSecond.await()
+                        jsonResponse(sessionJson("stale-access", "stale-refresh", "member-a", "Player A"))
+                    }
+                }
+                else -> error("Unexpected ${request.method.value} ${request.url.encodedPath}")
+            }
+        }
+
+        supervisorScope {
+            val first = async { api.activeSession() }
+            firstRefreshStarted.await()
+            val second = async { api.activeSession() }
+            secondRefreshStarted.await()
+            releaseFirst.complete(Unit)
+            first.await()
+            releaseSecond.complete(Unit)
+            assertEquals("session_superseded", assertFailsWith<ApiException> { second.await() }.code)
+        }
+        assertEquals("new-access", vault.restore()?.accessToken)
+        assertEquals("new-refresh", vault.restore()?.refreshToken)
+    }
+
     private fun api(
         vault: SessionVault,
         handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData,

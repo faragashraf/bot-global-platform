@@ -44,6 +44,7 @@ import com.botglobal.mobile.platform.update.UpdatePolicyEngine
 import com.botglobal.mobile.platform.reviews.ReviewCoordinator
 import com.botglobal.mobile.platform.reviews.ReviewAttemptResult
 import com.botglobal.mobile.platform.reviews.ReviewTrigger
+import com.botglobal.mobile.platform.reviews.RatingInvitationCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -174,6 +175,7 @@ class FamilyGamesCoordinator(
     private val reviews: ReviewCoordinator? = null,
     voiceMediaFactory: VoiceMediaPeerFactory? = null,
     private val accountDeletionTeardown: FamilyGamesAccountDeletionTeardown? = null,
+    private val ratingInvitation: RatingInvitationCoordinator? = null,
 ) {
     private val voice: VoiceRoomController? = voiceMediaFactory?.let {
         ManagedVoiceRoomController(scope, realtime, it)
@@ -1319,6 +1321,7 @@ class FamilyGamesCoordinator(
         if (current?.status != "completed" && snapshot.status == "completed") {
             pendingReviewTrigger = ReviewTrigger.CompletedExperience
             scope.launch {
+                ratingInvitation?.recordMeaningfulEvent("lamma:${snapshot.sessionId}:${snapshot.matchNumber}")
                 reviews?.recordMeaningfulEvent("lamma:${snapshot.sessionId}:${snapshot.matchNumber}")
                 requestPendingReviewIfReady()
             }
@@ -1361,9 +1364,12 @@ class FamilyGamesCoordinator(
 
     private fun requestPendingReviewIfReady() {
         val trigger = pendingReviewTrigger ?: return
+        if (ratingInvitation?.suppressesNativePrompt() == true) return
         if (!isReviewReadyForLaunch(trigger)) return
         scope.launch {
-            when (reviews?.tryRequest(trigger) { isReviewReadyForLaunch(trigger) }) {
+            when (reviews?.tryRequest(trigger) {
+                ratingInvitation?.suppressesNativePrompt() != true && isReviewReadyForLaunch(trigger)
+            }) {
                 ReviewAttemptResult.Launched,
                 ReviewAttemptResult.Failed,
                 null,
@@ -1447,7 +1453,21 @@ class FamilyGamesCoordinator(
             try {
                 action()
             } catch (error: ApiException) {
-                mutableState.update { it.copy(errorCode = error.code) }
+                if (error.code == "session_expired") {
+                    resetRecoveryOrchestration()
+                    runCatching { voice?.leave() }
+                    runCatching { voiceConsent?.end() }
+                    runCatching { realtime.stop() }
+                    runCatching { gateway.clearLocalSession() }
+                    recentGameSessionPreferences.clear()
+                    mutableState.value = FamilyGamesUiState(
+                        screen = AppScreen.Welcome,
+                        language = mutableState.value.language,
+                        errorCode = error.code,
+                    )
+                } else {
+                    mutableState.update { it.copy(errorCode = error.code) }
+                }
                 haptics.perform(HapticEvent.Error)
             } catch (error: Throwable) {
                 mutableState.update { it.copy(errorCode = "unexpected_error") }

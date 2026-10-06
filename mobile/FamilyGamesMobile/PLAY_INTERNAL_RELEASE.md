@@ -3,17 +3,17 @@
 ## Immutable Android identity and version
 
 - Application ID: `com.botglobal.lamma`
-- Version name: `0.2.0`
-- Version code: `7`
+- Version name: `0.2.1`
+- Version code: `8`
 - Minimum SDK: 24
 - Target SDK: 36
 - Compile SDK: 37
 
-Version code `6` (`0.1.2`) is the current production release. This release uses version code `7` and version name `0.2.0` for the Autobus Lamma family-game expansion.
+Google Play currently serves version code `7` (`0.2.0`) in production. The next bundle is version code `8` (`0.2.1`) and moves the release API to `api.botglobalservice.com`. Stop before uploading this bundle until the new server's gameplay and Google sign-in pass on the small Samsung.
 
 ## Release connectivity
 
-Debug builds keep their isolated local endpoint override through `familyGamesDebugApiBaseUrl`. Release builds use the approved canonical Bot Global API base `https://www.botglobalservice.com/backend`; the build validates that it is public HTTPS rather than localhost, an emulator address, or a private/LAN address.
+Debug builds keep their isolated endpoint override through `familyGamesDebugApiBaseUrl`. Release builds use the public Bot Global API base `https://api.botglobalservice.com`; the build validates that it is public HTTPS rather than localhost, an emulator address, or a private/LAN address.
 
 HTTP APIs, invitation resolution, and the `/hubs/games` SignalR route are composed from the same normalized environment base. Release does not enable cleartext traffic.
 
@@ -21,7 +21,7 @@ HTTP APIs, invitation resolution, and the `/hubs/games` SignalR route are compos
 
 Lamma supports Google sign-in, existing username/password sign-in, account creation, and guest play. Google sign-in requires an explicit Lamma web server client id supplied as `LAMMA_GOOGLE_SERVER_CLIENT_ID` or `familyGamesGoogleServerClientId`; it must not reuse NQRB OAuth configuration. Release builds fail before packaging when this Lamma OAuth value is absent. Debug builds may run without it and show a recoverable in-app "not configured" state.
 
-The owner still needs to provision and review the Google Cloud OAuth client set for `com.botglobal.lamma`, including the debug signing SHA and the final Google Play app-signing SHA after Play App Signing is active. Do not infer those values from local credentials or another product.
+The next release also requires `Identity:Federated:Google:ServerClientIds:family-games` on the new API to match the Lamma client ID embedded in the bundle. A missing server audience returns `google_configuration_missing` before token verification. Confirm the Google Cloud OAuth client set for `com.botglobal.lamma`, including the final Google Play app-signing SHA. Do not reuse NQRB OAuth configuration.
 
 ### Android 6 TLS compatibility blocker
 
@@ -74,7 +74,7 @@ The Android application has no Firebase SDK/plugin dependency and no `google-ser
 
 Lamma uses the shared Google Play in-app review coordinator. The only automatic Lamma trigger is an authoritative completed round result, any outcome, keyed by game session and match number, and delivery remains pending until the result UI is visible with no active voice, consent, invitation, deletion, camera, or busy modal. The default shared policy requires at least three genuine completions over at least three days and applies a 90-day cooldown only when a real native Play review launch is about to happen. Missing/stale activity state, busy UI, or non-Android no-op launchers do not consume cooldown.
 
-Manual rating actions, if added later, may open the Store listing directly. Automatic review must not fall back to the Store listing and must not claim a rating was completed. Final proof requires a Google Play test track/runtime pass owned by the release operator because Play controls prompt quota and UI display.
+A bilingual product rating card appears on the completed-result screen after three distinct completed rounds over at least three days. "Rate on Google Play" opens the Store listing; "Later" defers the card for 30 days, and opening the listing defers it for 180 days without claiming a review was submitted. The native automatic review flow remains separate and is suppressed while this card or its deferral is active. Automatic review must not fall back to the Store listing. Final proof of the native prompt requires a Google Play test track/runtime pass because Play controls prompt quota and display.
 
 ## Data Safety evidence
 

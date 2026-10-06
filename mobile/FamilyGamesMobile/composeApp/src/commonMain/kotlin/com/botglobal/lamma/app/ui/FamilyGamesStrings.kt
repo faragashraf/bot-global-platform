@@ -121,6 +121,7 @@ data class FamilyGamesStrings(
     val exit: String,
     val loading: String,
     val genericError: String,
+    val sessionExpired: String,
     val googleNotConfigured: String,
     val googleUnavailable: String,
     val googleFailed: String,
@@ -292,6 +293,7 @@ private val ArabicStrings = FamilyGamesStrings(
     exit = "الخروج للرئيسية",
     loading = "لحظة واحدة…",
     genericError = "حصلت مشكلة. جرّب مرة ثانية.",
+    sessionExpired = "انتهت جلسة اللعب. سجّل الدخول أو ادخل كضيف من جديد.",
     googleNotConfigured = "تسجيل الدخول عبر Google غير مفعّل لهذا الإصدار بعد.",
     googleUnavailable = "خدمة Google غير متاحة على هذا الجهاز حاليًا.",
     googleFailed = "تعذّر تسجيل الدخول عبر Google. تأكد من الاتصال وحاول مرة ثانية.",
@@ -460,6 +462,7 @@ private val EnglishStrings = FamilyGamesStrings(
     exit = "Exit to home",
     loading = "One moment…",
     genericError = "Something went wrong. Please try again.",
+    sessionExpired = "Your session has ended. Sign in or continue as a guest again.",
     googleNotConfigured = "Google sign-in is not configured for this build yet.",
     googleUnavailable = "Google sign-in is unavailable on this device right now.",
     googleFailed = "Google sign-in could not finish. Check your connection and try again.",
@@ -536,5 +539,6 @@ fun FamilyGamesStrings.error(code: String?): String = when (code) {
     "google_failed" -> googleFailed
     "display_name_required" -> displayNameRequired
     "display_name_too_long" -> displayNameTooLong
+    "session_expired" -> sessionExpired
     else -> genericError
 }

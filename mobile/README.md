@@ -41,7 +41,9 @@ The default emulator API URL is `http://10.0.2.2:5062`. A physical-device debug 
   :FamilyGamesMobile:androidApp:assembleDebug
 ```
 
-Release builds use the approved public HTTPS Bot Global API base `https://botglobalservice.com/backend`. Debug builds remain injectable through `familyGamesDebugApiBaseUrl` for local/LAN development.
+ENPO and Lamma release builds use the public HTTPS Bot Global API base `https://api.botglobalservice.com`. Debug builds remain injectable through their product-specific Gradle properties for local/LAN development.
+
+ENPO invites a paired user to rate the app after three days. Lamma invites a player after three distinct completed rounds spread across three days. Both cards offer "Rate on Google Play" and "Later" in Arabic and English; the button opens the Store listing, and a delay prevents repeated prompting. Google's native in-app review remains an independent automatic flow and may be omitted by Play quota.
 
 Invitation links default to the development-safe `familygames://invite` scheme. Override both the server `FamilyGames:Invitations:DeepLinkBase` and mobile `familyGamesInvitationLinkBase` together only when a verified public HTTPS association is available.
 

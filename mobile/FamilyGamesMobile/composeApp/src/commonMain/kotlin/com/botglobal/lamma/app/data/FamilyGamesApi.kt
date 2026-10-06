@@ -89,17 +89,27 @@ class FamilyGamesApi(
     override suspend fun restore(): MobileSession? {
         val snapshot = sessionSnapshot() ?: return null
         val identity = try {
-            client.get(environment.endpoint("/api/mobile/family-games/identity/me")) {
-                authorize(snapshot.session.accessToken)
+            withRefresh { access ->
+                client.get(environment.endpoint("/api/mobile/family-games/identity/me")) {
+                    authorize(access)
+                }
             }.expect<IdentityDto>()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
+        } catch (error: ApiException) {
+            if (error.code == "session_expired") return null
+            if (error.code == "session_superseded") throw error
+            return snapshot.session
         } catch (_: Throwable) {
             return snapshot.session
         }
+        val current = sessionSnapshot() ?: return null
+        if (current.generation != snapshot.generation || !current.session.sameAccountAs(snapshot.session)) {
+            throw supersededSession()
+        }
         return saveIfCurrent(
-            snapshot,
-            snapshot.session.copy(identity = identity.toDomain(snapshot.session.identity.kind)),
+            current,
+            current.session.copy(identity = identity.toDomain(current.session.identity.kind)),
         )
     }
 
@@ -269,10 +279,30 @@ class FamilyGamesApi(
         val refreshed = client.post(environment.endpoint("/api/mobile/family-games/identity/refresh")) {
             jsonRequest()
             setBody(RefreshRequest(snapshot.session.refreshToken))
-        }.expect<MobileSessionDto>()
-        val domain = saveIfCurrent(snapshot, refreshed.toDomain())
+        }
+        if (refreshed.status == HttpStatusCode.Unauthorized) {
+            if (!expireIfCurrent(snapshot)) throw supersededSession()
+            throw ApiException("session_expired", 401, "The mobile session has expired.")
+        }
+        val refreshedSession = refreshed.expect<MobileSessionDto>()
+        val domain = saveIfCurrent(snapshot, refreshedSession.toDomain())
         return block(domain.accessToken)
     }
+
+    private suspend fun expireIfCurrent(snapshot: SessionSnapshot): Boolean =
+        sessionMutex.withLock {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val current = vault.restore() ?: return@withLock false
+            if (sessionGeneration != snapshot.generation ||
+                !current.sameAccountAs(snapshot.session) ||
+                !current.sameCredentialsAs(snapshot.session)
+            ) {
+                return@withLock false
+            }
+            sessionGeneration++
+            vault.clear()
+            true
+        }
 
     private suspend fun sessionSnapshot(): SessionSnapshot? =
         sessionMutex.withLock {
@@ -297,7 +327,10 @@ class FamilyGamesApi(
         sessionMutex.withLock {
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             val current = vault.restore() ?: throw ApiException("session_missing", 401, "No mobile session is available.")
-            if (sessionGeneration != snapshot.generation || !current.sameAccountAs(snapshot.session)) {
+            if (sessionGeneration != snapshot.generation ||
+                !current.sameAccountAs(snapshot.session) ||
+                !current.sameCredentialsAs(snapshot.session)
+            ) {
                 throw supersededSession()
             }
             vault.save(session)
@@ -314,6 +347,9 @@ class FamilyGamesApi(
     private fun MobileSession.sameAccountAs(other: MobileSession): Boolean =
         identity.membershipId == other.identity.membershipId &&
             identity.applicationKey == other.identity.applicationKey
+
+    private fun MobileSession.sameCredentialsAs(other: MobileSession): Boolean =
+        accessToken == other.accessToken && refreshToken == other.refreshToken
 
     private fun supersededSession(): ApiException =
         ApiException("session_superseded", 409, "The mobile session changed while the request was in flight.")
