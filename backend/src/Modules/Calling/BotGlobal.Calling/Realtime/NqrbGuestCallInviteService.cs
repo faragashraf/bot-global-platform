@@ -26,6 +26,7 @@ public sealed class NqrbGuestCallInviteOptions
     public const string SectionName = "Calling:NqrbGuestInvites";
     public int InviteLifetimeMinutes { get; set; } = 15;
     public int RingLifetimeSeconds { get; set; } = 45;
+    public string? PublicPageUrl { get; set; }
 }
 
 public sealed record NqrbGuestCallInviteCreated(Guid InviteId, string Capability, DateTimeOffset ExpiresAtUtc);

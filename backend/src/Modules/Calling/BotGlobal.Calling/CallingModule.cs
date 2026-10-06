@@ -149,6 +149,9 @@ public static class CallingModule
             .Validate(
                 options => options.RingLifetimeSeconds is >= 15 and <= 120,
                 "NQRB guest call ring lifetime must be between 15 and 120 seconds.")
+            .Validate(
+                options => NqrbGuestCallLink.IsValidPublicPageUrl(options.PublicPageUrl),
+                "NQRB guest call public page URL must be the HTTPS /guest-call page without credentials, query, or fragment.")
             .ValidateOnStart();
         services.AddSingleton(sp => new CallingIceConfigurationProvider(
             sp.GetRequiredService<IOptions<CallingIceOptions>>(),
@@ -188,14 +191,15 @@ public static class CallingModule
         hostGroup.MapPost("/", (
             ClaimsPrincipal principal,
             HttpRequest request,
-            [FromServices] NqrbGuestCallInviteService invites) =>
+            [FromServices] NqrbGuestCallInviteService invites,
+            [FromServices] IOptions<NqrbGuestCallInviteOptions> options) =>
         {
             var identity = TryNqrbApplicationIdentity(principal);
             if (identity is null) return Results.Unauthorized();
             var created = invites.CreateHostInvite(identity);
             return Results.Ok(new NqrbGuestCallInviteCreateResponse(
                 created.InviteId,
-                BuildGuestCallLink(request, created.Capability),
+                NqrbGuestCallLink.Build(request, created.Capability, options.Value.PublicPageUrl),
                 created.ExpiresAtUtc));
         })
         .WithName("CreateNqrbGuestCallInvite")
@@ -702,12 +706,6 @@ public static class CallingModule
     private static bool IsGuestIdentity(ClaimsPrincipal principal) =>
         string.Equals(principal.FindFirstValue(ApplicationIdentityDefaults.GuestClaim),
             "true", StringComparison.OrdinalIgnoreCase);
-
-    private static string BuildGuestCallLink(HttpRequest request, string capability)
-    {
-        var baseUrl = $"{request.Scheme}://{request.Host}{request.PathBase}";
-        return $"{baseUrl}/nqrb/guest-call#{Uri.EscapeDataString(capability)}";
-    }
 
     private static (string ApplicationKey, Guid MembershipId)? TryNqrbIdentity(ClaimsPrincipal principal)
     {

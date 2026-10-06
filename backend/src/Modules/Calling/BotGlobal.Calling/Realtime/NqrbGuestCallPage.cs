@@ -40,7 +40,7 @@ internal static class NqrbGuestCallPage
     .language:hover { background: #ffffff20; }
     .layout { flex: 1; display: grid; grid-template-columns: minmax(0, 1.04fr) minmax(370px, .96fr); align-items: center; gap: clamp(26px, 6vw, 80px); }
     .story { display: grid; gap: 26px; max-width: 610px; padding-block: 20px; }
-    .headline { margin: 0; max-width: 12ch; font-size: clamp(3.25rem, 6.8vw, 6rem); line-height: 1.1; letter-spacing: -.03em; font-weight: 850; }
+    .headline { margin: 0; max-width: 16ch; font-size: 3.5rem; line-height: 1.1; letter-spacing: 0; font-weight: 850; }
     .headline em { color: var(--rose); font-style: normal; }
     .story-copy { max-width: 49ch; margin: 0; color: var(--quiet); font-size: clamp(1.04rem, 1.7vw, 1.24rem); line-height: 1.75; }
     .orbit-scene { position: relative; min-height: clamp(190px, 27vw, 330px); overflow: hidden; display: grid; place-items: center; isolation: isolate; }
@@ -58,7 +58,10 @@ internal static class NqrbGuestCallPage
     .panel-body { position: relative; display: grid; gap: 22px; }
     .panel h2 { margin: 0; font-size: clamp(1.75rem, 3vw, 2.25rem); line-height: 1.25; letter-spacing: -.035em; }
     .panel p { margin: 0; color: var(--quiet); line-height: 1.65; }
-    .host { padding: 16px 18px; border: 1px solid #ffffff24; border-radius: 18px; background: #ffffff0a; color: var(--paper) !important; font-weight: 600; }
+    .host { display: grid; gap: 5px; min-width: 0; padding-block: 12px; border-block: 1px solid #ffffff24; }
+    .host[hidden] { display: none; }
+    .host-label { color: var(--quiet); font-size: .8125rem; font-weight: 500; }
+    .host-name { min-width: 0; color: var(--rose); font-size: 2rem; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
     label.name-field { display: grid; gap: 9px; color: var(--paper); font-weight: 700; }
     input[type="text"] { width: 100%; min-height: 56px; padding: 12px 16px; border: 1px solid #ffffff58; border-radius: 16px; color: var(--paper); caret-color: var(--rose); background: #1b1729a6; }
     input[type="text"]::placeholder { color: #d4c6de9c; }
@@ -91,7 +94,7 @@ internal static class NqrbGuestCallPage
     @media (max-width: 840px) {
       .layout { grid-template-columns: 1fr; gap: 12px; }
       .story { gap: 10px; padding-block: 10px 0; }
-      .headline { max-width: 16ch; font-size: clamp(2.75rem, 9vw, 4.4rem); }
+      .headline { max-width: 16ch; font-size: 2.75rem; }
       .story-copy { font-size: 1rem; }
       .orbit-scene { min-height: 160px; }
       .voice { width: 100px; }
@@ -120,15 +123,13 @@ internal static class NqrbGuestCallPage
     .page { max-width: 1300px; gap: 16px; }
     .layout { gap: clamp(24px, 4vw, 54px); }
     .story { gap: 14px; max-width: 610px; padding-block: 0; }
-    .headline { max-width: 16ch; font-size: clamp(3rem, 4.7vw, 5rem); line-height: 1.04; letter-spacing: -.035em; text-wrap: balance; }
+    .headline { max-width: 16ch; font-size: 3.5rem; line-height: 1.1; letter-spacing: 0; text-wrap: balance; }
     .story-copy { max-width: 55ch; font-size: clamp(1rem, 1.3vw, 1.14rem); line-height: 1.55; }
     .orbit-scene { min-height: 190px; }
     .voice { width: 104px; border-radius: 29%; }
     .panel { padding: 24px; }
     .panel-body { gap: 15px; }
     .panel p { line-height: 1.45; }
-    .host { padding: 11px 14px; }
-    .host:empty { display: none; }
     input[type="text"] { min-height: 48px; }
     .primary, .leave { min-height: 50px; }
     .call-art { width: 124px; height: 124px; }
@@ -142,7 +143,7 @@ internal static class NqrbGuestCallPage
     @media (min-width: 841px) and (max-height: 820px) {
       .page { gap: 10px; padding-block: 12px; }
       .story { gap: 10px; }
-      .headline { font-size: clamp(2.8rem, 4.1vw, 4.15rem); }
+      .headline { font-size: 3.25rem; }
       .orbit-scene { display: none; }
       .panel { padding: 18px; }
       .panel-body { gap: 10px; }
@@ -151,7 +152,7 @@ internal static class NqrbGuestCallPage
     @media (max-width: 840px) {
       .page { gap: 16px; }
       .story { gap: 13px; padding: 0; }
-      .headline { font-size: clamp(2.5rem, 8vw, 3.7rem); }
+      .headline { font-size: 2.75rem; }
       .orbit-scene { display: none; }
       .layout { gap: 18px; }
     }
@@ -167,14 +168,15 @@ internal static class NqrbGuestCallPage
       .brand-divider { height: 22px; }
       .layout { gap: 11px; align-content: start; }
       .story { gap: 7px; }
-      .headline { font-size: clamp(2.05rem, 8.2vw, 2.6rem); line-height: 1.04; }
+      .headline { font-size: 2.125rem; line-height: 1.15; }
       .story-copy { font-size: .88rem; line-height: 1.4; }
       .benefits { display: none; }
       .panel { padding: 15px; }
       .panel-body { gap: 9px; }
       .panel h2 { font-size: 1.55rem; }
       .panel p, label.name-field, .consent { font-size: .9rem; line-height: 1.35; }
-      .host { padding: 8px 10px; }
+      .host { padding-block: 10px; }
+      .host-name { font-size: 1.5rem; }
       input[type="text"] { min-height: 44px; padding-block: 8px; }
       .primary, .leave { min-height: 46px; }
       .discover { gap: 7px; padding: 10px 12px; }
@@ -197,7 +199,7 @@ internal static class NqrbGuestCallPage
     </header>
     <div class="layout">
       <div class="story">
-        <h1 class="headline" id="headline">مكالمة واحدة. <em>قُرب أكثر.</em></h1>
+        <h1 class="headline" id="headline">الكلام الحلو <em>يبدأ بصوتك.</em></h1>
         <p class="story-copy" id="storyCopy">الدعوة دي فتحت لك باب لقاء صوتي خاص. اكتب اسمك، وابدأ الحديث من غير إنشاء حساب.</p>
         <div class="benefits" aria-label="مزايا الدعوة"><span id="benefitOne">دعوة برابط واحد</span><span id="benefitTwo">بدون حساب</span><span id="benefitThree">حديث يقرّبكم</span></div>
         <div class="orbit-scene" aria-hidden="true">
@@ -210,7 +212,7 @@ internal static class NqrbGuestCallPage
         <div class="panel-body form">
           <h2 id="panelTitle">مكالمتك جاهزة</h2>
           <p id="summary">اكتب الاسم الذي تحب أن يراه صاحب الدعوة، ثم انضم بصوتك.</p>
-          <p class="host" id="host"></p>
+          <div class="host" id="host" hidden><span class="host-label" id="hostLabel">دعوة من</span><strong class="host-name"><bdi id="hostName"></bdi></strong></div>
           <label class="name-field" for="displayName"><span id="nameLabel">اسمك في المكالمة</span><input id="displayName" type="text" maxlength="80" autocomplete="name" value="ضيف"></label>
           <p id="historyNotice">سيظهر اسمك ووقت المكالمة لصاحب الدعوة في سجله.</p>
           <label class="consent"><input id="consent" type="checkbox"><span id="consentText">أسمح باستخدام الميكروفون لهذه المكالمة فقط.</span></label>
@@ -236,27 +238,27 @@ internal static class NqrbGuestCallPage
     </div>
     <aside class="discover">
       <div class="discover-copy"><strong id="discoverTitle">المكالمة حلوة... والقُرب يستاهل يفضل</strong><span id="discoverNote">مع تطبيق Nqrb تقدر تحتفظ بأشخاصك وتبدأ مكالمتك القادمة بسهولة.</span></div>
-      <div class="store-badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#34a853" d="M3 2.6v18.8L13.1 12z"/><path fill="#4285f4" d="m3 2.6 12.3 7.2-2.2 2.2z"/><path fill="#fbbc04" d="m13.1 12 2.2 2.2L3 21.4z"/><path fill="#ea4335" d="m15.3 9.8 4.7 2.7c.7.4.7 1.1 0 1.5l-4.7 2.7-2.2-2.5z"/></svg><span id="playText">قريبًا على Google Play</span></div>
+      <a class="store-badge" href="https://play.google.com/store/apps/details?id=com.botglobal.nqrb" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#34a853" d="M3 2.6v18.8L13.1 12z"/><path fill="#4285f4" d="m3 2.6 12.3 7.2-2.2 2.2z"/><path fill="#fbbc04" d="m13.1 12 2.2 2.2L3 21.4z"/><path fill="#ea4335" d="m15.3 9.8 4.7 2.7c.7.4.7 1.1 0 1.5l-4.7 2.7-2.2-2.5z"/></svg><span id="playText">حمّل نقرب من Google Play</span></a>
     </aside>
     <footer class="foot" id="foot">مكالمة بصوتك، في مساحتك الخاصة.</footer>
   </main>
   <script>
   const capability = (() => { try { return decodeURIComponent(location.hash.slice(1)); } catch { return ''; } })();
-  const basePath = location.pathname.replace(/\/nqrb\/guest-call\/?$/, '');
+  const basePath = location.pathname.replace(/\/(?:nqrb\/)?guest-call\/?$/, '');
   const text = {
     ar: {
-      lang: 'English', dir: 'rtl', headline: 'مكالمة واحدة. <em>قُرب أكثر.</em>', story: 'الدعوة دي فتحت لك باب لقاء صوتي خاص. اكتب اسمك، وابدأ الحديث من غير إنشاء حساب.', benefitOne: 'دعوة برابط واحد', benefitTwo: 'بدون حساب', benefitThree: 'حديث يقرّبكم',
+      lang: 'English', dir: 'rtl', headline: 'الكلام الحلو <em>يبدأ بصوتك.</em>', story: 'الدعوة دي فتحت لك باب لقاء صوتي خاص. اكتب اسمك، وابدأ الحديث من غير إنشاء حساب.', benefitOne: 'دعوة برابط واحد', benefitTwo: 'بدون حساب', benefitThree: 'حديث يقرّبكم',
       title: 'مكالمتك جاهزة', summary: 'اكتب الاسم الذي تحب أن يراه صاحب الدعوة، ثم انضم بصوتك.', name: 'اسمك في المكالمة', historyNotice: 'سيظهر اسمك ووقت المكالمة لصاحب الدعوة في سجله.', consent: 'أسمح باستخدام الميكروفون لهذه المكالمة فقط.', join: 'انضم للمكالمة',
-      host: name => `${name} يدعوك إلى مكالمة خاصة.`, connecting: 'بنوصلك بصاحب الدعوة...', waiting: 'في انتظار صاحب الدعوة', waitingBody: 'سنوصلكما بمجرد أن يرد.', mic: 'اسمح باستخدام الميكروفون للمتابعة.',
+      hostLabel: 'دعوة من', connecting: 'بنوصلك بصاحب الدعوة...', waiting: 'في انتظار صاحب الدعوة', waitingBody: 'سنوصلكما بمجرد أن يرد.', mic: 'اسمح باستخدام الميكروفون للمتابعة.',
       failedTitle: 'انقطع الاتصال', failed: 'تعذر إكمال المكالمة الآن. جرّب شبكة أخرى أو اطلب دعوة جديدة.', ended: 'انتهت المكالمة', endedBody: 'نتمنى أن تكون لحظة جميلة.', rejectedTitle: 'لم يقبل صاحب الدعوة المكالمة', rejectedBody: 'يمكنك التواصل معه وطلب وقت مناسب للمكالمة.', expiredTitle: 'انتهى وقت الدعوة', expiredBody: 'اطلب من صاحب الدعوة رابطًا جديدًا للمحاولة مرة أخرى.', cancelledTitle: 'توقفت المكالمة قبل أن تبدأ', cancelledBody: 'يمكنكما المحاولة مجددًا برابط جديد.', localTitle: 'أنهيت المكالمة', localBody: 'شكرًا لمشاركتنا هذه اللحظة.', active: 'أنتم الآن معًا', activeBody: 'استمتع بالمكالمة.', mute: 'كتم الميكروفون', unmute: 'تشغيل الميكروفون', leave: 'إنهاء المكالمة', leaving: 'جارٍ إنهاء المكالمة...', invalid: 'هذه الدعوة لم تعد متاحة. اطلب من صاحبها رابطًا جديدًا.', unavailableTitle: 'الدعوة غير متاحة الآن', unavailableBody: 'اطلب من صاحب الدعوة رابطًا جديدًا لنلتقي بصوتنا.', previewFailedTitle: 'تعذر فتح الدعوة', previewFailedBody: 'تحقق من اتصال الإنترنت ثم أعد فتح الرابط.', hostUnavailableTitle: 'صاحب الدعوة مشغول الآن', hostUnavailableBody: 'جرّب التواصل معه واطلب رابطًا جديدًا في وقت مناسب.',
-      discoverTitle: 'المكالمة حلوة... والقُرب يستاهل يفضل', discoverNote: 'مع تطبيق Nqrb تقدر تحتفظ بأشخاصك وتبدأ مكالمتك القادمة بسهولة.', play: 'قريبًا على Google Play', foot: 'Nqrb من Bot Global · صوت يقرّبنا.'
+      discoverTitle: 'المكالمة حلوة... والقُرب يستاهل يفضل', discoverNote: 'مع تطبيق Nqrb تقدر تحتفظ بأشخاصك وتبدأ مكالمتك القادمة بسهولة.', play: 'حمّل نقرب من Google Play', foot: 'Nqrb من Bot Global · صوت يقرّبنا.'
     },
     en: {
-      lang: 'العربية', dir: 'ltr', headline: 'One call. <em>A little closer.</em>', story: 'This invitation opens a private voice conversation. Add your name and say hello—no account needed.', benefitOne: 'One simple link', benefitTwo: 'No account needed', benefitThree: 'A closer conversation',
+      lang: 'العربية', dir: 'ltr', headline: 'Good conversations <em>start with your voice.</em>', story: 'This invitation opens a private voice conversation. Add your name and say hello—no account needed.', benefitOne: 'One simple link', benefitTwo: 'No account needed', benefitThree: 'A closer conversation',
       title: 'Your call is ready', summary: 'Choose the name your host will see, then join the conversation.', name: 'Your name on the call', historyNotice: 'Your name and call time will appear in your host’s call history.', consent: 'Allow microphone access for this call only.', join: 'Join the call',
-      host: name => `${name} invited you to a private call.`, connecting: 'Connecting you to your host...', waiting: 'Waiting for your host', waitingBody: 'You will be together as soon as they answer.', mic: 'Allow microphone access to continue.',
+      hostLabel: 'Invited by', connecting: 'Connecting you to your host...', waiting: 'Waiting for your host', waitingBody: 'You will be together as soon as they answer.', mic: 'Allow microphone access to continue.',
       failedTitle: 'The connection was lost', failed: 'We could not complete this call. Try another network or ask for a new invitation.', ended: 'The call has ended', endedBody: 'We hope you enjoyed your time together.', rejectedTitle: 'Your host declined the call', rejectedBody: 'Reach out to them to find a better time to talk.', expiredTitle: 'The invitation has expired', expiredBody: 'Ask your host for a new link and try again.', cancelledTitle: 'The call stopped before it began', cancelledBody: 'You can try again with a new invitation.', localTitle: 'You ended the call', localBody: 'Thanks for sharing this moment.', active: 'You are together now', activeBody: 'Enjoy your conversation.', mute: 'Mute microphone', unmute: 'Turn on microphone', leave: 'End call', leaving: 'Ending your call...', invalid: 'This invitation is no longer available. Ask your host for a new link.', unavailableTitle: 'This invitation is unavailable', unavailableBody: 'Ask your host for a new link to meet by voice.', previewFailedTitle: 'We could not open the invitation', previewFailedBody: 'Check your connection, then reopen the link.', hostUnavailableTitle: 'Your host is busy right now', hostUnavailableBody: 'Reach out to them and ask for a new link at a better time.',
-      discoverTitle: 'A good conversation deserves to continue', discoverNote: 'Keep your people close and start your next call with Nqrb.', play: 'Coming soon to Google Play', foot: 'Nqrb by Bot Global · A voice that brings us closer.'
+      discoverTitle: 'A good conversation deserves to continue', discoverNote: 'Keep your people close and start your next call with Nqrb.', play: 'Get Nqrb on Google Play', foot: 'Nqrb by Bot Global · A voice that brings us closer.'
     }
   };
   let lang = navigator.language && navigator.language.startsWith('ar') ? 'ar' : 'en';
@@ -268,6 +270,11 @@ internal static class NqrbGuestCallPage
   const clientRequestId = sessionStorage.getItem(requestKeyName) || newRequestId();
   sessionStorage.setItem(requestKeyName, clientRequestId);
   const $ = id => document.getElementById(id);
+  function renderHost() {
+    $('hostLabel').textContent = text[lang].hostLabel;
+    $('hostName').textContent = hostDisplayName || '';
+    $('host').hidden = !hostDisplayName;
+  }
   function applyLang() {
     const t = text[lang]; document.documentElement.lang = lang; document.documentElement.dir = t.dir;
     $('language').textContent = t.lang; $('headline').innerHTML = t.headline;
@@ -277,7 +284,7 @@ internal static class NqrbGuestCallPage
     $('join').textContent = t.join; $('leave').textContent = t.leave; $('mute').textContent = muted ? t.unmute : t.mute;
     $('discoverTitle').textContent = t.discoverTitle; $('discoverNote').textContent = t.discoverNote;
     $('playText').textContent = t.play; $('foot').textContent = t.foot;
-    if (hostDisplayName) $('host').textContent = t.host(hostDisplayName);
+    renderHost();
     if (previewInvalid && callPhase === 'form') status(t.invalid, true);
     if (callPhase === 'unavailable') showUnavailable(unavailableKind);
     if (callPhase === 'call') {
@@ -313,7 +320,7 @@ internal static class NqrbGuestCallPage
       const value = await api(`${basePath}/api/public/nqrb/guest-call-invites/preview`, { method: 'POST', body: JSON.stringify({ capability }) });
       hostDisplayName = value.hostDisplayName;
       previewInvalid = false;
-      $('host').textContent = text[lang].host(hostDisplayName);
+      renderHost();
     } catch (error) {
       previewInvalid = true;
       if (sessionStorage.getItem(joinedKeyName) === 'true') status(text[lang].invalid, true);

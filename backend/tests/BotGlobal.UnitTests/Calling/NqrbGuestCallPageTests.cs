@@ -12,12 +12,18 @@ public sealed class NqrbGuestCallPageTests
         Assert.Contains("class=\"app-mark\"", html);
         Assert.Contains("data:image/png;base64,", html);
         Assert.DoesNotContain("__BOT_GLOBAL_MARK__", html);
-        Assert.Contains("قريبًا على Google Play", html);
-        Assert.Contains("Coming soon to Google Play", html);
+        Assert.Contains("حمّل نقرب من Google Play", html);
+        Assert.Contains("Get Nqrb on Google Play", html);
+        Assert.DoesNotContain("Coming soon", html);
+        Assert.DoesNotContain("قريبًا على Google Play", html);
         Assert.Contains("id=\"join\"", html);
         Assert.Contains("id=\"mute\"", html);
         Assert.Contains("class=\"panel-body unavailable\"", html);
         Assert.Contains("Your host declined the call", html);
-        Assert.DoesNotContain("href=\"https://play.google.com", html);
+        Assert.Contains("href=\"https://play.google.com/store/apps/details?id=com.botglobal.nqrb\"", html);
+        Assert.Contains("rel=\"noopener noreferrer\"", html);
+        Assert.Contains("الكلام الحلو <em>يبدأ بصوتك.</em>", html);
+        Assert.Contains("id=\"hostName\"", html);
+        Assert.Contains("$('hostName').textContent = hostDisplayName", html);
     }
 }
