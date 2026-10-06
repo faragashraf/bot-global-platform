@@ -78,10 +78,38 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NqrbAppStateTests {
+    @Test
+    fun tapping_another_contact_during_a_call_returns_to_the_current_call_without_dialing() = runTest {
+        val signaling = RecordingCallSignaling()
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(
+                FixedCredentials,
+                FixedIdentityGateway(session(), FederatedSignInResult.Rejected),
+            ),
+            calling = CallSessionController(backgroundScope, signaling, RecordingVoiceRoom(), RecordingCallPlatform()),
+            permissions = FixedPermission(PermissionState.Granted),
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+        state.requestOutgoingCall(CallableParticipant("first", "First"))
+        runCurrent()
+        assertEquals(CallState.Connecting, state.calling.state.value.state)
+
+        var returnRequests = 0
+        backgroundScope.launch { state.showCurrentCallRequests.collect { returnRequests++ } }
+        runCurrent()
+        state.requestOutgoingCall(CallableParticipant("second", "Second"))
+        runCurrent()
+
+        assertEquals(1, returnRequests)
+        assertEquals(listOf("first"), signaling.startedRequests.map { it.callee.membershipId })
+    }
+
     @Test
     fun startup_remains_restoring_until_authoritative_session_result_is_applied() = runTest {
         val restored = CompletableDeferred<MobileSession?>()

@@ -44,8 +44,8 @@ android {
         applicationId = "com.botglobal.nqrb"
         minSdk = maxOf(24, libs.versions.android.minSdk.get().toInt())
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 7
-        versionName = "0.2.3"
+        versionCode = 9
+        versionName = "0.2.5"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", googleServerClientId.asBuildConfigString())
     }

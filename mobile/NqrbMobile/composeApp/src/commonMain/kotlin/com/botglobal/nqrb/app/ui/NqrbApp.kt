@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -57,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntOffset
@@ -122,6 +124,7 @@ import com.botglobal.nqrb.app.data.NqrbContactInvite
 import com.botglobal.nqrb.app.data.NqrbContact
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlin.math.roundToInt
 
 internal enum class NqrbDeletionConfirmation { Closed, Explanation, Final }
@@ -157,6 +160,9 @@ fun NqrbApp(
     val callActivity by appState.callActivity.state.collectAsState()
     val microphoneExplanation by appState.microphoneExplanationVisible.collectAsState()
     val microphoneBlocked by appState.microphonePermissionBlocked.collectAsState()
+    var minimizedCallId by remember { mutableStateOf<String?>(null) }
+    val callId = call.callId?.value
+    val isCallMinimized = callId != null && minimizedCallId == callId && call.state in VisibleCallStates
     val systemIsDark = isSystemInDarkTheme()
     val strings = nqrbStrings(locale.languageTag)
     val layoutDirection = if (locale.direction == ContentDirection.RightToLeft) LayoutDirection.Rtl else LayoutDirection.Ltr
@@ -166,6 +172,9 @@ fun NqrbApp(
     }
     LaunchedEffect(appState) {
         appState.startup()
+    }
+    LaunchedEffect(appState) {
+        appState.showCurrentCallRequests.collect { minimizedCallId = null }
     }
     LaunchedEffect(authentication) {
         if (authentication is FederatedAuthenticationState.SignedIn) {
@@ -179,8 +188,15 @@ fun NqrbApp(
     NqrbTheme(appearance.resolved) {
         CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
             NqrbSystemBackHandler(
-                enabled = backStack.size > 1,
-                onBack = { appState.navigation.navigateBack() },
+                enabled = (call.state in VisibleCallStates && !isCallMinimized && canMinimizeCall(call.state)) ||
+                    backStack.size > 1,
+                onBack = {
+                    if (call.state in VisibleCallStates && !isCallMinimized && canMinimizeCall(call.state)) {
+                        minimizedCallId = callId
+                    } else {
+                        appState.navigation.navigateBack()
+                    }
+                },
             )
             NqrbShell(
                 destination = backStack.last(),
@@ -192,6 +208,9 @@ fun NqrbApp(
                 startupState = startupState,
                 contactBook = contactBook,
                 call = call,
+                isCallMinimized = isCallMinimized,
+                onMinimizeCall = { minimizedCallId = callId },
+                onRestoreCall = { minimizedCallId = null },
                 callingDirectory = callingDirectory,
                 callActivity = callActivity,
                 microphoneExplanation = microphoneExplanation,
@@ -218,6 +237,9 @@ private fun NqrbShell(
     startupState: NqrbStartupState,
     contactBook: NqrbContactBookSnapshot,
     call: CallSessionSnapshot,
+    isCallMinimized: Boolean,
+    onMinimizeCall: () -> Unit,
+    onRestoreCall: () -> Unit,
     callingDirectory: CallingDirectorySnapshot,
     callActivity: CallActivitySnapshot,
     microphoneExplanation: Boolean,
@@ -232,8 +254,19 @@ private fun NqrbShell(
     val colors = LocalNqrbColors.current
     Scaffold(
         containerColor = Color.Transparent,
+        topBar = {
+            if (isCallMinimized && !microphoneExplanation) {
+                Column(Modifier.statusBarsPadding()) {
+                    CompactCallBar(strings, call, contactBook, onRestoreCall) {
+                        appState.setCallMuted(!call.media.muted)
+                    }
+                }
+            }
+        },
         bottomBar = {
-            if (destination in NQRB_TOP_LEVEL_DESTINATIONS && call.state !in VisibleCallStates && !microphoneExplanation) {
+            if (destination in NQRB_TOP_LEVEL_DESTINATIONS &&
+                (call.state !in VisibleCallStates || isCallMinimized) && !microphoneExplanation
+            ) {
                 NqrbBottomBar(destination, strings, appState::selectTopLevel)
             }
         },
@@ -250,7 +283,8 @@ private fun NqrbShell(
         ) {
             when {
                 microphoneExplanation -> MicrophoneExplanationScreen(strings, appState)
-                call.state in VisibleCallStates -> InCallScreen(strings, call, contactBook, appState)
+                call.state in VisibleCallStates && !isCallMinimized ->
+                    InCallScreen(strings, call, contactBook, appState, onMinimizeCall)
                 showsRestoringSession(startupState, call.state) -> RestoringSessionScreen(strings, appState)
                 else -> AnimatedContent(destination) { current -> when (current) {
                     NqrbDestination.SignIn -> if (showsGoogleSignIn(startupState, current)) {
@@ -302,6 +336,10 @@ private val VisibleCallStates = setOf(
     CallState.Preparing, CallState.Connecting, CallState.Ringing, CallState.Answering, CallState.Active,
     CallState.Reconnecting, CallState.Ending,
 )
+
+internal fun canMinimizeCall(state: CallState): Boolean =
+    state == CallState.Active || state == CallState.Reconnecting
+
 
 internal fun showsRestoringSession(startupState: NqrbStartupState, callState: CallState): Boolean =
     startupState == NqrbStartupState.RestoringSession && callState !in VisibleCallStates
@@ -1757,7 +1795,13 @@ private fun MicrophoneExplanationScreen(strings: NqrbStrings, appState: NqrbAppS
 }
 
 @Composable
-private fun InCallScreen(strings: NqrbStrings, call: CallSessionSnapshot, contactBook: NqrbContactBookSnapshot, appState: NqrbAppState) {
+private fun InCallScreen(
+    strings: NqrbStrings,
+    call: CallSessionSnapshot,
+    contactBook: NqrbContactBookSnapshot,
+    appState: NqrbAppState,
+    onMinimizeCall: () -> Unit,
+) {
     val colors = LocalNqrbColors.current
     val displayName = call.participant?.let { privateContactDisplayName(contactBook, it.membershipId, it.displayName) }.orEmpty()
     val status = when (call.state) {
@@ -1769,57 +1813,130 @@ private fun InCallScreen(strings: NqrbStrings, call: CallSessionSnapshot, contac
         CallState.Failed -> strings.callFailed
         else -> strings.activeCall
     }
-    Column(
-        Modifier.fillMaxSize().padding(NqrbSpacing.Lg),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(
-            Modifier.size(88.dp).clip(CircleShape).background(colors.accentSoft),
-            contentAlignment = Alignment.Center,
-        ) {
-            NqrbIcon(NqrbGlyph.Profile, displayName, colors.accent, Modifier.size(46.dp))
-        }
-        Spacer(Modifier.height(NqrbSpacing.Lg))
-        Text(displayName, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
-        Text(status, style = MaterialTheme.typography.bodyLarge, color = colors.textSecondary)
-        if (call.state == CallState.Active) {
-            val minutes = call.elapsedSeconds / 60
-            val seconds = call.elapsedSeconds % 60
-            Text("$minutes:${seconds.toString().padStart(2, '0')}", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
-        }
-        Spacer(Modifier.height(NqrbSpacing.Xl))
-        if (call.direction == CallDirection.Incoming && call.state == CallState.Ringing) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                CallControl(NqrbGlyph.Call, strings.answerCall, selected = true) {
-                    appState.requestAcceptIncomingCall()
-                }
-                CallControl(NqrbGlyph.Call, strings.declineCall, selected = true, destructive = true) {
-                    appState.rejectIncomingCall()
-                }
-            }
-        } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            CallControl(
-                glyph = NqrbGlyph.Microphone,
-                label = if (call.media.muted) strings.unmute else strings.mute,
-                selected = call.media.muted,
-            ) { appState.setCallMuted(!call.media.muted) }
-            val routeTarget = call.media.speakerControlTarget()
-            CallControl(
-                glyph = NqrbGlyph.Speaker,
-                label = when (routeTarget) {
-                    CallAudioRoute.Speaker -> strings.speaker
-                    CallAudioRoute.Earpiece -> strings.earpiece
-                    null -> if (call.media.route == CallAudioRoute.Speaker) strings.speaker else strings.audioRoute
-                    else -> strings.audioRoute
-                },
-                selected = call.media.route == CallAudioRoute.Speaker,
-                enabled = routeTarget != null,
+    Box(Modifier.fillMaxSize()) {
+        if (canMinimizeCall(call.state)) {
+            TextButton(
+                onClick = onMinimizeCall,
+                modifier = Modifier.align(Alignment.TopStart).padding(NqrbSpacing.Md)
+                    .clip(RoundedCornerShape(14.dp)).background(colors.accentSoft),
             ) {
-                routeTarget?.let(appState::requestCallRoute)
+                NqrbIcon(NqrbGlyph.MinimizeCall, strings.browseDuringCall, colors.accent, Modifier.size(32.dp).rotate(225f))
+                Spacer(Modifier.width(NqrbSpacing.Xs))
+                Text(strings.browseDuringCall)
             }
-            CallControl(NqrbGlyph.Call, strings.endCall, selected = true, destructive = true) {
-                appState.endCall(CallTerminationReason.Local)
+        }
+        Column(
+            Modifier.align(Alignment.Center).fillMaxWidth().padding(NqrbSpacing.Lg),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Box(
+                Modifier.size(88.dp).clip(CircleShape).background(colors.accentSoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                NqrbIcon(NqrbGlyph.Profile, displayName, colors.accent, Modifier.size(46.dp))
+            }
+            Spacer(Modifier.height(NqrbSpacing.Lg))
+            Text(displayName, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
+            Text(status, style = MaterialTheme.typography.bodyLarge, color = colors.textSecondary)
+            if (call.state == CallState.Active) {
+                val minutes = call.elapsedSeconds / 60
+                val seconds = call.elapsedSeconds % 60
+                Text("$minutes:${seconds.toString().padStart(2, '0')}", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+            }
+            Spacer(Modifier.height(NqrbSpacing.Xl))
+            if (call.direction == CallDirection.Incoming && call.state == CallState.Ringing) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    CallControl(NqrbGlyph.Call, strings.answerCall, selected = true) {
+                        appState.requestAcceptIncomingCall()
+                    }
+                    CallControl(NqrbGlyph.Call, strings.declineCall, selected = true, destructive = true) {
+                        appState.rejectIncomingCall()
+                    }
+                }
+            } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                CallControl(
+                    glyph = if (call.media.muted) NqrbGlyph.MicrophoneOff else NqrbGlyph.Microphone,
+                    label = if (call.media.muted) strings.unmute else strings.mute,
+                    selected = call.media.muted,
+                ) { appState.setCallMuted(!call.media.muted) }
+                val routeTarget = call.media.speakerControlTarget()
+                CallControl(
+                    glyph = NqrbGlyph.Speaker,
+                    label = when (routeTarget) {
+                        CallAudioRoute.Speaker -> strings.speaker
+                        CallAudioRoute.Earpiece -> strings.earpiece
+                        null -> if (call.media.route == CallAudioRoute.Speaker) strings.speaker else strings.audioRoute
+                        else -> strings.audioRoute
+                    },
+                    selected = call.media.route == CallAudioRoute.Speaker,
+                    enabled = routeTarget != null,
+                ) {
+                    routeTarget?.let(appState::requestCallRoute)
+                }
+                CallControl(NqrbGlyph.Call, strings.endCall, selected = true, destructive = true) {
+                    appState.endCall(CallTerminationReason.Local)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactCallBar(
+    strings: NqrbStrings,
+    call: CallSessionSnapshot,
+    contactBook: NqrbContactBookSnapshot,
+    onRestoreCall: () -> Unit,
+    onToggleMute: () -> Unit,
+) {
+    val colors = LocalNqrbColors.current
+    val displayName = call.participant?.let {
+        privateContactDisplayName(contactBook, it.membershipId, it.displayName)
+    }.orEmpty().ifBlank { strings.activeCall }
+    val status = when (call.state) {
+        CallState.Reconnecting -> strings.reconnecting
+        CallState.Ending -> strings.endingCall
+        else -> strings.activeCall
+    }
+    val duration = if (call.state == CallState.Active) {
+        "${call.elapsedSeconds / 60}:${(call.elapsedSeconds % 60).toString().padStart(2, '0')}"
+    } else null
+    Surface(
+        color = colors.compactCallSurface,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = NqrbSpacing.Md, vertical = NqrbSpacing.Xs)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClickLabel = strings.returnToCall, role = Role.Button, onClick = onRestoreCall),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = NqrbSpacing.Md, vertical = NqrbSpacing.Sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
+        ) {
+            NqrbIcon(NqrbGlyph.Call, strings.activeCall, colors.accent, Modifier.size(24.dp))
+            Column(Modifier.weight(1f)) {
+                Text(displayName, style = MaterialTheme.typography.titleSmall, color = colors.textPrimary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("$status · ${strings.returnToCall}", style = MaterialTheme.typography.labelMedium, color = colors.textSecondary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (duration != null) {
+                Text(duration, style = MaterialTheme.typography.labelLarge, color = colors.textPrimary)
+            }
+            IconButton(
+                onClick = onToggleMute,
+                enabled = call.state != CallState.Ending,
+                modifier = Modifier.size(42.dp).clip(CircleShape).background(colors.surface),
+            ) {
+                NqrbIcon(
+                    if (call.media.muted) NqrbGlyph.MicrophoneOff else NqrbGlyph.Microphone,
+                    if (call.media.muted) strings.unmute else strings.mute,
+                    if (call.media.muted) colors.destructive else colors.accent,
+                    Modifier.size(21.dp),
+                )
             }
         }
     }

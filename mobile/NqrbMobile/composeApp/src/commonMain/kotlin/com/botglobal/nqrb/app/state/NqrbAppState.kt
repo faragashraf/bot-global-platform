@@ -55,6 +55,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
@@ -127,6 +129,8 @@ class NqrbAppState(
     val startupState = mutableStartupState.asStateFlow()
     val microphoneExplanationVisible = MutableStateFlow(false)
     val microphonePermissionBlocked = MutableStateFlow(false)
+    private val mutableShowCurrentCallRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val showCurrentCallRequests = mutableShowCurrentCallRequests.asSharedFlow()
     private val mutableAccountActionState = MutableStateFlow(NqrbAccountActionState.Idle)
     val accountActionState = mutableAccountActionState.asStateFlow()
     private val mutableAccountProfileState = MutableStateFlow<NqrbAccountProfileState>(NqrbAccountProfileState.Hidden)
@@ -727,6 +731,10 @@ class NqrbAppState(
     }
 
     fun requestOutgoingCall(participant: CallableParticipant) {
+        if (calling.state.value.state in OngoingCallStates) {
+            mutableShowCurrentCallRequests.tryEmit(Unit)
+            return
+        }
         val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
             ?: return
         if (participant.membershipId == signedIn.session.identity.membershipId) return
@@ -854,6 +862,10 @@ class NqrbAppState(
 
     companion object {
         const val DEFAULT_LANGUAGE = "ar"
+        private val OngoingCallStates = setOf(
+            CallState.Preparing, CallState.Connecting, CallState.Ringing, CallState.Answering,
+            CallState.Active, CallState.Reconnecting, CallState.Ending,
+        )
         val TOP_LEVEL_DESTINATIONS = setOf(
             NqrbDestination.Home,
             NqrbDestination.History,

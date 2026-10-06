@@ -27,6 +27,8 @@ enum class NqrbGlyph {
     Language,
     Appearance,
     Microphone,
+    MicrophoneOff,
+    MinimizeCall,
     Speaker,
     Search,
     Ringtone,
@@ -48,6 +50,15 @@ fun NqrbIcon(
             NqrbGlyph.Close -> {
                 drawLine(tint, Offset(size.width * .24f, size.height * .24f), Offset(size.width * .76f, size.height * .76f), strokeWidth = stroke.width, cap = StrokeCap.Round)
                 drawLine(tint, Offset(size.width * .76f, size.height * .24f), Offset(size.width * .24f, size.height * .76f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
+            NqrbGlyph.MinimizeCall -> {
+                val midY = center.y
+                drawLine(tint, Offset(size.width * .12f, midY), Offset(size.width * .43f, midY), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .32f, size.height * .37f), Offset(size.width * .43f, midY), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .32f, size.height * .63f), Offset(size.width * .43f, midY), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .88f, midY), Offset(size.width * .57f, midY), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .68f, size.height * .37f), Offset(size.width * .57f, midY), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .68f, size.height * .63f), Offset(size.width * .57f, midY), strokeWidth = stroke.width, cap = StrokeCap.Round)
             }
             NqrbGlyph.Home -> {
                 val path = Path().apply {
@@ -144,7 +155,7 @@ fun NqrbIcon(
                 drawCircle(tint, size.minDimension * .32f, center, style = stroke)
                 drawArc(tint, 90f, 180f, true, Offset(size.width * .18f, size.height * .18f), Size(size.width * .64f, size.height * .64f))
             }
-            NqrbGlyph.Microphone -> {
+            NqrbGlyph.Microphone, NqrbGlyph.MicrophoneOff -> {
                 drawRoundRect(
                     tint,
                     topLeft = Offset(size.width * .38f, size.height * .16f),
@@ -154,6 +165,9 @@ fun NqrbIcon(
                 )
                 drawArc(tint, 0f, 180f, false, Offset(size.width * .25f, size.height * .37f), Size(size.width * .5f, size.height * .38f), style = stroke)
                 drawLine(tint, Offset(center.x, size.height * .74f), Offset(center.x, size.height * .86f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                if (glyph == NqrbGlyph.MicrophoneOff) {
+                    drawLine(tint, Offset(size.width * .2f, size.height * .8f), Offset(size.width * .8f, size.height * .2f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                }
             }
             NqrbGlyph.Speaker -> {
                 val path = Path().apply {
