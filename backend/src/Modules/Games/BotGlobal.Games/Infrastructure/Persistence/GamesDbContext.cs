@@ -3,6 +3,8 @@ using BotGlobal.Games.Domain.Sessions;
 using BotGlobal.Games.Domain.Autobus;
 using BotGlobal.Games.Domain.Xo;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+using System.Security.Cryptography;
 
 namespace BotGlobal.Games.Infrastructure.Persistence;
 
@@ -24,6 +26,19 @@ public sealed class GamesDbContext(DbContextOptions<GamesDbContext> options) : D
     {
         modelBuilder.HasDefaultSchema(Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(GamesDbContext).Assembly);
+        if (Database.IsNpgsql())
+        {
+            foreach (var property in new[]
+            {
+                modelBuilder.Entity<XoSessionState>().Property(x => x.ConcurrencyToken).Metadata,
+                modelBuilder.Entity<AutobusSessionState>().Property(x => x.ConcurrencyToken).Metadata,
+            })
+            {
+                property.ValueGenerated = ValueGenerated.Never;
+                property.SetBeforeSaveBehavior(PropertySaveBehavior.Save);
+                property.SetAfterSaveBehavior(PropertySaveBehavior.Save);
+            }
+        }
         if (string.Equals(
                 Database.ProviderName,
                 "Microsoft.EntityFrameworkCore.InMemory",
@@ -39,5 +54,32 @@ public sealed class GamesDbContext(DbContextOptions<GamesDbContext> options) : D
                 .ValueGeneratedNever();
         }
         base.OnModelCreating(modelBuilder);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        StampPortableConcurrencyTokens();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        StampPortableConcurrencyTokens();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void StampPortableConcurrencyTokens()
+    {
+        if (!Database.IsNpgsql()) return;
+
+        foreach (var entry in ChangeTracker.Entries()
+            .Where(entry => entry.State is EntityState.Added or EntityState.Modified &&
+                entry.Entity is XoSessionState or AutobusSessionState))
+        {
+            entry.Property(nameof(XoSessionState.ConcurrencyToken)).CurrentValue =
+                RandomNumberGenerator.GetBytes(8);
+        }
     }
 }

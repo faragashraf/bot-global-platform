@@ -3,6 +3,7 @@ using BotGlobal.Notifications.Domain;
 using BotGlobal.Notifications.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace BotGlobal.UnitTests.Notifications;
 
@@ -92,6 +93,32 @@ public sealed class NotificationsPersistenceModelTests
     }
 
     [Fact]
+    public void Npgsql_model_sends_application_managed_row_versions()
+    {
+        using var context = CreateNpgsqlContext();
+
+        foreach (var type in new[]
+                 {
+                     typeof(NotificationCampaign),
+                     typeof(NotificationRecipient),
+                     typeof(NotificationDeliveryAttempt)
+                 })
+        {
+            var rowVersion = context.Model.FindEntityType(type)!
+                .FindProperty("RowVersion")!;
+
+            Assert.True(rowVersion.IsConcurrencyToken);
+            Assert.Equal(ValueGenerated.Never, rowVersion.ValueGenerated);
+            Assert.Equal(
+                PropertySaveBehavior.Save,
+                rowVersion.GetBeforeSaveBehavior());
+            Assert.Equal(
+                PropertySaveBehavior.Save,
+                rowVersion.GetAfterSaveBehavior());
+        }
+    }
+
+    [Fact]
     public void Persistence_has_no_token_or_external_subject_columns()
     {
         var propertyNames = _context.Model.GetEntityTypes()
@@ -128,6 +155,19 @@ public sealed class NotificationsPersistenceModelTests
             .UseSqlServer(
                 "Server=localhost;Database=NotificationsModelTests;Trusted_Connection=True;TrustServerCertificate=True",
                 sql => sql.MigrationsHistoryTable(
+                    NotificationsModule.MigrationsHistoryTableName,
+                    NotificationsModule.DatabaseSchema))
+            .Options;
+
+        return new NotificationsDbContext(options);
+    }
+
+    private static NotificationsDbContext CreateNpgsqlContext()
+    {
+        var options = new DbContextOptionsBuilder<NotificationsDbContext>()
+            .UseNpgsql(
+                "Host=localhost;Database=NotificationsModelTests;Username=test;Password=test",
+                npgsql => npgsql.MigrationsHistoryTable(
                     NotificationsModule.MigrationsHistoryTableName,
                     NotificationsModule.DatabaseSchema))
             .Options;
