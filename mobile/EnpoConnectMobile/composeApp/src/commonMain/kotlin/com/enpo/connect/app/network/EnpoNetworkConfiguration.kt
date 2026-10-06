@@ -9,7 +9,6 @@ enum class EnpoPublicServiceRoute(internal val path: String) {
     PairingClaim("/api/mobile/pairing/claim"),
     DeviceUnpair("/api/mobile/devices/unpair"),
     PushRegistration("/api/mobile/devices/push-registration"),
-    Profile("/api/mobile/profile"),
 }
 
 class EnpoNetworkConfiguration private constructor(

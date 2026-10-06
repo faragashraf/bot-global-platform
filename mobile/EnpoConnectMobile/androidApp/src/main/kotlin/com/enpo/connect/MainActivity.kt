@@ -27,10 +27,11 @@ import com.botglobal.mobile.platform.preferences.AndroidPreferenceStore
 import com.botglobal.mobile.platform.reviews.AndroidPlayReviewPromptLauncher
 import com.botglobal.mobile.platform.reviews.ReviewCoordinator
 import com.botglobal.mobile.platform.reviews.ReviewPolicy
+import com.botglobal.mobile.platform.reviews.RatingInvitationCoordinator
+import com.botglobal.mobile.platform.reviews.RatingInvitationPolicy
 import com.enpo.connect.app.EnpoConnectApp
 import com.enpo.connect.app.network.EnpoConnectV2PairingApi
 import com.enpo.connect.app.network.EnpoNetworkConfiguration
-import com.enpo.connect.app.network.EnpoProfileApi
 import com.enpo.connect.app.pairing.EnpoPairingCoordinator
 import com.enpo.connect.app.pairing.EnpoPairingDeviceInfo
 import com.enpo.connect.app.notifications.EnpoNotificationActionHandler
@@ -146,6 +147,28 @@ class MainActivity : ComponentActivity() {
             ),
             credentialVault = credentialVault,
         )
+        val unpairCoordinator = enpoApplication.unpairCoordinator
+
+        val reviewCoordinator = ReviewCoordinator(
+            preferenceStore = reviewPreferences,
+            storageKey = "play_review_policy",
+            policy = ReviewPolicy(
+                minimumMeaningfulEvents = 1,
+                minimumMeaningfulEventSpanMillis = 0,
+            ),
+            launcher = AndroidPlayReviewPromptLauncher { if (!isFinishing && !isDestroyed) this else null },
+            nowMillis = System::currentTimeMillis,
+        )
+        val ratingInvitation = RatingInvitationCoordinator(
+            preferences = reviewPreferences,
+            storageKey = "store_rating_invitation",
+            policy = RatingInvitationPolicy(
+                minimumEvents = 1,
+                minimumEventSpanMillis = 0,
+                firstEventAgeMillis = 3L * 24 * 60 * 60 * 1_000,
+            ),
+            nowMillis = System::currentTimeMillis,
+        )
 
         setContent {
             EnpoConnectApp(
@@ -154,28 +177,24 @@ class MainActivity : ComponentActivity() {
                 deviceInfrastructure = deviceInfrastructure,
                 networkConfiguration = networkConfiguration,
                 pairingCoordinator = pairingCoordinator,
-                profileRepository = EnpoProfileApi(
-                    networkClient,
-                    networkConfiguration,
-                    credentialVault,
-                ),
+                unpairCoordinator = unpairCoordinator,
                 notificationInbox = enpoApplication.notificationInbox,
                 notificationId = pendingNotificationId.value,
                 onNotificationHandled = { pendingNotificationId.value = null },
                 notificationPermissionRequester = notificationPermissionRequester(preferences),
                 notificationActionHandler = notificationActionHandler(),
-                onPairingCompleted = enpoApplication::activatePushIfPaired,
+                onPairingCompleted = enpoApplication::resumePushAfterPairing,
                 onResolvedAppearanceChanged = ::applySystemBarAppearance,
-                reviews = ReviewCoordinator(
-                    preferenceStore = reviewPreferences,
-                    storageKey = "play_review_policy",
-                    policy = ReviewPolicy(
-                        minimumMeaningfulEvents = 1,
-                        minimumMeaningfulEventSpanMillis = 0,
-                    ),
-                    launcher = AndroidPlayReviewPromptLauncher { if (!isFinishing && !isDestroyed) this else null },
-                    nowMillis = System::currentTimeMillis,
-                ),
+                reviews = reviewCoordinator,
+                ratingInvitation = ratingInvitation,
+                onRateApp = {
+                    runCatching {
+                        startActivity(Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://play.google.com/store/apps/details?id=com.enpo.connect"),
+                        ))
+                    }.isSuccess
+                },
             )
         }
     }

@@ -10,7 +10,7 @@ class EnpoCompatibilityContractTests {
     @Test
     fun releaseIdentityRemainsTheInstalledEnpoApplication() {
         assertEquals("com.enpo.connect", EnpoReleaseIdentity.ApplicationId)
-        assertEquals(23, EnpoReleaseIdentity.MinimumAndroidSdk)
+        assertEquals(24, EnpoReleaseIdentity.MinimumAndroidSdk)
     }
 
     @Test
@@ -39,7 +39,7 @@ class EnpoCompatibilityContractTests {
         assertTrue(EnpoMigrationBoundaries.FirebaseEnabled)
         assertTrue(EnpoMigrationBoundaries.NotificationsEnabled)
         assertTrue(EnpoMigrationBoundaries.PairingEnabled)
-        assertTrue(EnpoMigrationBoundaries.ProfileProjectionEnabled)
+        assertFalse(EnpoMigrationBoundaries.ProfileProjectionEnabled)
         assertFalse(EnpoMigrationBoundaries.NetworkCallsDuringUiBootstrap)
     }
 
@@ -52,5 +52,7 @@ class EnpoCompatibilityContractTests {
         assertFalse("نقرب" in normalized)
         assertFalse("lamma" in normalized)
         assertFalse("لمة" in normalized)
+        assertFalse("bot global" in normalized)
+        assertFalse("botglobal" in normalized)
     }
 }

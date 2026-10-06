@@ -19,12 +19,18 @@ import com.botglobal.mobile.platform.reviews.ReviewLaunchOutcome
 import com.botglobal.mobile.platform.reviews.ReviewPolicy
 import com.botglobal.mobile.platform.reviews.ReviewPreLaunchDecision
 import com.botglobal.mobile.platform.reviews.ReviewPromptLauncher
+import com.botglobal.mobile.platform.reviews.RatingInvitationCoordinator
+import com.botglobal.mobile.platform.reviews.RatingInvitationPolicy
 import com.enpo.connect.app.network.EnpoNetworkConfiguration
 import com.botglobal.mobile.platform.networking.NetworkEnvironment
 import com.enpo.connect.app.pairing.EnpoPairingState
 import com.enpo.connect.app.pairing.EnpoPairingClaimResult
 import com.enpo.connect.app.pairing.EnpoPairingClient
 import com.enpo.connect.app.pairing.EnpoPairingCoordinator
+import com.enpo.connect.app.pairing.EnpoDeviceUnpairClient
+import com.enpo.connect.app.pairing.EnpoDeviceUnpairCoordinator
+import com.enpo.connect.app.pairing.EnpoDeviceUnpairResponse
+import com.enpo.connect.app.pairing.EnpoDeviceUnpairState
 import com.enpo.connect.app.notifications.EnpoNotificationSound
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -32,11 +38,125 @@ import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.plus
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 
 class EnpoAppStateTests {
+    @Test
+    fun bootstrapDoesNotRestorePairedScreenAfterRecoveryAlreadyCompleted() = runTest {
+        val vault = InMemoryMobileDeviceCredentialVault(MobileDeviceCredential("device", "credential"))
+        val inspected = CompletableDeferred<Unit>()
+        val releaseInspection = CompletableDeferred<Unit>()
+        val unpair = EnpoDeviceUnpairCoordinator(
+            EnpoDeviceUnpairClient { EnpoDeviceUnpairResponse.Revoked },
+            vault,
+        )
+        val state = EnpoAppState(
+            deviceInfrastructure = EnpoDeviceInfrastructure {
+                inspected.complete(Unit)
+                releaseInspection.await()
+                EnpoDeviceBootstrapResult.DeviceCredentialAvailable
+            },
+            pairingCoordinator = EnpoPairingCoordinator(credentialVault = vault),
+            unpairCoordinator = unpair,
+        )
+
+        val bootstrap = async { state.bootstrap() }
+        inspected.await()
+        assertEquals(EnpoDeviceUnpairState.Completed, unpair.unpair())
+        releaseInspection.complete(Unit)
+        bootstrap.await()
+
+        assertEquals(EnpoBootstrapState.Unpaired, state.bootstrapState.value)
+        assertEquals(EnpoDestination.Pairing, state.navigation.current)
+    }
+
+    @Test
+    fun completedBackgroundRecoveryUpdatesAnAlreadyPairedScreen() = runTest {
+        val vault = InMemoryMobileDeviceCredentialVault(MobileDeviceCredential("device", "credential"))
+        val unpair = EnpoDeviceUnpairCoordinator(
+            EnpoDeviceUnpairClient { EnpoDeviceUnpairResponse.AlreadyInvalid },
+            vault,
+        )
+        val state = EnpoAppState(
+            deviceInfrastructure = EnpoDeviceInfrastructure { EnpoDeviceBootstrapResult.DeviceCredentialAvailable },
+            pairingCoordinator = EnpoPairingCoordinator(credentialVault = vault),
+            unpairCoordinator = unpair,
+        )
+        state.bootstrap()
+        assertEquals(EnpoBootstrapState.DeviceCredentialAvailable, state.bootstrapState.value)
+
+        assertEquals(EnpoDeviceUnpairState.Completed, unpair.unpair())
+        state.syncCompletedUnpair()
+        assertEquals(EnpoBootstrapState.Unpaired, state.bootstrapState.value)
+        assertEquals(EnpoDestination.Pairing, state.navigation.current)
+    }
+
+    @Test
+    fun unpairOnlyLeavesThePairedShellAfterServerAndLocalCleanupSucceed() = runTest {
+        val vault = InMemoryMobileDeviceCredentialVault(MobileDeviceCredential("device", "credential"))
+        var serverAvailable = false
+        var localCleaned = false
+        val state = EnpoAppState(
+            deviceInfrastructure = EnpoDeviceInfrastructure { EnpoDeviceBootstrapResult.DeviceCredentialAvailable },
+            pairingCoordinator = EnpoPairingCoordinator(credentialVault = vault),
+            unpairCoordinator = EnpoDeviceUnpairCoordinator(
+                EnpoDeviceUnpairClient {
+                    if (serverAvailable) EnpoDeviceUnpairResponse.Revoked else EnpoDeviceUnpairResponse.Unavailable
+                },
+                vault,
+                clearLocalData = { localCleaned = true },
+            ),
+        )
+        state.bootstrap()
+
+        assertEquals(EnpoDeviceUnpairState.ServiceUnavailable, state.unpairDevice())
+        assertEquals(EnpoDestination.Home, state.navigation.current)
+        assertEquals(EnpoBootstrapState.DeviceCredentialAvailable, state.bootstrapState.value)
+        assertFalse(localCleaned)
+
+        serverAvailable = true
+        assertEquals(EnpoDeviceUnpairState.Completed, state.unpairDevice())
+        assertEquals(EnpoDestination.Pairing, state.navigation.current)
+        assertEquals(EnpoBootstrapState.Unpaired, state.bootstrapState.value)
+        assertEquals(EnpoPairingState.Unpaired, state.pairingState.value)
+        assertTrue(localCleaned)
+    }
+
+    @Test
+    fun an_existing_paired_user_receives_rating_card_without_a_competing_native_prompt() = runTest {
+        val store = InMemoryPreferenceStore()
+        val launcher = CountingReviewLauncher()
+        val reviews = ReviewCoordinator(
+            store,
+            "reviews",
+            ReviewPolicy(firstUseAgeMillis = 0, minimumMeaningfulEvents = 1, minimumMeaningfulEventSpanMillis = 0),
+            launcher,
+        ) { 0L }
+        reviews.recordMeaningfulEvent("enpo:pairing:device")
+        val invitation = RatingInvitationCoordinator(
+            store,
+            "rating",
+            RatingInvitationPolicy(minimumEvents = 1, minimumEventSpanMillis = 0, firstEventAgeMillis = 0),
+        ) { 0L }
+        val state = EnpoAppState(
+            deviceInfrastructure = EnpoDeviceInfrastructure { EnpoDeviceBootstrapResult.DeviceCredentialAvailable },
+            reviews = reviews,
+            reviewScope = backgroundScope,
+            ratingInvitation = invitation,
+        )
+
+        state.bootstrap()
+        state.onForeground()
+        runCurrent()
+
+        assertTrue(invitation.visible.value)
+        assertEquals(0, launcher.launches)
+    }
+
     @Test
     fun defaultsToLegacyArabicRtlAndLightAppearance() {
         val state = EnpoAppState()
@@ -134,7 +254,7 @@ class EnpoAppStateTests {
     }
 
     @Test
-    fun pairedShellKeepsProfileNotificationsAndSettingsReachable() = runTest {
+    fun pairedShellKeepsNotificationsAndSettingsReachable() = runTest {
         val state = EnpoAppState(
             deviceInfrastructure = EnpoDeviceInfrastructure {
                 EnpoDeviceBootstrapResult.DeviceCredentialAvailable
@@ -143,7 +263,6 @@ class EnpoAppStateTests {
         state.bootstrap()
 
         listOf(
-            EnpoDestination.Profile,
             EnpoDestination.Notifications,
             EnpoDestination.Settings,
         ).forEach { destination ->

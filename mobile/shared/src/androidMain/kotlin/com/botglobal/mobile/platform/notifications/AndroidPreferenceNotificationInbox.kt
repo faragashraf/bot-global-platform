@@ -55,6 +55,10 @@ class AndroidPreferenceNotificationInbox(
         mutableNotifications.value.count { !it.isRead }
     }
 
+    suspend fun clearAll() {
+        mutex.withLock { persist(emptyList()) }
+    }
+
     private fun readAll(): List<SemanticNotification> {
         val raw = preferences.getString(STORE_KEY, null) ?: return emptyList()
         return runCatching {

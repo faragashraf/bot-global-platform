@@ -27,13 +27,13 @@ object EnpoLegacyStorageCompatibility {
 
 object EnpoReleaseIdentity {
     const val ApplicationId = "com.enpo.connect"
-    const val MinimumAndroidSdk = 23
+    const val MinimumAndroidSdk = 24
 }
 
 object EnpoMigrationBoundaries {
     const val FirebaseEnabled = true
     const val PairingEnabled = true
     const val NotificationsEnabled = true
-    const val ProfileProjectionEnabled = true
+    const val ProfileProjectionEnabled = false
     const val NetworkCallsDuringUiBootstrap = false
 }

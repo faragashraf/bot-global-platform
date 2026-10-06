@@ -21,7 +21,7 @@ kotlin {
     androidLibrary {
         namespace = "com.enpo.connect.app"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
-        minSdk = 23
+        minSdk = 24
         compilerOptions.jvmTarget.set(JvmTarget.JVM_11)
         androidResources.enable = true
     }

@@ -44,9 +44,9 @@ fun EnpoNotificationsScreen(
     onMarkAllRead: () -> Unit,
     onOpenAction: (SemanticNotificationDestination) -> Unit,
     onBack: () -> Unit,
+    onHome: () -> Unit,
     onSettings: () -> Unit,
     onNotifications: () -> Unit,
-    onProfile: () -> Unit,
 ) {
     val selected = notifications.firstOrNull { it.id == selectedId }
     LaunchedEffect(selected?.id) {
@@ -58,9 +58,9 @@ fun EnpoNotificationsScreen(
             strings = strings,
             selectedTab = EnpoPairedTab.Notifications,
             unreadNotificationCount = notifications.count { !it.isRead },
+            onHome = onHome,
             onSettings = onSettings,
             onNotifications = onNotifications,
-            onProfile = onProfile,
         ) {
             Text(
                 strings.notifications,

@@ -30,10 +30,6 @@ class EnpoNetworkConfigurationTests {
             "https://botglobalservice.com/backend/api/mobile/devices/push-registration",
             configuration.endpoint(EnpoPublicServiceRoute.PushRegistration),
         )
-        assertEquals(
-            "https://botglobalservice.com/backend/api/mobile/profile",
-            configuration.endpoint(EnpoPublicServiceRoute.Profile),
-        )
     }
 
     @Test

@@ -8,7 +8,7 @@ fun File.sha256(): String = MessageDigest.getInstance("SHA-256")
     .digest(readBytes())
     .joinToString("") { byte -> "%02x".format(byte) }
 
-val enpoProductionPublicBaseUrl = "https://botglobalservice.com/backend"
+val enpoProductionPublicBaseUrl = "https://api.botglobalservice.com"
 val enpoDebugPublicBaseUrl = providers.gradleProperty("enpoDebugPublicBaseUrl")
     .orElse(providers.environmentVariable("ENPO_DEBUG_PUBLIC_BASE_URL"))
     .getOrElse(enpoProductionPublicBaseUrl)
@@ -55,10 +55,10 @@ android {
 
     defaultConfig {
         applicationId = "com.enpo.connect"
-        minSdk = 23
+        minSdk = 24
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 4
-        versionName = "1.0.2"
+        versionCode = 5
+        versionName = "1.0.3"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
 
@@ -107,7 +107,7 @@ tasks.register("verifyEnpoMigrationIdentity") {
     description = "Verifies the immutable ENPO package and API floor during migration."
     doLast {
         check(android.defaultConfig.applicationId == "com.enpo.connect")
-        check(android.defaultConfig.minSdk == 23)
+        check(android.defaultConfig.minSdk == 24)
     }
 }
 

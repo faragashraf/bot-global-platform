@@ -23,7 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -61,9 +61,9 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 
 enum class EnpoPairedTab {
+    Home,
     Settings,
     Notifications,
-    Profile,
 }
 
 @Composable
@@ -254,9 +254,9 @@ fun EnpoPairedScreen(
     strings: EnpoStrings,
     selectedTab: EnpoPairedTab?,
     unreadNotificationCount: Int,
+    onHome: () -> Unit,
     onSettings: () -> Unit,
     onNotifications: () -> Unit,
-    onProfile: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
@@ -277,9 +277,9 @@ fun EnpoPairedScreen(
             strings = strings,
             selectedTab = selectedTab,
             unreadNotificationCount = unreadNotificationCount,
+            onHome = onHome,
             onSettings = onSettings,
             onNotifications = onNotifications,
-            onProfile = onProfile,
         )
     }
 }
@@ -289,40 +289,38 @@ private fun EnpoBottomBar(
     strings: EnpoStrings,
     selectedTab: EnpoPairedTab?,
     unreadNotificationCount: Int,
+    onHome: () -> Unit,
     onSettings: () -> Unit,
     onNotifications: () -> Unit,
-    onProfile: () -> Unit,
 ) {
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        NavigationBar {
-            NavigationBarItem(
-                selected = selectedTab == EnpoPairedTab.Settings,
-                onClick = onSettings,
-                icon = { Icon(Icons.Default.Settings, contentDescription = strings.settings) },
-                label = { Text(strings.settings, maxLines = 1) },
-            )
-            NavigationBarItem(
-                selected = selectedTab == EnpoPairedTab.Notifications,
-                onClick = onNotifications,
-                icon = {
-                    BadgedBox(
-                        badge = {
-                            if (unreadNotificationCount > 0) {
-                                Badge { Text(unreadNotificationCount.coerceAtMost(99).toString()) }
-                            }
-                        },
-                    ) {
-                        Icon(Icons.Default.Notifications, contentDescription = strings.notifications)
-                    }
-                },
-                label = { Text(strings.notifications, maxLines = 1) },
-            )
-            NavigationBarItem(
-                selected = selectedTab == EnpoPairedTab.Profile,
-                onClick = onProfile,
-                icon = { Icon(Icons.Default.Person, contentDescription = strings.profile) },
-                label = { Text(strings.profile, maxLines = 1) },
-            )
-        }
+    NavigationBar {
+        NavigationBarItem(
+            selected = selectedTab == EnpoPairedTab.Home,
+            onClick = onHome,
+            icon = { Icon(Icons.Default.Home, contentDescription = strings.home) },
+            label = { Text(strings.home, maxLines = 1) },
+        )
+        NavigationBarItem(
+            selected = selectedTab == EnpoPairedTab.Settings,
+            onClick = onSettings,
+            icon = { Icon(Icons.Default.Settings, contentDescription = strings.settings) },
+            label = { Text(strings.settings, maxLines = 1) },
+        )
+        NavigationBarItem(
+            selected = selectedTab == EnpoPairedTab.Notifications,
+            onClick = onNotifications,
+            icon = {
+                BadgedBox(
+                    badge = {
+                        if (unreadNotificationCount > 0) {
+                            Badge { Text(unreadNotificationCount.coerceAtMost(99).toString()) }
+                        }
+                    },
+                ) {
+                    Icon(Icons.Default.Notifications, contentDescription = strings.notifications)
+                }
+            },
+            label = { Text(strings.notifications, maxLines = 1) },
+        )
     }
 }

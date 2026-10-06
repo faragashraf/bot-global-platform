@@ -4,11 +4,13 @@ import com.botglobal.mobile.platform.appearance.AppearanceController
 import com.botglobal.mobile.platform.appearance.AppearancePreference
 import com.botglobal.mobile.platform.localization.LocaleController
 import com.botglobal.mobile.platform.navigation.BackStackNavigator
+import com.botglobal.mobile.platform.notifications.InMemoryMobileDeviceCredentialVault
 import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
 import com.botglobal.mobile.platform.preferences.PreferenceStore
 import com.botglobal.mobile.platform.reviews.ReviewCoordinator
 import com.botglobal.mobile.platform.reviews.ReviewAttemptResult
 import com.botglobal.mobile.platform.reviews.ReviewTrigger
+import com.botglobal.mobile.platform.reviews.RatingInvitationCoordinator
 import com.botglobal.mobile.platform.startup.StartupOrchestrator
 import com.botglobal.mobile.platform.startup.StartupStage
 import com.botglobal.mobile.platform.startup.StartupStep
@@ -16,6 +18,10 @@ import com.enpo.connect.app.network.EnpoNetworkConfiguration
 import com.enpo.connect.app.notifications.EnpoNotificationSound
 import com.enpo.connect.app.pairing.EnpoPairingCoordinator
 import com.enpo.connect.app.pairing.EnpoPairingState
+import com.enpo.connect.app.pairing.EnpoDeviceUnpairClient
+import com.enpo.connect.app.pairing.EnpoDeviceUnpairCoordinator
+import com.enpo.connect.app.pairing.EnpoDeviceUnpairResponse
+import com.enpo.connect.app.pairing.EnpoDeviceUnpairState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,7 +36,6 @@ enum class EnpoDestination {
     Home,
     Notifications,
     NotificationSettings,
-    Profile,
     Settings,
     Language,
     Theme,
@@ -52,13 +57,19 @@ class EnpoAppState(
     private val deviceInfrastructure: EnpoDeviceInfrastructure = EmptyEnpoDeviceInfrastructure,
     val networkConfiguration: EnpoNetworkConfiguration? = null,
     private val pairingCoordinator: EnpoPairingCoordinator = EnpoPairingCoordinator(),
+    private val unpairCoordinator: EnpoDeviceUnpairCoordinator = EnpoDeviceUnpairCoordinator(
+        EnpoDeviceUnpairClient { EnpoDeviceUnpairResponse.Unavailable },
+        InMemoryMobileDeviceCredentialVault(),
+    ),
     private val reviews: ReviewCoordinator? = null,
     private val reviewScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val ratingInvitation: RatingInvitationCoordinator? = null,
 ) {
     val locale = LocaleController(restoredLanguageTag())
     val appearance = AppearanceController(initialPreference = restoredAppearance())
     val navigation = BackStackNavigator(EnpoDestination.Home)
     val pairingState: StateFlow<EnpoPairingState> = pairingCoordinator.state
+    val unpairState: StateFlow<EnpoDeviceUnpairState> = unpairCoordinator.state
 
     private val mutableBootstrapState = MutableStateFlow<EnpoBootstrapState>(EnpoBootstrapState.Initializing)
     val bootstrapState: StateFlow<EnpoBootstrapState> = mutableBootstrapState.asStateFlow()
@@ -105,6 +116,8 @@ class EnpoAppState(
             EnpoDeviceBootstrapResult.DeviceCredentialAvailable -> {
                 pairingCoordinator.initializePaired()
                 navigation.reset(EnpoDestination.Home)
+                ratingInvitation?.recordMeaningfulEvent("enpo:pairing:device")
+                ratingInvitation?.refresh()
                 requestReviewIfReady(ReviewTrigger.Foreground)
                 EnpoBootstrapState.DeviceCredentialAvailable
             }
@@ -115,16 +128,44 @@ class EnpoAppState(
             }
             null -> EnpoBootstrapState.Error
         }
+        // Recovery may have completed after the credential was inspected above.
+        // Never let that earlier snapshot restore a paired screen.
+        syncCompletedUnpair()
     }
 
     suspend fun startPairing(scannerPrompt: String) {
+        unpairCoordinator.resetNotice()
         pairingCoordinator.startPairing(scannerPrompt)
         if (pairingCoordinator.state.value == EnpoPairingState.Paired) {
             mutableBootstrapState.value = EnpoBootstrapState.DeviceCredentialAvailable
             navigation.reset(EnpoDestination.PairingSuccess)
             pendingReviewTrigger = ReviewTrigger.CompletedExperience
+            ratingInvitation?.recordMeaningfulEvent("enpo:pairing:device")
             reviews?.recordMeaningfulEvent("enpo:pairing:device")
         }
+    }
+
+    suspend fun unpairDevice(): EnpoDeviceUnpairState {
+        if (bootstrapState.value != EnpoBootstrapState.DeviceCredentialAvailable) {
+            return unpairCoordinator.state.value
+        }
+        val result = unpairCoordinator.unpair()
+        if (result == EnpoDeviceUnpairState.Completed) {
+            syncCompletedUnpair()
+        }
+        return result
+    }
+
+    fun syncCompletedUnpair() {
+        if (unpairCoordinator.state.value != EnpoDeviceUnpairState.Completed ||
+            !bootstrapComplete ||
+            mutableBootstrapState.value == EnpoBootstrapState.Unpaired
+        ) return
+        pairingCoordinator.initializeUnpaired()
+        mutableBootstrapState.value = EnpoBootstrapState.Unpaired
+        mutableSelectedNotificationId.value = null
+        pendingReviewTrigger = null
+        navigation.reset(EnpoDestination.Pairing)
     }
 
     fun enterPairedShell() {
@@ -135,6 +176,7 @@ class EnpoAppState(
     }
 
     fun onForeground() {
+        ratingInvitation?.refresh()
         requestReviewIfReady(ReviewTrigger.Foreground)
     }
 
@@ -163,7 +205,8 @@ class EnpoAppState(
         navigation.current == EnpoDestination.Home &&
             bootstrapState.value == EnpoBootstrapState.DeviceCredentialAvailable &&
             pairingCoordinator.state.value == EnpoPairingState.Paired &&
-            selectedNotificationId.value == null
+            selectedNotificationId.value == null &&
+            ratingInvitation?.suppressesNativePrompt() != true
 
     fun open(destination: EnpoDestination) {
         require(destination !in RootDestinations) { "Root destinations cannot be pushed." }
@@ -264,7 +307,6 @@ class EnpoAppState(
         private val PairedDestinations = setOf(
             EnpoDestination.Home,
             EnpoDestination.Notifications,
-            EnpoDestination.Profile,
             EnpoDestination.Settings,
         )
     }

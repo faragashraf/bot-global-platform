@@ -16,13 +16,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,6 +36,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -55,17 +58,15 @@ import com.botglobal.mobile.platform.appearance.AppearancePreference
 import com.botglobal.mobile.platform.appearance.ResolvedAppearance
 import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.mobile.platform.notifications.InMemoryNotificationInbox
+import com.botglobal.mobile.platform.notifications.InMemoryMobileDeviceCredentialVault
 import com.botglobal.mobile.platform.notifications.NotificationInbox
 import com.botglobal.mobile.platform.notifications.SemanticNotification
 import com.botglobal.mobile.platform.notifications.SemanticNotificationDestination
 import com.botglobal.mobile.platform.notifications.isSemanticNotificationId
 import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
 import com.botglobal.mobile.platform.preferences.PreferenceStore
-import com.botglobal.mobile.platform.profile.ProfileController
-import com.botglobal.mobile.platform.profile.ProfileLoadState
-import com.botglobal.mobile.platform.profile.ProfileRepository
-import com.botglobal.mobile.platform.profile.UnavailableProfileRepository
 import com.botglobal.mobile.platform.reviews.ReviewCoordinator
+import com.botglobal.mobile.platform.reviews.RatingInvitationCoordinator
 import com.enpo.connect.app.network.EnpoNetworkConfiguration
 import com.enpo.connect.app.notifications.EnpoNotificationActionHandler
 import com.enpo.connect.app.notifications.EnpoNotificationPermissionRequester
@@ -74,6 +75,10 @@ import com.enpo.connect.app.notifications.NoOpNotificationActionHandler
 import com.enpo.connect.app.notifications.NoOpNotificationPermissionRequester
 import com.enpo.connect.app.pairing.EnpoPairingCoordinator
 import com.enpo.connect.app.pairing.EnpoPairingState
+import com.enpo.connect.app.pairing.EnpoDeviceUnpairClient
+import com.enpo.connect.app.pairing.EnpoDeviceUnpairCoordinator
+import com.enpo.connect.app.pairing.EnpoDeviceUnpairResponse
+import com.enpo.connect.app.pairing.EnpoDeviceUnpairState
 import com.enpo.connect.app.state.EmptyEnpoDeviceInfrastructure
 import com.enpo.connect.app.state.EnpoAppState
 import com.enpo.connect.app.state.EnpoBootstrapState
@@ -81,7 +86,6 @@ import com.enpo.connect.app.state.EnpoDestination
 import com.enpo.connect.app.state.EnpoDeviceInfrastructure
 import com.enpo.connect.app.state.EnpoStartupAnimationSpec
 import com.enpo.connect.app.state.EnpoVisibleLaunchState
-import com.enpo.connect.app.state.synchronizeEnpoProfile
 import com.enpo.connect.app.ui.EnpoBrandHeader
 import com.enpo.connect.app.ui.EnpoNotificationsScreen
 import com.enpo.connect.app.ui.EnpoPairedScreen
@@ -101,7 +105,10 @@ fun EnpoConnectApp(
     deviceInfrastructure: EnpoDeviceInfrastructure = EmptyEnpoDeviceInfrastructure,
     networkConfiguration: EnpoNetworkConfiguration? = null,
     pairingCoordinator: EnpoPairingCoordinator = EnpoPairingCoordinator(),
-    profileRepository: ProfileRepository = UnavailableProfileRepository,
+    unpairCoordinator: EnpoDeviceUnpairCoordinator = EnpoDeviceUnpairCoordinator(
+        EnpoDeviceUnpairClient { EnpoDeviceUnpairResponse.Unavailable },
+        InMemoryMobileDeviceCredentialVault(),
+    ),
     notificationInbox: NotificationInbox = InMemoryNotificationInbox(),
     notificationId: String? = null,
     onNotificationHandled: () -> Unit = {},
@@ -111,21 +118,24 @@ fun EnpoConnectApp(
     onPairingCompleted: () -> Unit = {},
     onResolvedAppearanceChanged: (ResolvedAppearance) -> Unit = {},
     reviews: ReviewCoordinator? = null,
+    ratingInvitation: RatingInvitationCoordinator? = null,
+    onRateApp: () -> Boolean = { false },
 ) {
-    val state = remember(preferences, deviceInfrastructure, networkConfiguration, pairingCoordinator, reviews) {
-        EnpoAppState(preferences, deviceInfrastructure, networkConfiguration, pairingCoordinator, reviews)
+    val state = remember(preferences, deviceInfrastructure, networkConfiguration, pairingCoordinator, unpairCoordinator, reviews, ratingInvitation) {
+        EnpoAppState(preferences, deviceInfrastructure, networkConfiguration, pairingCoordinator, unpairCoordinator, reviews,
+            ratingInvitation = ratingInvitation)
     }
-    val profileController = remember(profileRepository) { ProfileController(profileRepository) }
     val locale by state.locale.state.collectAsState()
     val appearance by state.appearance.state.collectAsState()
     val backStack by state.navigation.backStack.collectAsState()
     val bootstrapState by state.bootstrapState.collectAsState()
     val pairingState by state.pairingState.collectAsState()
+    val unpairState by state.unpairState.collectAsState()
     val selectedNotificationId by state.selectedNotificationId.collectAsState()
     val notificationsEnabled by state.notificationsEnabled.collectAsState()
     val notificationSound by state.notificationSound.collectAsState()
     val notifications by notificationInbox.notifications.collectAsState()
-    val profileState by profileController.state.collectAsState()
+    val ratingInvitationVisible = ratingInvitation?.visible?.collectAsState()?.value == true
     val scope = rememberCoroutineScope()
     val systemIsDark = isSystemInDarkTheme()
     val visibleLaunch = rememberSaveable(saver = EnpoVisibleLaunchState.Saver) {
@@ -133,6 +143,9 @@ fun EnpoConnectApp(
     }
 
     LaunchedEffect(state) { state.bootstrap() }
+    LaunchedEffect(state, unpairState) {
+        if (unpairState == EnpoDeviceUnpairState.Completed) state.syncCompletedUnpair()
+    }
     LaunchedEffect(visibleLaunch) {
         if (!visibleLaunch.isComplete) {
             delay(EnpoStartupAnimationSpec.VisibleLaunchDurationMillis)
@@ -144,9 +157,6 @@ fun EnpoConnectApp(
         if (visibleLaunch.isComplete) {
             onResolvedAppearanceChanged(appearance.resolved)
         }
-    }
-    LaunchedEffect(bootstrapState) {
-        synchronizeEnpoProfile(bootstrapState, profileController)
     }
     LaunchedEffect(notificationId, bootstrapState) {
         if (notificationId == null) return@LaunchedEffect
@@ -172,10 +182,11 @@ fun EnpoConnectApp(
     CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
         EnpoTheme(appearance.resolved) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                if (bootstrapState == EnpoBootstrapState.Initializing || !visibleLaunch.isComplete) {
-                    EnpoSplash(strings)
-                } else {
-                    EnpoShell(
+                Box(Modifier.fillMaxSize()) {
+                    if (bootstrapState == EnpoBootstrapState.Initializing || !visibleLaunch.isComplete) {
+                        EnpoSplash(strings)
+                    } else {
+                        EnpoShell(
                         destination = backStack.last(),
                         strings = strings,
                         isDark = appearance.resolved == ResolvedAppearance.Dark,
@@ -184,13 +195,14 @@ fun EnpoConnectApp(
                         selectedAppearance = appearance.preference,
                         bootstrapState = bootstrapState,
                         pairingState = pairingState,
+                        unpairState = unpairState,
                         notificationsEnabled = notificationsEnabled,
                         notificationSound = notificationSound,
                         notifications = notifications,
                         selectedNotificationId = selectedNotificationId,
-                        profileState = profileState,
                         onOpen = state::open,
                         onOpenPaired = state::openPairedDestination,
+                        onHome = { state.openPairedDestination(EnpoDestination.Home) },
                         onOpenNotifications = {
                             notificationPermissionRequester.requestIfAppropriate()
                             state.openPairedDestination(EnpoDestination.Notifications)
@@ -205,7 +217,6 @@ fun EnpoConnectApp(
                         onAppearance = state::selectAppearance,
                         onNotificationsEnabled = state::setNotificationsEnabled,
                         onNotificationSound = state::selectNotificationSound,
-                        onRetryProfile = { scope.launch { profileController.refresh() } },
                         onStartPairing = {
                             scope.launch {
                                 state.startPairing(strings.scannerPrompt)
@@ -214,8 +225,20 @@ fun EnpoConnectApp(
                                 }
                             }
                         },
+                        onUnpair = { scope.launch { state.unpairDevice() } },
                         onEnterPairedShell = state::enterPairedShell,
-                    )
+                        )
+                    }
+                    if (ratingInvitationVisible && backStack.last() == EnpoDestination.Home &&
+                        bootstrapState == EnpoBootstrapState.DeviceCredentialAvailable
+                    ) {
+                        EnpoRatingInvitationCard(
+                            isArabic = locale.languageTag == EnpoAppState.ArabicLanguageTag,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            onRate = { if (onRateApp()) ratingInvitation?.openedStore() },
+                            onLater = { ratingInvitation?.later() },
+                        )
+                    }
                 }
             }
         }
@@ -240,13 +263,14 @@ private fun EnpoShell(
     selectedAppearance: AppearancePreference,
     bootstrapState: EnpoBootstrapState,
     pairingState: EnpoPairingState,
+    unpairState: EnpoDeviceUnpairState,
     notificationsEnabled: Boolean,
     notificationSound: EnpoNotificationSound,
     notifications: List<SemanticNotification>,
     selectedNotificationId: String?,
-    profileState: ProfileLoadState,
     onOpen: (EnpoDestination) -> Unit,
     onOpenPaired: (EnpoDestination) -> Unit,
+    onHome: () -> Unit,
     onOpenNotifications: () -> Unit,
     onSelectNotification: (String) -> Unit,
     onCloseNotificationDetail: () -> Unit,
@@ -258,25 +282,25 @@ private fun EnpoShell(
     onAppearance: (AppearancePreference) -> Unit,
     onNotificationsEnabled: (Boolean) -> Unit,
     onNotificationSound: (EnpoNotificationSound) -> Unit,
-    onRetryProfile: () -> Unit,
     onStartPairing: () -> Unit,
+    onUnpair: () -> Unit,
     onEnterPairedShell: () -> Unit,
 ) {
     val unreadCount = notifications.count { !it.isRead }
     val openSettings = { onOpenPaired(EnpoDestination.Settings) }
-    val openProfile = { onOpenPaired(EnpoDestination.Profile) }
     when (destination) {
         EnpoDestination.Pairing -> PairingScreen(
             strings,
             isDark,
             pairingState,
+            unpairState,
             onStartPairing,
             onLanguage = { onOpen(EnpoDestination.Language) },
             onTheme = { onOpen(EnpoDestination.Theme) },
         )
         EnpoDestination.PairingSuccess -> PairingSuccessScreen(strings, isDark, onEnterPairedShell)
         EnpoDestination.Home -> HomeScreen(
-            strings, isDark, bootstrapState, unreadCount, openSettings, onOpenNotifications, openProfile,
+            strings, isDark, bootstrapState, unreadCount, onHome, openSettings, onOpenNotifications,
         )
         EnpoDestination.Notifications -> EnpoNotificationsScreen(
             strings = strings,
@@ -289,9 +313,9 @@ private fun EnpoShell(
             onMarkAllRead = onMarkAllNotificationsRead,
             onOpenAction = onOpenNotificationAction,
             onBack = { onBack() },
+            onHome = onHome,
             onSettings = openSettings,
             onNotifications = onOpenNotifications,
-            onProfile = openProfile,
         )
         EnpoDestination.NotificationSettings -> NotificationSettingsScreen(
             strings = strings,
@@ -301,22 +325,13 @@ private fun EnpoShell(
             onSound = onNotificationSound,
             onBack = onBack,
         )
-        EnpoDestination.Profile -> ProfileScreen(
-            strings,
-            profileState,
-            unreadCount,
-            openSettings,
-            onOpenNotifications,
-            openProfile,
-            onRetryProfile,
-        )
         EnpoDestination.Settings -> SettingsScreen(
             strings = strings,
             unreadCount = unreadCount,
+            onHome = onHome,
             onOpenNotifications = onOpenNotifications,
             onOpen = onOpen,
             onSettings = openSettings,
-            onProfile = openProfile,
         )
         EnpoDestination.Language -> SelectionScreen(
             strings.language,
@@ -339,7 +354,7 @@ private fun EnpoShell(
             onBack,
         )
         EnpoDestination.DeviceStatus -> DeviceStatusScreen(strings, bootstrapState, onBack)
-        EnpoDestination.PairingInfo -> PairingInfoScreen(strings, bootstrapState, onBack)
+        EnpoDestination.PairingInfo -> PairingInfoScreen(strings, bootstrapState, unpairState, onUnpair, onBack)
         EnpoDestination.About -> AboutScreen(strings, isDark, runtimeVersionName, onBack)
     }
 }
@@ -349,6 +364,7 @@ private fun PairingScreen(
     strings: EnpoStrings,
     isDark: Boolean,
     state: EnpoPairingState,
+    unpairState: EnpoDeviceUnpairState,
     onStartPairing: () -> Unit,
     onLanguage: () -> Unit,
     onTheme: () -> Unit,
@@ -356,6 +372,7 @@ private fun PairingScreen(
     val busy = state == EnpoPairingState.Scanning || state == EnpoPairingState.Validating ||
         state == EnpoPairingState.Claiming || state == EnpoPairingState.PersistingCredential
     val canRetry = state == EnpoPairingState.Unpaired || state is EnpoPairingState.RecoverableError
+    val failed = state is EnpoPairingState.RecoverableError || state is EnpoPairingState.FatalError
     StandaloneColumn {
         EnpoBrandHeader(isDark)
         Spacer(Modifier.height(26.dp))
@@ -363,7 +380,14 @@ private fun PairingScreen(
         Spacer(Modifier.height(8.dp))
         Text(strings.pairingBody, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .7f))
         Spacer(Modifier.height(20.dp))
-        ProductCard(strings.deviceState, strings.pairingStateText(state))
+        ProductCard(
+            if (failed) strings.pairingFailureTitle else strings.deviceState,
+            strings.pairingStateText(state),
+        )
+        if (unpairState == EnpoDeviceUnpairState.Completed) {
+            Spacer(Modifier.height(12.dp))
+            ProductCard(strings.unpairDevice, strings.unpairCompleted)
+        }
         if (busy) {
             Spacer(Modifier.height(22.dp))
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -387,6 +411,13 @@ private fun PairingSuccessScreen(strings: EnpoStrings, isDark: Boolean, onEnter:
     StandaloneColumn(horizontalAlignment = Alignment.CenterHorizontally) {
         EnpoBrandHeader(isDark)
         Spacer(Modifier.height(34.dp))
+        Icon(
+            Icons.Default.CheckCircle,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(56.dp),
+        )
+        Spacer(Modifier.height(18.dp))
         Text(strings.pairingSuccessTitle, textAlign = TextAlign.Center, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
         Text(strings.pairingSuccessBody, textAlign = TextAlign.Center)
@@ -401,11 +432,11 @@ private fun HomeScreen(
     isDark: Boolean,
     bootstrapState: EnpoBootstrapState,
     unreadCount: Int,
+    onHome: () -> Unit,
     onSettings: () -> Unit,
     onNotifications: () -> Unit,
-    onProfile: () -> Unit,
 ) {
-    EnpoPairedScreen(strings, null, unreadCount, onSettings, onNotifications, onProfile) {
+    EnpoPairedScreen(strings, EnpoPairedTab.Home, unreadCount, onHome, onSettings, onNotifications) {
         EnpoBrandHeader(isDark)
         Spacer(Modifier.height(26.dp))
         Text(strings.welcome, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -423,105 +454,16 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun ProfileScreen(
-    strings: EnpoStrings,
-    state: ProfileLoadState,
-    unreadCount: Int,
-    onSettings: () -> Unit,
-    onNotifications: () -> Unit,
-    onProfile: () -> Unit,
-    onRetry: () -> Unit,
-) {
-    EnpoPairedScreen(strings, EnpoPairedTab.Profile, unreadCount, onSettings, onNotifications, onProfile) {
-        Text(strings.profile, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(28.dp))
-        when (state) {
-            ProfileLoadState.NotLoaded,
-            ProfileLoadState.Loading,
-            -> Box(
-                Modifier.fillMaxWidth().padding(vertical = 40.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
-
-            is ProfileLoadState.Ready -> {
-                ProfileAvatar(state.snapshot.displayName)
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    state.snapshot.displayName,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                state.snapshot.jobTitle?.let {
-                    Spacer(Modifier.height(22.dp))
-                    ProductCard(strings.jobTitle, it)
-                }
-                state.snapshot.organizationUnit?.let {
-                    Spacer(Modifier.height(12.dp))
-                    ProductCard(strings.organizationUnit, it)
-                }
-                Spacer(Modifier.height(12.dp))
-                ProductCard(strings.deviceState, strings.pairedAndSecure, emphasized = true)
-            }
-
-            ProfileLoadState.NotAvailableYet ->
-                ProductCard(strings.profileUnavailable, strings.profileUnavailableBody)
-
-            ProfileLoadState.AuthenticationRequired -> {
-                ProductCard(strings.profileLoadError, strings.profileAuthenticationRequired)
-                Spacer(Modifier.height(18.dp))
-                Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text(strings.retry) }
-            }
-
-            ProfileLoadState.Error -> {
-                ProductCard(strings.profileLoadError, strings.profileLoadErrorBody)
-                Spacer(Modifier.height(18.dp))
-                Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text(strings.retry) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ColumnScope.ProfileAvatar(displayName: String) {
-    val initials = displayName
-        .split(" ")
-        .filter(String::isNotBlank)
-        .take(2)
-        .mapNotNull { part -> part.firstOrNull()?.uppercaseChar() }
-        .joinToString("")
-        .ifBlank { "EN" }
-
-    Surface(
-        Modifier.size(96.dp).align(Alignment.CenterHorizontally),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = .12f),
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                initials,
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-    }
-}
-
-@Composable
 private fun SettingsScreen(
     strings: EnpoStrings,
     unreadCount: Int,
+    onHome: () -> Unit,
     onOpenNotifications: () -> Unit,
     onOpen: (EnpoDestination) -> Unit,
     onSettings: () -> Unit,
-    onProfile: () -> Unit,
 ) {
     EnpoPairedScreen(
-        strings, EnpoPairedTab.Settings, unreadCount, onSettings, onOpenNotifications, onProfile,
+        strings, EnpoPairedTab.Settings, unreadCount, onHome, onSettings, onOpenNotifications,
     ) {
         Text(strings.settings, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(22.dp))
@@ -599,15 +541,65 @@ private fun DeviceStatusScreen(strings: EnpoStrings, state: EnpoBootstrapState, 
 }
 
 @Composable
-private fun PairingInfoScreen(strings: EnpoStrings, state: EnpoBootstrapState, onBack: () -> Boolean) {
+private fun PairingInfoScreen(
+    strings: EnpoStrings,
+    state: EnpoBootstrapState,
+    unpairState: EnpoDeviceUnpairState,
+    onUnpair: () -> Unit,
+    onBack: () -> Boolean,
+) {
+    var confirmUnpair by rememberSaveable { mutableStateOf(false) }
+    val working = unpairState == EnpoDeviceUnpairState.Working
     StandaloneColumn {
         ScreenHeader(strings.pairingInformation, strings.back, onBack)
         ProductCard(
-            strings.pairingMode,
+            strings.deviceState,
             if (state == EnpoBootstrapState.DeviceCredentialAvailable) strings.productionPublicService else strings.unpaired,
+            emphasized = true,
         )
+        Spacer(Modifier.height(24.dp))
+        Text(strings.pairingProtectionTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
-        ProductCard(strings.deviceState, strings.deviceStateText(state))
+        ProductCard(strings.credentialStorage, strings.encryptedAndAvailable)
+        Spacer(Modifier.height(10.dp))
+        ProductCard(strings.pairingMode, strings.pairingCodeProtection)
+        Spacer(Modifier.height(10.dp))
+        ProductCard(strings.security, strings.pairingServerProtection)
+        if (state == EnpoBootstrapState.DeviceCredentialAvailable) {
+            Spacer(Modifier.height(28.dp))
+            OutlinedButton(
+                onClick = { confirmUnpair = true },
+                enabled = !working,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text(if (working) strings.unpairWorking else strings.unpairDevice) }
+        }
+        val failure = when (unpairState) {
+            EnpoDeviceUnpairState.ServiceUnavailable -> strings.unpairServiceUnavailable
+            EnpoDeviceUnpairState.LocalCleanupFailed -> strings.unpairLocalCleanupFailed
+            EnpoDeviceUnpairState.CredentialUnreadable -> strings.unpairCredentialUnreadable
+            else -> null
+        }
+        if (failure != null) {
+            Spacer(Modifier.height(12.dp))
+            ProductCard(strings.unpairFailureTitle, failure)
+        }
+    }
+    if (confirmUnpair) {
+        AlertDialog(
+            onDismissRequest = { confirmUnpair = false },
+            title = { Text(strings.unpairConfirmTitle) },
+            text = { Text(strings.unpairConfirmBody) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmUnpair = false
+                    onUnpair()
+                }) { Text(strings.unpairDevice, color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmUnpair = false }) { Text(strings.unpairCancel) }
+            },
+        )
     }
 }
 
