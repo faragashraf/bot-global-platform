@@ -142,7 +142,7 @@ class NqrbIdentityApi(
     }
 
     override suspend fun versionPolicy(currentVersion: String, platform: String): AppVersionPolicy =
-        client.get(endpoint("/api/mobile/nqrb/version-policy")) {
+        client.get(endpoint("/api/mobile/apps/nqrb/version-policy")) {
             accept(ContentType.Application.Json)
             parameter("platform", platform)
             parameter("currentVersion", currentVersion)

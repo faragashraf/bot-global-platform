@@ -18,6 +18,8 @@ public sealed class IdentityDbContext(
 
     public DbSet<ApplicationAccountDeletionRequest> AccountDeletionRequests => Set<ApplicationAccountDeletionRequest>();
 
+    public DbSet<MobileVersionPolicy> MobileVersionPolicies => Set<MobileVersionPolicy>();
+
     protected override void OnModelCreating(
         ModelBuilder builder)
     {
@@ -73,5 +75,6 @@ public sealed class IdentityDbContext(
         builder.ApplyConfiguration(new ApplicationMembershipConfiguration(isPostgreSql));
         builder.ApplyConfiguration(new MobileApplicationSessionConfiguration());
         builder.ApplyConfiguration(new ApplicationAccountDeletionRequestConfiguration());
+        builder.ApplyConfiguration(new MobileVersionPolicyConfiguration());
     }
 }

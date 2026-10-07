@@ -21,10 +21,10 @@ import kotlin.test.assertIs
 
 class NqrbIdentityApiTests {
     @Test
-    fun versionPolicyUsesNqrbEndpointWithCurrentVersionAndPlatform() = runTest {
+    fun versionPolicyUsesGenericNqrbEndpointWithCurrentVersionAndPlatform() = runTest {
         val engine = MockEngine { request ->
             assertEquals(HttpMethod.Get, request.method)
-            assertEquals("/api/mobile/nqrb/version-policy", request.url.encodedPath)
+            assertEquals("/api/mobile/apps/nqrb/version-policy", request.url.encodedPath)
             assertEquals("android", request.url.parameters["platform"])
             assertEquals("0.2.5", request.url.parameters["currentVersion"])
             respond(

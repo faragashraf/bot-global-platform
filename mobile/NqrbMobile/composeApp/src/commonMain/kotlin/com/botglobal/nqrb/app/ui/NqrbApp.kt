@@ -2299,6 +2299,13 @@ private fun SettingsScreen(
                 }
             }
         }
+        Text(
+            "${strings.appVersion} ${appState.appVersion}",
+            Modifier.fillMaxWidth().padding(bottom = NqrbSpacing.Md),
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textSecondary,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

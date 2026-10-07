@@ -320,14 +320,8 @@ private object NqrbIncomingCallNotification {
     }
 
     private fun incomingNotification(context: Context, callId: CallId, displayName: String): Notification {
-        val openIntent = PendingIntent.getActivity(
-            context,
-            10,
-            Intent(context, MainActivity::class.java).addFlags(
-                Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP,
-            ),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        val openIntent = incomingCallActivity(context, 10)
+        val fullScreenIntent = incomingCallActivity(context, 13)
         val answer = callAction(context, NqrbOngoingCallService.ActionAnswerCall, callId, 11)
         val reject = callAction(context, NqrbOngoingCallService.ActionRejectCall, callId, 12)
         val builder = notificationBuilder(context, NqrbOngoingCallService.IncomingChannelId)
@@ -339,12 +333,22 @@ private object NqrbIncomingCallNotification {
             .setOngoing(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setPriority(Notification.PRIORITY_MAX)
+            .setFullScreenIntent(fullScreenIntent, true)
             .setShowWhen(true)
             .setWhen(System.currentTimeMillis())
             .addAction(Notification.Action.Builder(null, context.getString(R.string.reject_call), reject).build())
             .addAction(Notification.Action.Builder(null, context.getString(R.string.answer_call), answer).build())
         return builder.build()
     }
+
+    private fun incomingCallActivity(context: Context, requestCode: Int) = PendingIntent.getActivity(
+        context,
+        requestCode,
+        Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(NqrbOngoingCallService.ExtraShowOverLockScreen, true),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
     private fun callAction(context: Context, action: String, callId: CallId, requestCode: Int) = PendingIntent.getBroadcast(
         context,
@@ -528,6 +532,7 @@ class NqrbOngoingCallService : Service() {
         const val ActionRejectCall = "com.botglobal.nqrb.action.REJECT_CALL"
         const val IncomingChannelId = "nqrb_incoming_calls_app_tone"
         const val ExtraCallId = "call_id"
+        const val ExtraShowOverLockScreen = "show_over_lock_screen"
         const val RingtonePreferences = "nqrb_ringtone"
         private const val ActionStart = "com.botglobal.nqrb.action.START_ONGOING_CALL"
         private const val ActionActive = "com.botglobal.nqrb.action.ACTIVE_CALL"

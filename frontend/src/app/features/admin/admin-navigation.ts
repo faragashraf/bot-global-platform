@@ -43,6 +43,13 @@ export const ADMIN_SECTIONS = {
     labelKey: 'auth.management.nav.devicePairing',
     icon: 'pi pi-mobile',
     exact: false
+  },
+  versionPolicies: {
+    path: 'version-policies',
+    route: '/admin/version-policies',
+    labelKey: 'auth.management.nav.versionPolicies',
+    icon: 'pi pi-download',
+    exact: false
   }
 } as const satisfies Record<string, AdminSection>;
 
@@ -51,5 +58,6 @@ export const ADMIN_NAVIGATION: readonly AdminSection[] = [
   ADMIN_SECTIONS.catalog,
   ADMIN_SECTIONS.notifications,
   ADMIN_SECTIONS.devicePairing,
+  ADMIN_SECTIONS.versionPolicies,
   ADMIN_SECTIONS.platformClients
 ];

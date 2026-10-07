@@ -80,7 +80,7 @@ class FamilyGamesApi(
     }
 
     override suspend fun versionPolicy(currentVersion: String, platform: String): AppVersionPolicy =
-        client.get(environment.endpoint("/api/mobile/family-games/version-policy")) {
+        client.get(environment.endpoint("/api/mobile/apps/family-games/version-policy")) {
             accept(ContentType.Application.Json)
             parameter("platform", platform)
             parameter("currentVersion", currentVersion)

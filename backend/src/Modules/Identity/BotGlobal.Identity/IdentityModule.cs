@@ -4,6 +4,7 @@ using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Calling;
 using BotGlobal.Contracts.Notifications;
 using BotGlobal.Identity.Application;
+using BotGlobal.Identity.Application.MobileVersionPolicies;
 using BotGlobal.Identity.Domain;
 using BotGlobal.Identity.Endpoints;
 using BotGlobal.Identity.Infrastructure;
@@ -84,6 +85,8 @@ public static class IdentityModule
         services.Configure<NqrbVersionPolicyOptions>(
             configuration.GetSection(NqrbVersionPolicyOptions.SectionName));
         services.AddSingleton<NqrbVersionPolicyReader>();
+        services.AddScoped<IMobileVersionPolicyReader, MobileVersionPolicyReader>();
+        services.AddScoped<IMobileVersionPolicyAdminService, MobileVersionPolicyAdminService>();
         services.Configure<GoogleFederatedIdentityOptions>(
             configuration.GetSection(GoogleFederatedIdentityOptions.SectionName));
         services.AddSingleton<IGoogleIdTokenVerifier, GoogleIdTokenVerifier>();
@@ -219,16 +222,17 @@ public static class IdentityModule
         MapIdentityModuleEndpoints(
             this IEndpointRouteBuilder endpoints)
     {
-        return endpoints.MapIdentityEndpoints();
+        endpoints.MapIdentityEndpoints();
+        endpoints.MapMobileVersionPolicyAdminEndpoints();
+        return endpoints;
     }
 
-    public static Task InitializeIdentityAsync(
+    public static async Task InitializeIdentityAsync(
         this WebApplication app,
         CancellationToken cancellationToken = default)
     {
-        return app.Services
-            .InitializeBootstrapAdminAsync(
-                app.Configuration,
-                cancellationToken);
+        await app.Services.InitializeBootstrapAdminAsync(
+            app.Configuration,
+            cancellationToken);
     }
 }

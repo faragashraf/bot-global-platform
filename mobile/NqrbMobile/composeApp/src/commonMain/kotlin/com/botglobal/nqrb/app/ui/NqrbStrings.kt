@@ -81,6 +81,7 @@ data class NqrbStrings(
     val blockError: String, val blockedLabel: String, val blockedLoadError: String,
     val clearSearch: String, val showDetails: String, val hideDetails: String,
     val notificationsTitle: String, val notificationsDisabledBody: String, val openNotificationSettings: String,
+    val appVersion: String,
 )
 
 fun nqrbStrings(languageTag: String): NqrbStrings = if (languageTag.startsWith("ar")) ArabicStrings else EnglishStrings
@@ -207,6 +208,7 @@ private val ArabicStrings = NqrbStrings(
     clearSearch = "مسح البحث", showDetails = "عرض التفاصيل", hideDetails = "إخفاء التفاصيل",
     notificationsTitle = "تنبيهات المكالمات", notificationsDisabledBody = "إشعارات نقرب متوقفة على هذا الهاتف. فعّلها من إعدادات الهاتف لاستقبال رنين المكالمات والتطبيق مغلق.",
     openNotificationSettings = "فتح إعدادات الإشعارات",
+    appVersion = "إصدار التطبيق",
 )
 
 private val EnglishStrings = NqrbStrings(
@@ -331,4 +333,5 @@ private val EnglishStrings = NqrbStrings(
     clearSearch = "Clear search", showDetails = "Show details", hideDetails = "Hide details",
     notificationsTitle = "Call alerts", notificationsDisabledBody = "Nqrb notifications are off on this phone. Turn them on in phone settings to receive calls when the app is closed.",
     openNotificationSettings = "Open notification settings",
+    appVersion = "App version",
 )

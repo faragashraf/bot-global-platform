@@ -10,8 +10,8 @@ public sealed class NqrbVersionPolicyOptions
 
 public sealed class MobilePlatformVersionPolicy
 {
-    public string LatestVersion { get; set; } = "0.2.5";
-    public string MinimumSupportedVersion { get; set; } = "0.2.5";
+    public string LatestVersion { get; set; } = "0.2.6";
+    public string MinimumSupportedVersion { get; set; } = "0.2.6";
     public string? Message { get; set; }
     public string? StoreDestination { get; set; }
 }

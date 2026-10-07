@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Mvc;
 
 namespace BotGlobal.Identity.Endpoints;
 
@@ -18,7 +19,10 @@ internal static class MobileIdentityEndpoints
 
         endpoints.MapGet(
                 "/api/mobile/nqrb/version-policy",
-                (string platform, string currentVersion, NqrbVersionPolicyReader reader) =>
+                (
+                    string platform,
+                    string currentVersion,
+                    [FromServices] NqrbVersionPolicyReader reader) =>
                     Results.Ok(reader.Read(platform, currentVersion)))
             .AllowAnonymous();
 

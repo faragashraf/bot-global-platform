@@ -13,6 +13,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.app.NotificationManager
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -90,6 +91,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        configureIncomingCallPresentation(intent)
         enableEdgeToEdge()
         val nqrbApplication = application as NqrbApplication
         val sessionVault = nqrbApplication.sessionVault
@@ -152,6 +154,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        configureIncomingCallPresentation(intent)
         handleInviteIntent(intent)
     }
 
@@ -255,6 +258,28 @@ class MainActivity : ComponentActivity() {
         val uri = intent?.data ?: return
         if (uri.scheme == "nqrb" && uri.host == "invite") {
             uri.pathSegments.firstOrNull()?.let(appState::handleNqrbInviteLink)
+        }
+    }
+
+    private fun configureIncomingCallPresentation(intent: Intent?) {
+        val showOverLockScreen =
+            intent?.getBooleanExtra(NqrbOngoingCallService.ExtraShowOverLockScreen, false) == true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(showOverLockScreen)
+            setTurnScreenOn(showOverLockScreen)
+        } else {
+            @Suppress("DEPRECATION")
+            if (showOverLockScreen) {
+                window.addFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+                )
+            } else {
+                window.clearFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+                )
+            }
         }
     }
 }

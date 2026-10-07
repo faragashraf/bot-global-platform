@@ -269,7 +269,8 @@
         "catalog": "الكتالوج",
         "platformClients": "عملاء المنصة",
         "notifications": "الإشعارات",
-        "devicePairing": "الأجهزة"
+        "devicePairing": "الأجهزة",
+        "versionPolicies": "نسخ التطبيقات"
       },
       "dashboard": {
         "eyebrow": "نظرة عامة",
@@ -427,6 +428,50 @@
             "validation": "تخالف المسودة قاعدة واحدة أو أكثر من قواعد الكتالوج.",
             "save": "تعذر حفظ المسودة."
           }
+        }
+      },
+      "versionPolicies": {
+        "eyebrow": "إصدارات الموبايل",
+        "title": "سياسات نسخ التطبيقات",
+        "subtitle": "اضبط أحدث نسخة وأقل نسخة مدعومة تقرأها تطبيقات الموبايل عند فتحها.",
+        "empty": "لا توجد تطبيقات موبايل مُدارة.",
+        "updated": "آخر تحديث",
+        "stats": {
+          "label": "ملخص سياسات النسخ",
+          "targets": "تطبيق/منصة",
+          "active": "نشطة",
+          "persisted": "محفوظة"
+        },
+        "columns": {
+          "application": "التطبيق",
+          "latest": "الأحدث",
+          "minimum": "الحد الأدنى",
+          "message": "الرسالة",
+          "store": "رابط المتجر",
+          "status": "الحالة"
+        },
+        "platforms": {
+          "android": "أندرويد",
+          "ios": "iOS"
+        },
+        "source": {
+          "persisted": "محفوظة",
+          "fallback": "افتراضية"
+        },
+        "status": {
+          "active": "نشطة",
+          "paused": "متوقفة"
+        },
+        "actions": {
+          "refresh": "تحديث",
+          "save": "حفظ",
+          "saving": "جارٍ الحفظ",
+          "saved": "تم الحفظ"
+        },
+        "errors": {
+          "load": "تعذر تحميل سياسات النسخ.",
+          "save": "تعذر حفظ سياسة النسخة.",
+          "validation": "راجع أرقام النسخ ورابط المتجر ثم حاول مرة أخرى."
         }
       },
       "notifications": {

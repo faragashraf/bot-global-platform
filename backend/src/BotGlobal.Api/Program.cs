@@ -1,5 +1,6 @@
 using BotGlobal.Catalog;
 using BotGlobal.Api;
+using BotGlobal.Api.MobileVersionPolicy;
 using BotGlobal.Api.Security;
 using BotGlobal.Catalog.Endpoints;
 using BotGlobal.Calling;
@@ -127,6 +128,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
 app.MapControllers();
 app.MapCatalogEndpoints();
 app.MapAdminCatalogEndpoints();
+app.MapMobileVersionPolicyEndpoint();
 app.MapIdentityModuleEndpoints();
 
 await app.InitializeCanaryPostgresSchemaAsync();

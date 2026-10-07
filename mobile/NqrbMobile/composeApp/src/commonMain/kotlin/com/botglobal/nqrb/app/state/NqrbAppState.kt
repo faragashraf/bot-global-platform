@@ -135,6 +135,8 @@ class NqrbAppState(
     private val platform: String = "android",
     private val callActionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
+    val appVersion: String = currentVersion
+
     private val startupMutex = Mutex()
     private var startupCompleted = false
     private val mutableStartupState = MutableStateFlow(NqrbStartupState.RestoringSession)

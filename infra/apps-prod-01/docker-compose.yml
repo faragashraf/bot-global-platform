@@ -45,8 +45,8 @@ services:
       Notifications__PushProviders__Providers__0__ConfigurationReference: nqrb-firebase
       Notifications__PushProviders__Providers__0__FirebaseProjectId: nqrb-12dbb
       Notifications__PushProviders__Providers__0__AndroidPackageName: com.botglobal.nqrb
-      Nqrb__VersionPolicy__Android__LatestVersion: 0.2.5
-      Nqrb__VersionPolicy__Android__MinimumSupportedVersion: 0.2.5
+      Nqrb__VersionPolicy__Android__LatestVersion: 0.2.6
+      Nqrb__VersionPolicy__Android__MinimumSupportedVersion: 0.2.6
       Nqrb__VersionPolicy__Android__Message: "يتوفر تحديث جديد لتطبيق نقرب. حدّث التطبيق للمتابعة."
       Nqrb__VersionPolicy__Android__StoreDestination: https://play.google.com/store/apps/details?id=com.botglobal.nqrb
       Firebase__Enabled: "false"

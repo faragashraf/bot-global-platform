@@ -30,6 +30,25 @@ import kotlin.test.assertNull
 
 class FamilyGamesSessionRaceTests {
     @Test
+    fun versionPolicyUsesGenericFamilyGamesEndpointWithCurrentVersionAndPlatform() = runTest {
+        val api = api(RaceVault()) { request ->
+            assertEquals(HttpMethod.Get, request.method)
+            assertEquals("/api/mobile/apps/family-games/version-policy", request.url.encodedPath)
+            assertEquals("android", request.url.parameters["platform"])
+            assertEquals("0.1.0", request.url.parameters["currentVersion"])
+            jsonResponse(
+                """{"currentVersion":"0.1.0","latestVersion":"0.2.0","minimumSupportedVersion":"0.1.5","message":"Update required","storeDestination":"https://example.invalid/store"}""",
+            )
+        }
+
+        val policy = api.versionPolicy("0.1.0", "android")
+
+        assertEquals("0.2.0", policy.latestVersion)
+        assertEquals("0.1.5", policy.minimumSupportedVersion)
+        assertEquals("Update required", policy.message)
+    }
+
+    @Test
     fun late_google_response_after_clear_does_not_resurrect_credentials() = runTest {
         val requestStarted = CompletableDeferred<Unit>()
         val releaseResponse = CompletableDeferred<Unit>()

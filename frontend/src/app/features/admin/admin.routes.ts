@@ -68,6 +68,15 @@ export const ADMIN_ROUTES: Routes = [
             .then((m) => m.DevicePairingPageComponent)
       },
       {
+        path: ADMIN_SECTIONS.versionPolicies.path,
+        data: {
+          [ADMIN_SECTION_DATA_KEY]: ADMIN_SECTIONS.versionPolicies
+        },
+        loadComponent: () =>
+          import('./mobile-version-policies/pages/mobile-version-policies-page/mobile-version-policies-page.component')
+            .then((m) => m.MobileVersionPoliciesPageComponent)
+      },
+      {
         path: ADMIN_SECTIONS.platformClients.path,
         data: {
           [ADMIN_SECTION_DATA_KEY]: ADMIN_SECTIONS.platformClients

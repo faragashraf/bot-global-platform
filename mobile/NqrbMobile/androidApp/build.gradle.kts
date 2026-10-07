@@ -1,10 +1,40 @@
+import java.util.Properties
+import org.gradle.api.GradleException
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 fun String.asBuildConfigString(): String = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
+val nqrbSigningFile = file(System.getProperty("user.home") + "/.android/nqrb/signing.properties")
+val nqrbSigningProperties = Properties().apply {
+    if (nqrbSigningFile.exists()) {
+        nqrbSigningFile.inputStream().use(::load)
+    }
+}
+
+fun releaseSetting(gradlePropertyName: String, environmentName: String, signingPropertyName: String): String? =
+    providers.gradleProperty(gradlePropertyName)
+        .orElse(providers.environmentVariable(environmentName))
+        .orNull
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?: nqrbSigningProperties.getProperty(signingPropertyName)?.trim()?.takeIf(String::isNotEmpty)
+
 val googleServerClientId = providers.gradleProperty("nqrbGoogleServerClientId")
     .orElse(providers.environmentVariable("NQRB_GOOGLE_SERVER_CLIENT_ID"))
     .getOrElse("470964330068-4q9469h04hb9e41j0r8ijhfqphpdmc8k.apps.googleusercontent.com")
+val uploadStoreFile = releaseSetting("nqrbUploadStoreFile", "NQRB_UPLOAD_STORE_FILE", "storeFile")
+val uploadStorePassword = releaseSetting("nqrbUploadStorePassword", "NQRB_UPLOAD_STORE_PASSWORD", "storePassword")
+val uploadKeyAlias = releaseSetting("nqrbUploadKeyAlias", "NQRB_UPLOAD_KEY_ALIAS", "keyAlias")
+val uploadKeyPassword = releaseSetting("nqrbUploadKeyPassword", "NQRB_UPLOAD_KEY_PASSWORD", "keyPassword")
+val uploadSigningValues = listOf(uploadStoreFile, uploadStorePassword, uploadKeyAlias, uploadKeyPassword)
+val uploadSigningConfigured = uploadSigningValues.all { it != null }
+val nqrbVersionCode = providers.gradleProperty("nqrbVersionCode").map(String::toInt).getOrElse(12)
+val nqrbVersionName = providers.gradleProperty("nqrbVersionName").getOrElse("0.2.7")
+val releaseTaskPrefixes = listOf("assemble", "bundle", "install", "package", "publish", "sign", "upload")
+
+if (uploadSigningValues.any { it != null } && !uploadSigningConfigured) {
+    throw GradleException("NQRB upload signing is partially configured. Provide all four NQRB upload signing values.")
+}
 
 plugins {
     alias(libs.plugins.androidApplication)
@@ -23,6 +53,34 @@ val validateNqrbGoogleSignInConfig = tasks.register("validateNqrbGoogleSignInCon
 
 tasks.named("preBuild") {
     dependsOn(validateNqrbGoogleSignInConfig)
+}
+
+fun String.requiresNqrbReleaseSigning(): Boolean =
+    contains("Release", ignoreCase = true) &&
+        releaseTaskPrefixes.any { startsWith(it, ignoreCase = true) }
+
+val validateNqrbReleaseSigningConfig = tasks.register("validateNqrbReleaseSigningConfig") {
+    group = "verification"
+    description = "Requires upload signing before producing an NQRB release artifact."
+    inputs.property("uploadSigningConfigured", uploadSigningConfigured)
+    inputs.property("signingFilePath", nqrbSigningFile.absolutePath)
+    doLast {
+        if (inputs.properties["uploadSigningConfigured"] != true) {
+            throw GradleException(
+                "NQRB release signing requires nqrbUploadStoreFile/NQRB_UPLOAD_STORE_FILE, " +
+                    "nqrbUploadStorePassword/NQRB_UPLOAD_STORE_PASSWORD, " +
+                    "nqrbUploadKeyAlias/NQRB_UPLOAD_KEY_ALIAS, and " +
+                    "nqrbUploadKeyPassword/NQRB_UPLOAD_KEY_PASSWORD, or all four values in " +
+                    "${inputs.properties["signingFilePath"]}.",
+            )
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name.requiresNqrbReleaseSigning()) {
+        dependsOn(validateNqrbReleaseSigningConfig)
+    }
 }
 
 dependencies {
@@ -44,10 +102,21 @@ android {
         applicationId = "com.botglobal.nqrb"
         minSdk = maxOf(24, libs.versions.android.minSdk.get().toInt())
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 9
-        versionName = "0.2.5"
+        versionCode = nqrbVersionCode
+        versionName = nqrbVersionName
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", googleServerClientId.asBuildConfigString())
+    }
+
+    signingConfigs {
+        if (uploadSigningConfigured) {
+            create("upload") {
+                storeFile = rootProject.file(uploadStoreFile!!)
+                storePassword = uploadStorePassword
+                keyAlias = uploadKeyAlias
+                keyPassword = uploadKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -68,6 +137,9 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = false
+            if (uploadSigningConfigured) {
+                signingConfig = signingConfigs.getByName("upload")
+            }
             buildConfigField(
                 "String",
                 "API_BASE_URL",

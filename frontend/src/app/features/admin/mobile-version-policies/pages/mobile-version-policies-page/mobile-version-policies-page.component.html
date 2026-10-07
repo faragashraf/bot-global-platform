@@ -1,0 +1,190 @@
+<section class="version-policies">
+  <header class="version-policies__head">
+    <div>
+      <p class="version-policies__eyebrow">
+        {{ 'auth.management.versionPolicies.eyebrow' | translate }}
+      </p>
+      <h1 class="version-policies__title">
+        {{ 'auth.management.versionPolicies.title' | translate }}
+      </h1>
+      <p class="version-policies__subtitle">
+        {{ 'auth.management.versionPolicies.subtitle' | translate }}
+      </p>
+    </div>
+
+    <button
+      type="button"
+      class="btn btn--secondary btn--compact"
+      (click)="load()"
+      [disabled]="loading()"
+    >
+      <i class="pi pi-refresh" aria-hidden="true"></i>
+      {{ 'auth.management.versionPolicies.actions.refresh' | translate }}
+    </button>
+  </header>
+
+  <section
+    class="version-policies__stats"
+    [attr.aria-label]="'auth.management.versionPolicies.stats.label' | translate"
+  >
+    <span class="stat-chip">
+      <i class="pi pi-mobile" aria-hidden="true"></i>
+      {{ managedCount() }} {{ 'auth.management.versionPolicies.stats.targets' | translate }}
+    </span>
+    <span class="stat-chip stat-chip--active">
+      <i class="pi pi-check-circle" aria-hidden="true"></i>
+      {{ activeCount() }} {{ 'auth.management.versionPolicies.stats.active' | translate }}
+    </span>
+    <span class="stat-chip stat-chip--persisted">
+      <i class="pi pi-database" aria-hidden="true"></i>
+      {{ persistedCount() }} {{ 'auth.management.versionPolicies.stats.persisted' | translate }}
+    </span>
+  </section>
+
+  @if (error()) {
+    <div class="version-policies__state version-policies__state--error" role="alert">
+      {{ error() | translate }}
+    </div>
+  }
+
+  @if (loading()) {
+    <div class="version-policies__grid" aria-hidden="true">
+      @for (index of [0, 1, 2]; track index) {
+        <article class="policy-card policy-card--skeleton">
+          <div class="skeleton skeleton--title"></div>
+          <div class="skeleton skeleton--line"></div>
+          <div class="skeleton skeleton--line skeleton--short"></div>
+        </article>
+      }
+    </div>
+  } @else if (!policies().length) {
+    <div class="version-policies__state">
+      {{ 'auth.management.versionPolicies.empty' | translate }}
+    </div>
+  } @else {
+    <div class="version-policies__table-wrap">
+      <table class="version-policies-table">
+        <thead>
+          <tr>
+            <th>{{ 'auth.management.versionPolicies.columns.application' | translate }}</th>
+            <th>{{ 'auth.management.versionPolicies.columns.latest' | translate }}</th>
+            <th>{{ 'auth.management.versionPolicies.columns.minimum' | translate }}</th>
+            <th>{{ 'auth.management.versionPolicies.columns.message' | translate }}</th>
+            <th>{{ 'auth.management.versionPolicies.columns.store' | translate }}</th>
+            <th>{{ 'auth.management.versionPolicies.columns.status' | translate }}</th>
+            <th class="version-policies-table__actions-head"></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (policy of policies(); track policy.applicationKey + policy.platform) {
+            <tr>
+              <td [attr.data-label]="'auth.management.versionPolicies.columns.application' | translate">
+                <span class="policy-identity">
+                  <i
+                    [ngClass]="platformIcon(policy.platform)"
+                    aria-hidden="true"
+                  ></i>
+                  <span>
+                    <strong>{{ policy.applicationName }}</strong>
+                    <small>{{ platformLabel(policy.platform) | translate }}</small>
+                  </span>
+                </span>
+                @if (policy.isPersisted) {
+                  <span class="badge badge--ok">
+                    {{ 'auth.management.versionPolicies.source.persisted' | translate }}
+                  </span>
+                } @else {
+                  <span class="badge badge--muted">
+                    {{ 'auth.management.versionPolicies.source.fallback' | translate }}
+                  </span>
+                }
+              </td>
+
+              <td [attr.data-label]="'auth.management.versionPolicies.columns.latest' | translate">
+                <input
+                  class="field-input version-input"
+                  type="text"
+                  inputmode="decimal"
+                  autocomplete="off"
+                  [ngModel]="draftFor(policy).latestVersion"
+                  (ngModelChange)="updateDraft(policy, 'latestVersion', $event)"
+                />
+              </td>
+
+              <td [attr.data-label]="'auth.management.versionPolicies.columns.minimum' | translate">
+                <input
+                  class="field-input version-input"
+                  type="text"
+                  inputmode="decimal"
+                  autocomplete="off"
+                  [ngModel]="draftFor(policy).minimumSupportedVersion"
+                  (ngModelChange)="updateDraft(policy, 'minimumSupportedVersion', $event)"
+                />
+              </td>
+
+              <td [attr.data-label]="'auth.management.versionPolicies.columns.message' | translate">
+                <textarea
+                  class="field-input field-input--message"
+                  rows="2"
+                  [ngModel]="draftFor(policy).message"
+                  (ngModelChange)="updateDraft(policy, 'message', $event)"
+                ></textarea>
+              </td>
+
+              <td [attr.data-label]="'auth.management.versionPolicies.columns.store' | translate">
+                <input
+                  class="field-input field-input--url"
+                  type="url"
+                  autocomplete="off"
+                  [ngModel]="draftFor(policy).storeDestination"
+                  (ngModelChange)="updateDraft(policy, 'storeDestination', $event)"
+                />
+              </td>
+
+              <td [attr.data-label]="'auth.management.versionPolicies.columns.status' | translate">
+                <label class="switch-row">
+                  <input
+                    type="checkbox"
+                    [ngModel]="draftFor(policy).isActive"
+                    (ngModelChange)="updateDraft(policy, 'isActive', $event)"
+                  />
+                  <span>
+                    {{ (draftFor(policy).isActive
+                      ? 'auth.management.versionPolicies.status.active'
+                      : 'auth.management.versionPolicies.status.paused') | translate }}
+                  </span>
+                </label>
+                @if (policy.updatedAtUtc) {
+                  <small class="policy-updated">
+                    {{ 'auth.management.versionPolicies.updated' | translate }}
+                    {{ policy.updatedAtUtc | date: 'medium' }}
+                  </small>
+                }
+              </td>
+
+              <td class="version-policies-table__actions" data-label="">
+                @if (isSaved(policy)) {
+                  <span class="saved-chip">
+                    <i class="pi pi-check" aria-hidden="true"></i>
+                    {{ 'auth.management.versionPolicies.actions.saved' | translate }}
+                  </span>
+                }
+                <button
+                  type="button"
+                  class="btn btn--primary btn--compact"
+                  (click)="save(policy)"
+                  [disabled]="isSaving(policy) || !hasChanges(policy)"
+                >
+                  <i class="pi pi-save" aria-hidden="true"></i>
+                  {{ (isSaving(policy)
+                    ? 'auth.management.versionPolicies.actions.saving'
+                    : 'auth.management.versionPolicies.actions.save') | translate }}
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

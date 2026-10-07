@@ -269,7 +269,8 @@
         "catalog": "Catalog",
         "platformClients": "Platform Clients",
         "notifications": "Notifications",
-        "devicePairing": "Devices"
+        "devicePairing": "Devices",
+        "versionPolicies": "App versions"
       },
       "dashboard": {
         "eyebrow": "Overview",
@@ -427,6 +428,50 @@
             "validation": "The draft violates one or more catalog rules.",
             "save": "The draft could not be saved."
           }
+        }
+      },
+      "versionPolicies": {
+        "eyebrow": "Mobile releases",
+        "title": "App version policies",
+        "subtitle": "Set the latest and minimum supported versions that mobile apps read when they open.",
+        "empty": "No managed mobile applications are configured.",
+        "updated": "Updated",
+        "stats": {
+          "label": "Version policy summary",
+          "targets": "targets",
+          "active": "active",
+          "persisted": "stored"
+        },
+        "columns": {
+          "application": "Application",
+          "latest": "Latest",
+          "minimum": "Minimum",
+          "message": "Message",
+          "store": "Store link",
+          "status": "Status"
+        },
+        "platforms": {
+          "android": "Android",
+          "ios": "iOS"
+        },
+        "source": {
+          "persisted": "Stored",
+          "fallback": "Default"
+        },
+        "status": {
+          "active": "Active",
+          "paused": "Paused"
+        },
+        "actions": {
+          "refresh": "Refresh",
+          "save": "Save",
+          "saving": "Saving",
+          "saved": "Saved"
+        },
+        "errors": {
+          "load": "Version policies could not be loaded.",
+          "save": "Version policy could not be saved.",
+          "validation": "Review the version values and store link, then try again."
         }
       },
       "notifications": {

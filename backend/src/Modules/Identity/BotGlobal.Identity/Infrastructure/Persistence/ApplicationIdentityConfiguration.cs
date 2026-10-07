@@ -61,3 +61,21 @@ internal sealed class ApplicationAccountDeletionRequestConfiguration
         builder.HasIndex(x => x.NextAttemptAtUtc);
     }
 }
+
+internal sealed class MobileVersionPolicyConfiguration
+    : IEntityTypeConfiguration<MobileVersionPolicy>
+{
+    public void Configure(EntityTypeBuilder<MobileVersionPolicy> builder)
+    {
+        builder.ToTable("MobileVersionPolicies", "identity");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.ApplicationKey).HasMaxLength(80).IsUnicode(false).IsRequired();
+        builder.Property(x => x.Platform).HasMaxLength(32).IsUnicode(false).IsRequired();
+        builder.Property(x => x.LatestVersion).HasMaxLength(32).IsUnicode(false).IsRequired();
+        builder.Property(x => x.MinimumSupportedVersion).HasMaxLength(32).IsUnicode(false).IsRequired();
+        builder.Property(x => x.Message).HasMaxLength(500);
+        builder.Property(x => x.StoreDestination).HasMaxLength(500).IsUnicode(false);
+        builder.Property(x => x.UpdatedByDisplayName).HasMaxLength(200);
+        builder.HasIndex(x => new { x.ApplicationKey, x.Platform }).IsUnique();
+    }
+}
