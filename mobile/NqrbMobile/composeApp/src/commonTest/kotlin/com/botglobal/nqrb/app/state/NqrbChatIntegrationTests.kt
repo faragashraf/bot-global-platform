@@ -15,6 +15,7 @@ import com.botglobal.mobile.platform.calling.*
 import com.botglobal.mobile.platform.voice.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import com.botglobal.nqrb.app.ui.NqrbCallTime
 import com.botglobal.nqrb.app.ui.chatRecencyLabel
 import com.botglobal.nqrb.app.ui.chatThreadRows
@@ -222,9 +223,49 @@ class NqrbChatIntegrationTests {
             }
             runCurrent()
             api.downloadWait!!.complete(Unit); runCurrent()
-            assertEquals(if (event == "newer") listOf("second-local") else emptyList(), player.played, event)
+            assertEquals(when (event) {
+                "back", "thread" -> listOf("permanent")
+                "newer" -> listOf("second-local")
+                else -> emptyList()
+            }, player.played, event)
             assertTrue(chat.state.value.voiceLoads["transfer"] != ChatVoiceLoadState.Loading, event)
         }
+    }
+
+    @Test fun voicePlaybackContinuesAfterLeavingThreadAndAdvancesConsecutiveVoiceMessages() = runTest {
+        val first = message("first", true).copy(messageId = "first-message", sequence = 1, voiceTransferId = "first-transfer")
+        val second = message("second", true).copy(messageId = "second-message", sequence = 2, voiceTransferId = "second-transfer")
+        val text = message("text").copy(messageId = "text-message", sequence = 3, text = "break")
+        val third = message("third", true).copy(messageId = "third-message", sequence = 4, voiceTransferId = "third-transfer")
+        val disk = Store().apply {
+            value = value.copy(
+                conversations = listOf(conversation.copy(lastSequence = 4)),
+                messages = mapOf("thread" to listOf(first, second, text, third)),
+                localVoiceKeys = mapOf(
+                    "first-transfer" to "first-local",
+                    "second-transfer" to "second-local",
+                    "third-transfer" to "third-local",
+                ),
+            )
+        }
+        val player = Player()
+        val app = app(controller(Api(), disk, Voices().apply { permanent = true }), Recorder(Voices()), backgroundScope, player)
+        app.startup(); app.openChat("thread"); runCurrent()
+
+        app.playChatVoice(first); runCurrent()
+        assertEquals(listOf("first-local"), player.played)
+        assertEquals(1, app.chatVoicePlayback.value?.queuePosition)
+        assertEquals(2, app.chatVoicePlayback.value?.queueTotal)
+
+        app.leaveChat(); runCurrent()
+        assertNotEquals(NqrbDestination.ChatThread, app.navigation.current)
+        player.complete(); runCurrent()
+        assertEquals(listOf("first-local", "second-local"), player.played)
+        assertEquals(2, app.chatVoicePlayback.value?.queuePosition)
+
+        player.complete(); runCurrent()
+        assertEquals(listOf("first-local", "second-local"), player.played)
+        assertNull(app.chatVoicePlayback.value)
     }
 
     @Test fun validRemoteCompletionPlaysOnceAndRejectedLocalVoiceRemainsPlayable() = runTest {
@@ -354,8 +395,29 @@ class NqrbChatIntegrationTests {
     private class Player : ChatVoicePlayer by UnavailableChatVoicePlayer {
         var lastKey: String? = null
         val played = mutableListOf<String>()
-        override suspend fun play(scope: ChatAccountScope, localKey: String): Boolean { lastKey = localKey; played += localKey; return true }
-        override suspend fun playDraft(draft: ChatVoiceDraft): Boolean { played += draft.token; return true }
+        private val mutablePlayback = MutableStateFlow(ChatPlayback())
+        override val state = mutablePlayback.asStateFlow()
+        override suspend fun play(scope: ChatAccountScope, localKey: String): Boolean {
+            lastKey = localKey
+            played += localKey
+            mutablePlayback.value = ChatPlayback(localKey, ChatPlaybackPhase.Playing, 0, 2024)
+            return true
+        }
+        override suspend fun playDraft(draft: ChatVoiceDraft): Boolean {
+            played += draft.token
+            mutablePlayback.value = ChatPlayback(draft.token, ChatPlaybackPhase.Playing, 0, draft.durationMilliseconds)
+            return true
+        }
+        override suspend fun pause() { mutablePlayback.value = mutablePlayback.value.copy(phase = ChatPlaybackPhase.Paused) }
+        override suspend fun resume(): Boolean {
+            mutablePlayback.value = mutablePlayback.value.copy(phase = ChatPlaybackPhase.Playing)
+            return true
+        }
+        override suspend fun stop() { mutablePlayback.value = ChatPlayback() }
+        fun complete() {
+            val current = mutablePlayback.value
+            mutablePlayback.value = current.copy(phase = ChatPlaybackPhase.Completed, elapsedMilliseconds = current.durationMilliseconds)
+        }
     }
     private class Signals : CallSignaling {
         override val events = MutableSharedFlow<CallSignalingEvent>(extraBufferCapacity = 1)

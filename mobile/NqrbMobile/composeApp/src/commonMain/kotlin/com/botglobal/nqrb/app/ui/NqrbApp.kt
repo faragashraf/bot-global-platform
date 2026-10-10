@@ -107,6 +107,8 @@ import com.botglobal.mobile.platform.calling.CallHistoryDetail
 import com.botglobal.mobile.platform.calling.CallHistoryFilter
 import com.botglobal.mobile.platform.calling.CallHistoryItem
 import com.botglobal.mobile.platform.calling.speakerControlTarget
+import com.botglobal.mobile.platform.chat.ChatPlayback
+import com.botglobal.mobile.platform.chat.ChatPlaybackPhase
 import com.botglobal.mobile.platform.chat.ChatSnapshot
 import com.botglobal.mobile.platform.chat.ChatVoiceDraft
 import com.botglobal.mobile.platform.identity.FederatedAuthenticationError
@@ -126,6 +128,7 @@ import com.botglobal.nqrb.app.state.NqrbContactSearchState
 import com.botglobal.nqrb.app.state.NqrbDestination
 import com.botglobal.nqrb.app.state.NqrbDirectChatEntryState
 import com.botglobal.nqrb.app.state.NqrbChatRecordingState
+import com.botglobal.nqrb.app.state.NqrbChatVoicePlaybackState
 import com.botglobal.nqrb.app.state.NqrbRingtone
 import com.botglobal.nqrb.app.state.NqrbStartupState
 import com.botglobal.nqrb.app.state.NqrbAccountActionState
@@ -173,6 +176,8 @@ fun NqrbApp(
     val chat by appState.chat.state.collectAsState()
     val chatRecordingState by appState.chatRecordingState.collectAsState()
     val chatVoiceDraft by appState.chatVoiceDraft.collectAsState()
+    val chatVoicePlayback by appState.chatVoicePlayback.collectAsState()
+    val chatPlayback by appState.chatVoicePlayer.state.collectAsState()
     val directChatEntryState by appState.directChatEntryState.collectAsState()
     val call by appState.calling.state.collectAsState()
     val callingDirectory by appState.callingDirectory.state.collectAsState()
@@ -233,6 +238,8 @@ fun NqrbApp(
                 chat = chat,
                 chatRecordingState = chatRecordingState,
                 chatVoiceDraft = chatVoiceDraft,
+                chatVoicePlayback = chatVoicePlayback,
+                chatPlayback = chatPlayback,
                 call = call,
                 isCallMinimized = isCallMinimized,
                 onMinimizeCall = { minimizedCallId = callId },
@@ -270,6 +277,8 @@ private fun NqrbShell(
     chat: ChatSnapshot,
     chatRecordingState: NqrbChatRecordingState,
     chatVoiceDraft: ChatVoiceDraft?,
+    chatVoicePlayback: NqrbChatVoicePlaybackState?,
+    chatPlayback: ChatPlayback,
     call: CallSessionSnapshot,
     isCallMinimized: Boolean,
     onMinimizeCall: () -> Unit,
@@ -294,10 +303,22 @@ private fun NqrbShell(
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            if (isCallMinimized && !microphoneExplanation) {
+            if (!microphoneExplanation && (isCallMinimized || chatVoicePlayback != null)) {
                 Column(Modifier.statusBarsPadding()) {
-                    CompactCallBar(strings, call, contactBook, onRestoreCall) {
-                        appState.setCallMuted(!call.media.muted)
+                    if (isCallMinimized) {
+                        CompactCallBar(strings, call, contactBook, onRestoreCall) {
+                            appState.setCallMuted(!call.media.muted)
+                        }
+                    }
+                    chatVoicePlayback?.let {
+                        CompactChatVoiceBar(
+                            strings = nqrbChatStrings(languageTag),
+                            playbackState = it,
+                            playback = chatPlayback,
+                            onToggle = appState::toggleCurrentChatVoicePlayback,
+                            onStop = appState::stopChatPlayback,
+                            onOpen = appState::openCurrentChatVoiceConversation,
+                        )
                     }
                 }
             }
@@ -382,6 +403,75 @@ private fun NqrbShell(
                     modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = NqrbSpacing.Lg, vertical = NqrbSpacing.Sm),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun CompactChatVoiceBar(
+    strings: NqrbChatStrings,
+    playbackState: NqrbChatVoicePlaybackState,
+    playback: ChatPlayback,
+    onToggle: () -> Unit,
+    onStop: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    val colors = LocalNqrbColors.current
+    val active = playback.takeIf { it.key == playbackState.key } ?: ChatPlayback()
+    val playing = active.phase == ChatPlaybackPhase.Playing
+    val progress = if (playbackState.durationMilliseconds > 0)
+        (active.elapsedMilliseconds.toFloat() / playbackState.durationMilliseconds).coerceIn(0f, 1f) else 0f
+    val stateLabel = when (active.phase) {
+        ChatPlaybackPhase.Preparing -> strings.preparing
+        ChatPlaybackPhase.Playing -> strings.playing
+        ChatPlaybackPhase.Paused -> strings.paused
+        ChatPlaybackPhase.Completed -> strings.completed
+        ChatPlaybackPhase.Failed -> strings.failure(NqrbChatRecordingState.PlaybackUnavailable)
+        else -> strings.voiceNote
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
+        color = colors.elevatedSurface,
+        tonalElevation = 3.dp,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = NqrbSpacing.Md, vertical = NqrbSpacing.Sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                Box(Modifier.size(38.dp).background(colors.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
+                    NqrbIcon(NqrbGlyph.Microphone, null, colors.accent, Modifier.size(22.dp))
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(playbackState.title.ifBlank { strings.voiceNote }, style = MaterialTheme.typography.labelLarge, color = colors.textPrimary,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        listOf(
+                            stateLabel,
+                            strings.duration(if (active.elapsedMilliseconds > 0) active.elapsedMilliseconds else playbackState.durationMilliseconds),
+                            if (playbackState.queueTotal > 1) "${playbackState.queuePosition}/${playbackState.queueTotal}" else null,
+                        ).filterNotNull().joinToString(" · "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(
+                    onClick = onToggle,
+                    enabled = active.phase in setOf(ChatPlaybackPhase.Playing, ChatPlaybackPhase.Paused),
+                    modifier = Modifier.size(44.dp).semantics { contentDescription = if (playing) strings.pause else strings.play },
+                ) {
+                    NqrbIcon(if (playing) NqrbGlyph.Pause else NqrbGlyph.Play, null,
+                        if (active.phase == ChatPlaybackPhase.Preparing) colors.disabledContent else colors.accent, Modifier.size(23.dp))
+                }
+                IconButton(onClick = onStop, modifier = Modifier.size(44.dp).semantics { contentDescription = strings.playbackStop }) {
+                    NqrbIcon(NqrbGlyph.Close, null, colors.textSecondary, Modifier.size(22.dp))
+                }
+            }
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().height(3.dp).padding(top = 2.dp),
+                color = colors.accent,
+                trackColor = colors.border,
+            )
         }
     }
 }

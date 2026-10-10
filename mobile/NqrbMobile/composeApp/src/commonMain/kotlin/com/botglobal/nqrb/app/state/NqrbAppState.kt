@@ -64,6 +64,7 @@ import com.botglobal.mobile.platform.chat.ChatVoiceDraft
 import com.botglobal.mobile.platform.chat.ChatVoicePlayer
 import com.botglobal.mobile.platform.chat.ChatVoiceRecorder
 import com.botglobal.mobile.platform.chat.ChatMessage
+import com.botglobal.mobile.platform.chat.timeline
 import com.botglobal.mobile.platform.chat.UnavailableChatVoicePlayer
 import com.botglobal.mobile.platform.chat.UnavailableChatVoiceRecorder
 import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
@@ -82,6 +83,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import com.botglobal.nqrb.app.data.NqrbSessionAvailability
 import com.botglobal.nqrb.app.data.NqrbSessionAvailabilitySource
 import com.botglobal.nqrb.app.data.chatIdentityKey
@@ -109,6 +111,15 @@ enum class NqrbDestination {
 }
 
 enum class NqrbChatRecordingState { Idle, NeedsPermission, NeedsStorageDisclosure, Recording, Finalizing, Sending, Preview, AutoStoppedPreview, Unavailable, ActiveCall, CallInterrupted, BackgroundInterrupted, AudioInterrupted, PermissionDenied, PermissionPermanentlyDenied, PlaybackUnavailable, StorageUnavailable }
+
+data class NqrbChatVoicePlaybackState(
+    val conversationId: String,
+    val title: String,
+    val key: String,
+    val durationMilliseconds: Int,
+    val queuePosition: Int,
+    val queueTotal: Int,
+)
 
 sealed interface NqrbDirectChatEntryState {
     data object Idle : NqrbDirectChatEntryState
@@ -266,10 +277,14 @@ class NqrbAppState(
     private var submittingDraft: ChatVoiceDraft? = null
     private var abandonedSubmission = false
     private data class PlaybackIntent(val generation: Long = 0, val key: String? = null, val job: Job? = null)
+    private data class QueuedChatVoice(val message: ChatMessage, val title: String)
     private val chatPlaybackIntent = MutableStateFlow(PlaybackIntent())
     private val chatPlaybackSuspended = MutableStateFlow(false)
+    private val mutableChatVoicePlayback = MutableStateFlow<NqrbChatVoicePlaybackState?>(null)
+    val chatVoicePlayback = mutableChatVoicePlayback.asStateFlow()
 
     private fun invalidateChatPlayback(): Long {
+        mutableChatVoicePlayback.value = null
         while (true) {
             val previous = chatPlaybackIntent.value
             if (chatPlaybackIntent.compareAndSet(previous, PlaybackIntent(previous.generation + 1))) {
@@ -287,8 +302,7 @@ class NqrbAppState(
     }
 
     private fun launchChatPlayback(key: String, conversationId: String, play: suspend (Long) -> Unit) {
-        if (chatPlaybackSuspended.value || calling.state.value.state in OngoingCallStates ||
-            navigation.current != NqrbDestination.ChatThread || chat.state.value.selectedConversationId != conversationId) return
+        if (chatPlaybackSuspended.value || calling.state.value.state in OngoingCallStates) return
         val binding = chat.state.value.accountGeneration
         while (true) {
             val previous = chatPlaybackIntent.value
@@ -296,8 +310,7 @@ class NqrbAppState(
             val intent = previous.generation + 1
             val job = callActionScope.launch(start = CoroutineStart.LAZY) {
                 if (intent == chatPlaybackIntent.value.generation && binding == chat.state.value.accountGeneration &&
-                    !chatPlaybackSuspended.value && calling.state.value.state !in OngoingCallStates &&
-                    navigation.current == NqrbDestination.ChatThread && chat.state.value.selectedConversationId == conversationId) play(intent)
+                    !chatPlaybackSuspended.value && calling.state.value.state !in OngoingCallStates) play(intent)
             }
             if (chatPlaybackIntent.compareAndSet(previous, PlaybackIntent(intent, key, job))) {
                 previous.job?.cancel(); job.start(); return
@@ -590,7 +603,6 @@ class NqrbAppState(
     fun openChats() {
         if (!localChatAvailable()) return
         invalidateDirectChatEntry()
-        stopChatPlayback()
         navigation.push(NqrbDestination.Chats)
         startForegroundChatRefresh(null)
         callActionScope.launch { resumeChatOnline() }
@@ -627,7 +639,6 @@ class NqrbAppState(
 
     fun openChat(conversationId: String) {
         if (!localChatAvailable()) return
-        stopChatPlayback()
         callActionScope.launch {
             chat.selectConversation(conversationId)
             navigation.push(NqrbDestination.ChatThread)
@@ -651,7 +662,6 @@ class NqrbAppState(
         if ((mutableDirectChatEntryState.value as? NqrbDirectChatEntryState.Opening)?.membershipReference == normalizedReference) return
         val requestOrigin = navigation.current
         invalidateDirectChatEntry()
-        stopChatPlayback()
         val requestGeneration = directChatRequestGeneration
         mutableDirectChatEntryState.value = NqrbDirectChatEntryState.Opening(normalizedReference)
         directChatEntryJob = callActionScope.launch {
@@ -858,8 +868,15 @@ class NqrbAppState(
     }
 
     fun cancelChatRecording() {
-        val playbackIntent = invalidateChatPlayback()
         val draft = mutableChatVoiceDraft.value
+        val shouldStopPlayback = draft != null || mutableChatRecordingState.value in setOf(
+            NqrbChatRecordingState.Recording,
+            NqrbChatRecordingState.Finalizing,
+            NqrbChatRecordingState.Preview,
+            NqrbChatRecordingState.AutoStoppedPreview,
+            NqrbChatRecordingState.Sending,
+        )
+        val playbackIntent = if (shouldStopPlayback) invalidateChatPlayback() else chatPlaybackIntent.value.generation
         val previewOwned = draft != submittingDraft
         if (submittingDraft != null) abandonedSubmission = true
         mutableChatVoiceDraft.value = null
@@ -867,7 +884,7 @@ class NqrbAppState(
         callActionScope.launch {
             chatVoiceRecorder.cancel()
             if (draft != null && previewOwned) chatVoiceRecorder.discard(draft)
-            if (chatPlaybackIntent.value.generation == playbackIntent) chatVoicePlayer.stop()
+            if (shouldStopPlayback && chatPlaybackIntent.value.generation == playbackIntent) chatVoicePlayer.stop()
         }
     }
 
@@ -887,6 +904,18 @@ class NqrbAppState(
     fun stopChatPlayback() {
         val intent = invalidateChatPlayback()
         callActionScope.launch { if (chatPlaybackIntent.value.generation == intent) chatVoicePlayer.stop() }
+    }
+    fun toggleCurrentChatVoicePlayback() {
+        callActionScope.launch {
+            when (chatVoicePlayer.state.value.phase) {
+                ChatPlaybackPhase.Playing -> chatVoicePlayer.pause()
+                ChatPlaybackPhase.Paused -> chatVoicePlayer.resume()
+                else -> Unit
+            }
+        }
+    }
+    fun openCurrentChatVoiceConversation() {
+        mutableChatVoicePlayback.value?.conversationId?.let(::openChat)
     }
     fun openChatMicrophoneSettings() { dismissChatVoiceState(); openMicrophoneSettings() }
     fun logoutFromLocalChat() { callActionScope.launch { logout() } }
@@ -946,17 +975,75 @@ class NqrbAppState(
         val transferId = message.voiceTransferId ?: return
         val scope = chat.state.value.account ?: return
         val binding = chat.state.value.accountGeneration
-        launchChatPlayback(transferId, message.conversationId) { intent ->
-            val existing = chat.state.value.localVoiceKeys[transferId]
-            if (existing == null) chatVoicePlayer.stop()
-            val key = existing ?: try { chat.downloadVoice(message)?.localKey }
-                catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { null }
-            if (key != null && intent == chatPlaybackIntent.value.generation && binding == chat.state.value.accountGeneration &&
-                chat.state.value.account == scope && !chatPlaybackSuspended.value && calling.state.value.state !in OngoingCallStates &&
-                navigation.current == NqrbDestination.ChatThread && chat.state.value.selectedConversationId == message.conversationId) {
-                toggleChatPlayback(key) { chatVoicePlayer.play(scope, key) }
+        val active = chatPlaybackIntent.value
+        if (active.key == transferId && active.job?.isCompleted == false) {
+            callActionScope.launch {
+                when (chatVoicePlayer.state.value.phase) {
+                    ChatPlaybackPhase.Playing -> chatVoicePlayer.pause()
+                    ChatPlaybackPhase.Paused -> chatVoicePlayer.resume()
+                    else -> Unit
+                }
             }
+            return
+        }
+        val queue = chatVoiceQueueFrom(message)
+        launchChatPlayback(transferId, message.conversationId) { intent ->
+            playChatVoiceQueue(scope, binding, intent, queue)
+        }
+    }
+
+    private fun chatVoiceQueueFrom(start: ChatMessage): List<QueuedChatVoice> {
+        val conversation = chat.state.value.conversations.firstOrNull { it.conversationId == start.conversationId }
+        val title = conversation?.counterpartDisplayName?.takeIf(String::isNotBlank).orEmpty()
+        val rows = chat.state.value.timeline(start.conversationId)
+        val startIndex = rows.indexOfFirst { it.message?.messageId == start.messageId }
+        val messages = if (startIndex >= 0) rows.drop(startIndex).map { it.message } else listOf(start)
+        return messages.takeWhile { it?.kind == "voice" && it.voiceTransferId != null }
+            .filterNotNull()
+            .map { QueuedChatVoice(it, title) }
+            .ifEmpty { listOf(QueuedChatVoice(start, title)) }
+    }
+
+    private suspend fun playChatVoiceQueue(scope: com.botglobal.mobile.platform.chat.ChatAccountScope, binding: Long,
+        intent: Long, queue: List<QueuedChatVoice>) {
+        var index = 0
+        while (index < queue.size && intent == chatPlaybackIntent.value.generation &&
+            binding == chat.state.value.accountGeneration && chat.state.value.account == scope &&
+            !chatPlaybackSuspended.value && calling.state.value.state !in OngoingCallStates) {
+            val item = queue[index]
+            val key = resolveChatVoiceKey(scope, binding, intent, item.message) ?: return
+            mutableChatVoicePlayback.value = NqrbChatVoicePlaybackState(
+                conversationId = item.message.conversationId,
+                title = item.title,
+                key = key,
+                durationMilliseconds = item.message.voiceDurationMilliseconds ?: 0,
+                queuePosition = index + 1,
+                queueTotal = queue.size,
+            )
+            if (!chatVoicePlayer.play(scope, key)) {
+                mutableChatRecordingState.value = NqrbChatRecordingState.PlaybackUnavailable
+                return
+            }
+            val terminal = chatVoicePlayer.state.first {
+                intent != chatPlaybackIntent.value.generation || it.key == key && it.phase in setOf(ChatPlaybackPhase.Completed, ChatPlaybackPhase.Failed)
+            }
+            if (intent != chatPlaybackIntent.value.generation || terminal.phase != ChatPlaybackPhase.Completed) return
+            index += 1
+        }
+        if (intent == chatPlaybackIntent.value.generation) mutableChatVoicePlayback.value = null
+    }
+
+    private suspend fun resolveChatVoiceKey(scope: com.botglobal.mobile.platform.chat.ChatAccountScope, binding: Long,
+        intent: Long, message: ChatMessage): String? {
+        val transferId = message.voiceTransferId ?: return null
+        val existing = chat.state.value.localVoiceKeys[transferId]
+        if (existing == null) chatVoicePlayer.stop()
+        val key = existing ?: try { chat.downloadVoice(message)?.localKey }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { null }
+        return key?.takeIf {
+            intent == chatPlaybackIntent.value.generation && binding == chat.state.value.accountGeneration &&
+                chat.state.value.account == scope && !chatPlaybackSuspended.value && calling.state.value.state !in OngoingCallStates
         }
     }
 
