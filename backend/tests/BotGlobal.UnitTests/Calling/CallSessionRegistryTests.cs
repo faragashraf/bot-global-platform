@@ -303,6 +303,7 @@ public sealed class CallSessionRegistryTests
         Assert.False(status.WasPresented);
         Assert.Equal("missed", status.TerminalReason);
         Assert.Equal(CallSessionRegistry.CallStatus.Cancelled, started.Session.Status);
+        Assert.Same(started.Session, Assert.Single(registry.Expire(now.AddSeconds(6))));
     }
 
     [Fact]

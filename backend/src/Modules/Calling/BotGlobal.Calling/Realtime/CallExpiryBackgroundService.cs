@@ -29,6 +29,7 @@ internal sealed class CallExpiryBackgroundService(
         foreach (var session in sessions.Expire(now))
         {
             if (session.IsGuestCall) guestInvites?.Complete(session.GuestInviteId);
+            var terminalReason = session.TerminationReason ?? session.Status.ToString().ToLowerInvariant();
             await using var scope = scopes.CreateAsyncScope();
             try
             {
@@ -43,15 +44,18 @@ internal sealed class CallExpiryBackgroundService(
             foreach (var participant in sessions.ConnectedParticipants(session.CallerMembershipId, session.ApplicationKey))
             {
                 await hub.Clients.Client(participant.ConnectionId).SendAsync("CallDeliveryChanged", session.Delivery(), cancellationToken);
-                await hub.Clients.Client(participant.ConnectionId).SendAsync("CallEnded", new CallEndedEvent(session.CallId, "expired"), cancellationToken);
+                await hub.Clients.Client(participant.ConnectionId).SendAsync("CallEnded", new CallEndedEvent(session.CallId, terminalReason), cancellationToken);
             }
             foreach (var participant in sessions.ConnectedParticipants(session.CalleeMembershipId, session.ApplicationKey))
-                await hub.Clients.Client(participant.ConnectionId).SendAsync("CallEnded", new CallEndedEvent(session.CallId, "expired"), cancellationToken);
+                await hub.Clients.Client(participant.ConnectionId).SendAsync("CallEnded", new CallEndedEvent(session.CallId, terminalReason), cancellationToken);
             try
             {
                 var dispatcher = scope.ServiceProvider.GetRequiredService<IIncomingCallNotificationDispatcher>();
+                var kind = session.Status == CallSessionRegistry.CallStatus.Expired
+                    ? IncomingCallNotificationKind.Expired
+                    : IncomingCallNotificationKind.Cancelled;
                 await dispatcher.DispatchAsync(new IncomingCallNotification(session.ApplicationKey, session.CalleeSubjectId,
-                    session.CallId, IncomingCallNotificationKind.Expired, session.CallerDisplayName, session.ExpiresAtUtc), cancellationToken);
+                    session.CallId, kind, session.CallerDisplayName, session.ExpiresAtUtc), cancellationToken);
             }
             catch (Exception error) when (error is not OperationCanceledException)
             {

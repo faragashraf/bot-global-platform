@@ -111,6 +111,42 @@ public sealed class CallExpiryBackgroundServiceTests
         Assert.Equal(started.Session.CallId, dispatcher.Notifications[0].CallId);
     }
 
+    [Fact]
+    public async Task Missed_offer_receipt_timeout_is_persisted_and_sends_terminal_notification()
+    {
+        var registry = new CallSessionRegistry();
+        var now = DateTimeOffset.Parse("2026-10-10T21:32:00Z");
+        var caller = new ApplicationIdentityDescriptor(Guid.NewGuid(), null, "caller", "nqrb", "Caller", false);
+        var callee = new ApplicationIdentityDescriptor(Guid.NewGuid(), null, "callee", "nqrb", "Callee", false);
+        registry.Connected("caller", caller);
+        registry.Connected("callee", callee);
+        var started = registry.Start("caller", new CallingParticipantDescriptor(
+            callee.MembershipId, "nqrb", callee.SubjectId, callee.DisplayName, true), now, TimeSpan.FromSeconds(45));
+        Assert.True(registry.DeliveryStatus("caller", started.Session.CallId, now.AddSeconds(6)).Terminal);
+        registry.Disconnected("caller");
+        registry.Disconnected("callee");
+        var activity = new RecordingActivity();
+        var dispatcher = new RecordingDispatcher();
+        var services = new ServiceCollection()
+            .AddSingleton<ICallActivityService>(activity)
+            .AddSingleton<IIncomingCallNotificationDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        await using (services)
+        {
+            var worker = new CallExpiryBackgroundService(registry, null!, services.GetRequiredService<IServiceScopeFactory>(),
+                TimeProvider.System, NullLogger<CallExpiryBackgroundService>.Instance);
+
+            await worker.ProcessExpiredCallsAsync(now.AddSeconds(6), default);
+        }
+
+        var finished = Assert.Single(activity.Finished);
+        Assert.Equal(started.Session.CallId, finished.CallId);
+        Assert.Equal("missed", finished.Reason);
+        Assert.Equal(CallSessionRegistry.CallStatus.Cancelled, finished.Status);
+        var notification = Assert.Single(dispatcher.Notifications);
+        Assert.Equal(IncomingCallNotificationKind.Cancelled, notification.Kind);
+    }
+
     private sealed class RecordingDispatcher : IIncomingCallNotificationDispatcher
     {
         public List<IncomingCallNotification> Notifications { get; } = [];
@@ -127,6 +163,25 @@ public sealed class CallExpiryBackgroundServiceTests
     private sealed class ThrowingActivity : ICallActivityService
     {
         public Task FinishAsync(CallSessionRegistry.Session session, DateTimeOffset at, CancellationToken cancellationToken) => throw new InvalidOperationException("synthetic persistence failure");
+        public Task StartAsync(CallSessionRegistry.Session session, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task AnswerAsync(CallSessionRegistry.Session session, DateTimeOffset at, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task JoinedAsync(CallSessionRegistry.Session session, Guid membershipId, DateTimeOffset at, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<CallHistoryPage> ListAsync(string applicationKey, Guid membershipId, int page, int pageSize, CallHistoryFilter filter, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<CallHistoryDetail?> DetailAsync(string applicationKey, Guid membershipId, Guid callId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<FinalizeUsageResult> FinalizeUsageAsync(string applicationKey, Guid membershipId, Guid callId, UsageSummary usage, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<UsagePeriodView> CurrentPeriodAsync(string applicationKey, Guid membershipId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<UsagePeriodView> ResetAsync(string applicationKey, Guid membershipId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<UsagePeriodView> ScheduleResetAsync(string applicationKey, Guid membershipId, DateTime localDateTime, string timeZoneId, CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingActivity : ICallActivityService
+    {
+        public List<(Guid CallId, CallSessionRegistry.CallStatus Status, string? Reason)> Finished { get; } = [];
+        public Task FinishAsync(CallSessionRegistry.Session session, DateTimeOffset at, CancellationToken cancellationToken)
+        {
+            Finished.Add((session.CallId, session.Status, session.TerminationReason));
+            return Task.CompletedTask;
+        }
         public Task StartAsync(CallSessionRegistry.Session session, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task AnswerAsync(CallSessionRegistry.Session session, DateTimeOffset at, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task JoinedAsync(CallSessionRegistry.Session session, Guid membershipId, DateTimeOffset at, CancellationToken cancellationToken) => Task.CompletedTask;

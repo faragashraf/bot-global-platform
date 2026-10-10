@@ -59,6 +59,7 @@ internal sealed class CallActivityService(
         var outcome = session.Status switch
         {
             CallSessionRegistry.CallStatus.Rejected => DurableCallOutcome.Rejected,
+            CallSessionRegistry.CallStatus.Cancelled when session.TerminationReason == "missed" => DurableCallOutcome.Missed,
             CallSessionRegistry.CallStatus.Cancelled => DurableCallOutcome.Cancelled,
             CallSessionRegistry.CallStatus.Expired => DurableCallOutcome.Expired,
             CallSessionRegistry.CallStatus.Ended when session.TerminationReason is "failed" or "busy" => DurableCallOutcome.Failed,

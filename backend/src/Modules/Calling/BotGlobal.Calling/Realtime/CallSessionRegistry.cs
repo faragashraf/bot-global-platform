@@ -297,7 +297,7 @@ public sealed class CallSessionRegistry
             session.Status = expiredByLifetime ? CallStatus.Expired : CallStatus.Cancelled;
             session.TerminationReason = expiredByLifetime ? "expired" : "missed";
             session.AdvanceDelivery("terminal", now, terminal: true);
-            if (expiredByLifetime && queuedExpired.Add(session.CallId)) pendingExpired.Enqueue(session);
+            if (queuedExpired.Add(session.CallId)) pendingExpired.Enqueue(session);
         }
         return result;
     }
