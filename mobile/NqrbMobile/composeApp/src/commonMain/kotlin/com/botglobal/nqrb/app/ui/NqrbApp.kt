@@ -113,6 +113,7 @@ import com.botglobal.mobile.platform.identity.FederatedAuthenticationError
 import com.botglobal.mobile.platform.identity.FederatedAuthenticationState
 import com.botglobal.mobile.platform.localization.ContentDirection
 import com.botglobal.mobile.platform.notifications.SemanticNotification
+import com.botglobal.mobile.platform.notifications.SemanticNotificationDestination
 import com.botglobal.nqrb.app.state.NqrbAppState
 import com.botglobal.nqrb.app.state.NqrbContactBookLoadState
 import com.botglobal.nqrb.app.state.NqrbContactBookSnapshot
@@ -2644,8 +2645,11 @@ private fun NotificationsScreen(
             InfoNote(strings.notificationInboxEmpty)
         } else {
             notifications.forEach { notification ->
+                val conversationId = notification.chatConversationId()
                 Surface(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().then(
+                        if (conversationId != null) Modifier.clickable { appState.openChat(conversationId) } else Modifier,
+                    ),
                     color = if (notification.isRead) colors.surface else colors.accentSoft,
                     shape = RoundedCornerShape(10.dp),
                 ) {
@@ -2694,6 +2698,16 @@ private fun notificationBody(notification: SemanticNotification, languageTag: St
     } else {
         notification.bodyEn.ifBlank { notification.bodyAr }
     }
+
+private fun SemanticNotification.chatConversationId(): String? =
+    ((destination as? SemanticNotificationDestination.Internal)?.route)
+        ?.takeIf { it.startsWith(ChatNotificationDestinationPrefix) }
+        ?.removePrefix(ChatNotificationDestinationPrefix)
+        ?.takeIf { ChatConversationIdPattern.matches(it) }
+
+private const val ChatNotificationDestinationPrefix = "chat:"
+private val ChatConversationIdPattern =
+    Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 @Composable
 private fun HistoryFilterRow(

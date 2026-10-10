@@ -95,9 +95,30 @@ public sealed class ChatDeliveryTests
         Assert.Equal(ChatDispatchState.Terminal, (await f.Db.ChatDispatches.SingleAsync()).State);
     }
 
+    [Fact]
+    public async Task ChatPushCarriesConversationDestinationAndMessageCopy()
+    {
+        await using var f = await Fixture.Create(1);
+
+        await f.Processor().ProcessAsync(default);
+
+        Assert.Equal(2, f.Push.Calls.Count);
+        Assert.All(f.Push.Calls, call =>
+        {
+            Assert.Equal(ChatContract.MessageEvent, call.Data["type"]);
+            Assert.Equal(f.ConversationId.ToString("D"), call.Data["conversationId"]);
+            Assert.Equal($"chat:{f.ConversationId:D}", call.Data["destination"]);
+            Assert.Equal("رسالة جديدة", call.Title);
+            Assert.Equal("لديك رسالة جديدة.", call.Body);
+            Assert.Equal("New message", call.Data["titleEn"]);
+            Assert.Equal("You have a new message.", call.Data["bodyEn"]);
+        });
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         public Guid ApplicationId { get; } = Guid.NewGuid();
+        public Guid ConversationId { get; private set; }
         public required SqliteConnection Connection { get; init; }
         public required DbContextOptions<CommunicationDbContext> Options { get; init; }
         public required CommunicationDbContext Db { get; init; }
@@ -114,6 +135,7 @@ public sealed class ChatDeliveryTests
             var db = new CommunicationDbContext(options); await db.Database.EnsureCreatedAsync();
             var f = new Fixture { Connection = connection, Options = options, Db = db };
             var conversation = new ChatConversation(f.ApplicationId, "sender", "recipient", f.Clock.Now); db.ChatConversations.Add(conversation);
+            f.ConversationId = conversation.Id;
             for (var i = 0; i < count; i++) {
                 var message = new ChatMessage(f.ApplicationId, conversation.Id, conversation.AllocateSequence(f.Clock.Now), "sender", $"client-{i}", ChatMessageKind.Text, ChatMessage.FingerprintText("synthetic"), f.Clock.Now, "synthetic");
                 db.ChatMessages.Add(message); db.ChatDispatches.Add(new(f.ApplicationId, message.Id, "recipient", f.Clock.Now));

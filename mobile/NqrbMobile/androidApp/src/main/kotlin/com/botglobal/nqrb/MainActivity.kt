@@ -159,6 +159,7 @@ class MainActivity : ComponentActivity() {
         }
         getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
         handleInviteIntent(intent)
+        handleChatNotificationIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -166,6 +167,7 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         configureIncomingCallPresentation(intent)
         handleInviteIntent(intent)
+        handleChatNotificationIntent(intent)
     }
 
     override fun onResume() {
@@ -196,7 +198,10 @@ class MainActivity : ComponentActivity() {
         true
     }.getOrDefault(false)
 
-    private companion object {
+    companion object {
+        internal const val ExtraNotificationDestination = "com.botglobal.nqrb.extra.NOTIFICATION_DESTINATION"
+        internal const val ExtraChatConversationId = "com.botglobal.nqrb.extra.CHAT_CONVERSATION_ID"
+        private const val ChatDestinationPrefix = "chat:"
         const val AppearancePreferenceKey = "appearance_preference"
     }
 
@@ -270,6 +275,22 @@ class MainActivity : ComponentActivity() {
             uri.pathSegments.firstOrNull()?.let(appState::handleNqrbInviteLink)
         }
     }
+
+    private fun handleChatNotificationIntent(intent: Intent?) {
+        val conversationId = intent?.getStringExtra(ExtraChatConversationId)
+            ?.trim()
+            ?.takeIf(::isOpaqueUuid)
+            ?: intent?.getStringExtra(ExtraNotificationDestination)?.chatConversationId()
+            ?: return
+        appState.openChat(conversationId)
+    }
+
+    private fun String.chatConversationId(): String? =
+        takeIf { it.startsWith(ChatDestinationPrefix) }
+            ?.removePrefix(ChatDestinationPrefix)
+            ?.takeIf(::isOpaqueUuid)
+
+    private fun isOpaqueUuid(value: String) = runCatching { java.util.UUID.fromString(value) }.isSuccess
 
     private fun configureIncomingCallPresentation(intent: Intent?) {
         val showOverLockScreen =

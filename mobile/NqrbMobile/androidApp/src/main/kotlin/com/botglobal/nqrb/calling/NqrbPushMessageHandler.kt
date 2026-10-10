@@ -16,7 +16,7 @@ internal interface NqrbIncomingCallPushSession {
 }
 
 internal interface NqrbGeneralPushNotificationSink {
-    suspend fun show(messageId: String?, title: String, body: String)
+    suspend fun show(messageId: String?, title: String, body: String, destination: String? = null)
 }
 
 internal fun interface NqrbChatPushSynchronizer {
@@ -48,7 +48,13 @@ internal class NqrbPushMessageHandler(
             handleCallPush(type, callId, message)
             return
         }
-        if (type == "chat_message") chat.synchronize(message.data["conversationId"])
+        val chatDestination = if (type == "chat_message") {
+            val conversationId = message.data["conversationId"]
+            chat.synchronize(conversationId)
+            conversationId.chatDestination()
+        } else {
+            null
+        }
 
         val title = firstNonBlank(message.data, "title", "titleAr", "titleEn")
         val body = firstNonBlank(message.data, "body", "bodyAr", "bodyEn")
@@ -57,6 +63,7 @@ internal class NqrbPushMessageHandler(
                 if (type == "chat_message") message.data["notificationId"] ?: message.data["messageId"] else message.messageId,
                 title ?: "Nqrb",
                 body ?: "",
+                chatDestination ?: message.data["destination"]?.takeIf(String::isNotBlank),
             )
         }
     }
@@ -110,9 +117,15 @@ internal class NqrbPushMessageHandler(
     private fun firstNonBlank(data: Map<String, String>, vararg keys: String): String? =
         keys.firstNotNullOfOrNull { key -> data[key]?.trim()?.takeIf(String::isNotEmpty) }
 
-    private fun isOpaqueCallId(value: String) = runCatching { java.util.UUID.fromString(value) }.isSuccess
+    private fun String?.chatDestination(): String? =
+        this?.trim()?.takeIf(::isOpaqueUuid)?.let { "$ChatDestinationPrefix$it" }
+
+    private fun isOpaqueCallId(value: String) = isOpaqueUuid(value)
+
+    private fun isOpaqueUuid(value: String) = runCatching { java.util.UUID.fromString(value) }.isSuccess
 
     private companion object {
+        const val ChatDestinationPrefix = "chat:"
         const val MaxIncomingAttempts = 3
         const val RetryDelayMillis = 500L
         val CallPushTypes = setOf(
@@ -125,7 +138,7 @@ internal class NqrbPushMessageHandler(
 }
 
 private object IgnoreGeneralPushNotifications : NqrbGeneralPushNotificationSink {
-    override suspend fun show(messageId: String?, title: String, body: String) = Unit
+    override suspend fun show(messageId: String?, title: String, body: String, destination: String?) = Unit
 }
 
 private object IgnoreChatPushSynchronizer : NqrbChatPushSynchronizer {

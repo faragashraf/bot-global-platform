@@ -140,7 +140,41 @@ class NqrbPushMessageHandlerTests {
         assertEquals(emptyList(), session.received)
         assertEquals(emptyList(), session.dismissed)
         assertEquals(
-            listOf(ShownNotification("campaign-1", "Welcome to Nqrb", "Thanks for trying Nqrb.")),
+            listOf(ShownNotification("campaign-1", "Welcome to Nqrb", "Thanks for trying Nqrb.", null)),
+            notifications.shown,
+        )
+    }
+
+    @Test
+    fun chatPushSyncsConversationAndShowsNotificationWithDestination() = runTest {
+        val session = RecordingPushSession()
+        val notifications = RecordingGeneralNotifications()
+        val chat = RecordingChatSynchronizer()
+        val conversationId = validCallId()
+
+        NqrbPushMessageHandler(
+            session = session,
+            generalNotifications = notifications,
+            chat = chat,
+            logger = { _, _ -> },
+        ).onMessage(
+            PushMessage(
+                messageId = "firebase-message",
+                data = mapOf(
+                    "type" to "chat_message",
+                    "conversationId" to conversationId,
+                    "notificationId" to "notification-1",
+                    "title" to "رسالة جديدة",
+                    "body" to "لديك رسالة جديدة.",
+                ),
+                sentAtEpochMilliseconds = 1_000,
+                timeToLiveSeconds = 30,
+            ),
+        )
+
+        assertEquals(listOf<String?>(conversationId), chat.synced)
+        assertEquals(
+            listOf(ShownNotification("notification-1", "رسالة جديدة", "لديك رسالة جديدة.", "chat:$conversationId")),
             notifications.shown,
         )
     }
@@ -216,13 +250,22 @@ class NqrbPushMessageHandlerTests {
         val messageId: String?,
         val title: String,
         val body: String,
+        val destination: String?,
     )
 
     private class RecordingGeneralNotifications : NqrbGeneralPushNotificationSink {
         val shown = mutableListOf<ShownNotification>()
 
-        override suspend fun show(messageId: String?, title: String, body: String) {
-            shown += ShownNotification(messageId, title, body)
+        override suspend fun show(messageId: String?, title: String, body: String, destination: String?) {
+            shown += ShownNotification(messageId, title, body, destination)
+        }
+    }
+
+    private class RecordingChatSynchronizer : NqrbChatPushSynchronizer {
+        val synced = mutableListOf<String?>()
+
+        override suspend fun synchronize(conversationId: String?) {
+            synced += conversationId
         }
     }
 }

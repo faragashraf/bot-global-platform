@@ -10,6 +10,7 @@ import android.os.Build
 import com.botglobal.mobile.platform.notifications.NotificationInbox
 import com.botglobal.mobile.platform.notifications.NotificationStoreOutcome
 import com.botglobal.mobile.platform.notifications.SemanticNotification
+import com.botglobal.mobile.platform.notifications.SemanticNotificationDestination
 import com.botglobal.mobile.platform.notifications.SemanticNotificationPriority
 import com.botglobal.nqrb.MainActivity
 import com.botglobal.nqrb.R
@@ -20,8 +21,8 @@ internal class AndroidNqrbGeneralNotificationPresenter(
     private val context: Context,
     private val inbox: NotificationInbox,
 ) : NqrbGeneralPushNotificationSink {
-    override suspend fun show(messageId: String?, title: String, body: String) {
-        val notification = semanticNotification(messageId, title, body)
+    override suspend fun show(messageId: String?, title: String, body: String, destination: String?) {
+        val notification = semanticNotification(messageId, title, body, destination)
         val outcome = inbox.store(notification)
         if (outcome == NotificationStoreOutcome.Duplicate) return
         val unreadCount = inbox.unreadCount()
@@ -36,17 +37,22 @@ internal class AndroidNqrbGeneralNotificationPresenter(
 
         notificationManager.notify(
             notificationId(notification.id),
-            notification(title, body, unreadCount),
+            notification(title, body, unreadCount, notification),
         )
     }
 
-    private fun notification(title: String, body: String, unreadCount: Int): Notification {
+    private fun notification(title: String, body: String, unreadCount: Int, semantic: SemanticNotification): Notification {
         val openIntent = PendingIntent.getActivity(
             context,
-            30,
-            Intent(context, MainActivity::class.java).addFlags(
-                Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP,
-            ),
+            notificationId(semantic.id),
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .apply {
+                    (semantic.destination as? SemanticNotificationDestination.Internal)?.route?.let { route ->
+                        putExtra(MainActivity.ExtraNotificationDestination, route)
+                        route.chatConversationId()?.let { putExtra(MainActivity.ExtraChatConversationId, it) }
+                    }
+                },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
@@ -88,20 +94,25 @@ internal class AndroidNqrbGeneralNotificationPresenter(
         }
     }
 
-    private fun semanticNotification(messageId: String?, title: String, body: String): SemanticNotification =
+    private fun semanticNotification(messageId: String?, title: String, body: String, destination: String?): SemanticNotification =
         SemanticNotification(
             id = semanticNotificationId(messageId, title, body),
-            type = "general",
+            type = if (destination?.startsWith(ChatDestinationPrefix) == true) "chat_message" else "general",
             titleAr = title,
             titleEn = title,
             bodyAr = body,
             bodyEn = body,
             createdAtUtc = Clock.System.now().toString(),
             priority = SemanticNotificationPriority.Normal,
-            destination = null,
+            destination = destination?.takeIf(String::isNotBlank)?.let(SemanticNotificationDestination::Internal),
             soundKey = null,
             isRead = false,
         )
+
+    private fun String.chatConversationId(): String? =
+        takeIf { it.startsWith(ChatDestinationPrefix) }
+            ?.removePrefix(ChatDestinationPrefix)
+            ?.takeIf(::isOpaqueUuid)
 
     private fun semanticNotificationId(messageId: String?, title: String, body: String): String {
         val key = messageId?.takeIf(String::isNotBlank) ?: "$title\n$body"
@@ -113,7 +124,10 @@ internal class AndroidNqrbGeneralNotificationPresenter(
         return NotificationIdBase + (hash % NotificationIdRange).toInt()
     }
 
+    private fun isOpaqueUuid(value: String) = runCatching { UUID.fromString(value) }.isSuccess
+
     private companion object {
+        const val ChatDestinationPrefix = "chat:"
         const val ChannelId = "nqrb_general_notifications"
         const val NotificationIdBase = 2200
         const val NotificationIdRange = 100_000

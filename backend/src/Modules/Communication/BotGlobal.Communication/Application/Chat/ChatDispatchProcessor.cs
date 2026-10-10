@@ -93,12 +93,16 @@ internal sealed class ChatDispatchProcessor(
             ApplicationPushDispatchResult result;
             try
             {
+                var conversationId = conversation.Id.ToString("D");
+                var pushBodyAr = hint.Kind == "voice" ? "لديك رسالة صوتية جديدة." : "لديك رسالة جديدة.";
+                var pushBodyEn = hint.Kind == "voice" ? "You have a new voice message." : "You have a new message.";
                 result = await push.DispatchAsync(new ApplicationPushMessage(app, destination.Provider, destination.RegistrationToken,
-                    "رسالة جديدة", "افتح التطبيق لمزامنة المحادثة.", new Dictionary<string, string> {
+                    "رسالة جديدة", pushBodyAr, new Dictionary<string, string> {
                         ["notificationId"] = message.Id.ToString("N"), ["type"] = ChatContract.MessageEvent,
-                        ["applicationId"] = dispatch.ApplicationId.ToString("D"), ["conversationId"] = conversation.Id.ToString("D"),
+                        ["applicationId"] = dispatch.ApplicationId.ToString("D"), ["conversationId"] = conversationId,
                         ["messageId"] = message.Id.ToString("D"), ["sequence"] = message.Sequence.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                        ["kind"] = hint.Kind, ["titleEn"] = "New message", ["bodyEn"] = "Open the app to sync the conversation." },
+                        ["kind"] = hint.Kind, ["destination"] = $"chat:{conversationId}",
+                        ["titleEn"] = "New message", ["bodyEn"] = pushBodyEn },
                     TimeSpan.FromHours(24)), timeout.Token);
             }
             catch (OperationCanceledException) when (!token.IsCancellationRequested) { result = new(ApplicationPushDispatchKind.Ambiguous); }
