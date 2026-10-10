@@ -547,6 +547,21 @@ class ChatController(
             persistAndPublish(scope)
         }
     }
+    suspend fun retryFailedVoice(id: String) {
+        val (scope, ticket) = active() ?: return
+        val retryable = lock.withLock {
+            if (!isCurrent(scope, ticket)) return
+            val failed = durable.voiceOutbox.any { it.clientMessageId == id && it.failure == ChatVoiceFailure.Rejected }
+            if (failed) {
+                durable = durable.copy(voiceOutbox = durable.voiceOutbox.map {
+                    if (it.clientMessageId == id && it.failure == ChatVoiceFailure.Rejected) it.copy(failure = null) else it
+                })
+                persistAndPublish(scope)
+            }
+            failed
+        }
+        if (retryable) flush(ticket)
+    }
     suspend fun removeFailedVoice(id: String) {
         val (scope, ticket) = active() ?: return
         val failed = lock.withLock { durable.voiceOutbox.any { it.clientMessageId == id && it.failure != null } }

@@ -243,6 +243,8 @@ class NqrbAppState(
     val missedCallBadgeCount = mutableMissedCallBadgeCount.asStateFlow()
     private val sessionRenewalMutex = Mutex()
     private var foregroundRefreshJob: Job? = null
+    private var foregroundChatRefreshJob: Job? = null
+    private var foregroundChatRefreshConversationId: String? = null
     private var foreground = false
     private var pendingReviewTrigger: ReviewTrigger? = null
     private val reviewWorkflowBlockers = MutableStateFlow<Set<String>>(emptySet())
@@ -481,6 +483,7 @@ class NqrbAppState(
             mutableAccountActionState.value = NqrbAccountActionState.SignOutFailed
             return
         }
+        stopForegroundChatRefresh()
         runCatching { calling.disconnectSignaling() }
         invalidateChatPlayback()
         runCatching { chat.bind(null) }
@@ -589,6 +592,7 @@ class NqrbAppState(
         invalidateDirectChatEntry()
         stopChatPlayback()
         navigation.push(NqrbDestination.Chats)
+        startForegroundChatRefresh(null)
         callActionScope.launch { resumeChatOnline() }
     }
 
@@ -616,6 +620,7 @@ class NqrbAppState(
     fun leaveChat() {
         visibleChatRead = null
         cancelChatRecording()
+        startForegroundChatRefresh(null)
         callActionScope.launch { chat.selectConversation(null) }
         navigation.navigateBack()
     }
@@ -626,6 +631,7 @@ class NqrbAppState(
         callActionScope.launch {
             chat.selectConversation(conversationId)
             navigation.push(NqrbDestination.ChatThread)
+            startForegroundChatRefresh(conversationId)
             launch { resumeChatOnline(conversationId = conversationId) }
         }
     }
@@ -698,6 +704,7 @@ class NqrbAppState(
                 mutableDirectChatEntryState.value = NqrbDirectChatEntryState.Idle
                 directChatEntryJob = null
                 navigation.push(NqrbDestination.ChatThread)
+                startForegroundChatRefresh(conversation.conversationId)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -892,6 +899,12 @@ class NqrbAppState(
         launchChatPlayback(draft.token, pending.conversationId) { toggleChatPlayback(draft.token) { chatVoicePlayer.playDraft(draft) } }
     }
     fun removeFailedChatVoice(id: String) { callActionScope.launch { chat.removeFailedVoice(id) } }
+    fun retryFailedChatVoice(id: String) { callActionScope.launch {
+        if (renewChatAuthority(force = true)) {
+            chat.retryFailedVoice(id)
+            resumeChatOnline(force = true, conversationId = chat.state.value.selectedConversationId)
+        }
+    } }
     fun removeFailedChatText(id: String) { callActionScope.launch { chat.removeFailedText(id) } }
     fun reconcileFailedChatText(id: String) { callActionScope.launch { if (renewChatAuthority()) chat.reconcileFailedText(id) } }
     fun editFailedChatText(id: String, text: String, onQueued: () -> Unit) {
@@ -1141,6 +1154,11 @@ class NqrbAppState(
     fun onForeground() {
         chatPlaybackSuspended.value = false
         foreground = true
+        when (navigation.current) {
+            NqrbDestination.ChatThread -> chat.state.value.selectedConversationId?.let(::startForegroundChatRefresh)
+            NqrbDestination.Chats -> startForegroundChatRefresh(null)
+            else -> stopForegroundChatRefresh()
+        }
         foregroundRefreshJob?.cancel()
         foregroundRefreshJob = callActionScope.launch {
             requestReviewIfReady(ReviewTrigger.Foreground)
@@ -1165,6 +1183,7 @@ class NqrbAppState(
         chatPlaybackSuspended.value = true
         val playbackIntent = invalidateChatPlayback()
         foreground = false
+        stopForegroundChatRefresh()
         foregroundRefreshJob?.cancel()
         foregroundRefreshJob = null
         callActionScope.launch {
@@ -1172,6 +1191,25 @@ class NqrbAppState(
             if (chatPlaybackIntent.value.generation == playbackIntent) chatVoicePlayer.stop()
             if (mutableChatRecordingState.value == NqrbChatRecordingState.Recording) mutableChatRecordingState.value = NqrbChatRecordingState.BackgroundInterrupted
         }
+    }
+
+    private fun startForegroundChatRefresh(conversationId: String?) {
+        if (!foreground || !localChatAvailable()) return
+        if (foregroundChatRefreshJob?.isActive == true && foregroundChatRefreshConversationId == conversationId) return
+        foregroundChatRefreshJob?.cancel()
+        foregroundChatRefreshConversationId = conversationId
+        foregroundChatRefreshJob = callActionScope.launch {
+            while (isActive) {
+                runCatching { resumeChatOnline(conversationId = conversationId) }
+                delay(if (conversationId == null) 15_000L else 3_500L)
+            }
+        }
+    }
+
+    private fun stopForegroundChatRefresh() {
+        foregroundChatRefreshJob?.cancel()
+        foregroundChatRefreshJob = null
+        foregroundChatRefreshConversationId = null
     }
 
     private suspend fun refreshVisibleData() {

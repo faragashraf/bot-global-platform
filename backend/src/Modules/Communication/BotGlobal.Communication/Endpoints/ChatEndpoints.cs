@@ -67,6 +67,10 @@ public static class ChatEndpoints
                 return ToSendResult(await engine.SendVoiceAsync(conversationId, clientId.ToString(), request.Body,
                     request.ContentType ?? string.Empty, durationMs, token));
             }
+            catch (InvalidDataException error) when (error.Message == "chat_voice_decoder_unavailable")
+            {
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            }
             catch (InvalidDataException error) { return Results.BadRequest(new { code = error.Message }); }
         }).DisableAntiforgery().WithName("SendChatVoiceMessage");
 

@@ -245,6 +245,36 @@ class NqrbChatIntegrationTests {
         assertEquals(ChatVoiceFailure.Rejected, chat.state.value.pendingVoices.single().failure)
     }
 
+    @Test fun rejectedLocalVoiceCanBeRetriedFromSavedDraft() = runTest {
+        val disk = Store(); val voices = Voices(); val api = Api().apply { upload.complete(Unit) }
+        disk.value = disk.value.copy(voiceOutbox = listOf(PendingChatVoice("thread", "retry-voice", "draft",
+            2024, 1525, AacHash, failure = ChatVoiceFailure.Rejected, encodedDurationVerified = true)))
+        val chat = controller(api, disk, voices)
+        chat.bind(account); chat.selectConversation("thread")
+
+        chat.retryFailedVoice("retry-voice")
+
+        assertEquals(1, api.voiceCalls)
+        assertTrue(disk.value.voiceOutbox.isEmpty())
+        assertTrue(voices.permanent)
+    }
+
+    @Test fun foregroundThreadRefreshKeepsVisibleReadReceiptsMovingWithoutSocketHint() = runTest {
+        val disk = Store(); val voices = Voices(); val api = Api().apply { upload.complete(Unit) }
+        val app = app(controller(api, disk, voices), Recorder(voices), backgroundScope)
+        app.startup(); runCurrent()
+
+        app.onForeground(); app.openChat("thread"); runCurrent()
+        val first = api.messageCalls
+        advanceTimeBy(3_500); runCurrent()
+        assertTrue(api.messageCalls > first)
+
+        app.onBackground(); runCurrent()
+        val stopped = api.messageCalls
+        advanceTimeBy(4_000); runCurrent()
+        assertEquals(stopped, api.messageCalls)
+    }
+
     @Test fun remoteVoiceFailureIsKeyedInlineAndRetryMakesOneNewTransfer() = runTest {
         val disk = Store(); val voices = Voices(); val player = Player(); val api = Api()
         val chat = controller(api, disk, voices); val app = app(chat, Recorder(voices), backgroundScope, player)
@@ -358,6 +388,7 @@ class NqrbChatIntegrationTests {
     }
     private inner class Api(private val credential: (() -> String?)? = null) : ChatGateway by UnavailableChatGateway {
         val captured = mutableListOf<String?>(); var textCalls = 0; var voiceCalls = 0
+        var conversationCalls = 0; var messageCalls = 0
         val ackTokens = mutableListOf<String?>(); val readTokens = mutableListOf<String?>()
         val upload = CompletableDeferred<Unit>()
         var downloadWait: CompletableDeferred<Unit>? = null
@@ -386,8 +417,12 @@ class NqrbChatIntegrationTests {
             }
         }
         override suspend fun context() = ChatGatewayResult.Success(account)
-        override suspend fun conversations() = ChatGatewayResult.Success(ChatPage(listOf(conversation), false))
-        override suspend fun messages(conversationId: String, afterSequence: Long) = ChatGatewayResult.Success(ChatPage<ChatMessage>(emptyList(), false))
+        override suspend fun conversations(): ChatGatewayResult<ChatPage<ChatConversation>> {
+            conversationCalls++; return ChatGatewayResult.Success(ChatPage(listOf(conversation), false))
+        }
+        override suspend fun messages(conversationId: String, afterSequence: Long): ChatGatewayResult<ChatPage<ChatMessage>> {
+            messageCalls++; return ChatGatewayResult.Success(ChatPage<ChatMessage>(emptyList(), false))
+        }
         override suspend fun sendText(message: PendingChatText): ChatGatewayResult<ChatMessage> { textCalls++; upload.await(); return ChatGatewayResult.Success(message(message.clientMessageId).copy(text = message.text)) }
         override suspend fun sendVoice(conversationId: String, clientMessageId: String, draft: ChatVoiceDraft, bytes: ByteArray): ChatGatewayResult<ChatMessage> {
             assertContentEquals(aacBytes(), bytes)

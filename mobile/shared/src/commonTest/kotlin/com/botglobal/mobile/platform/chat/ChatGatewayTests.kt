@@ -165,6 +165,20 @@ class ChatGatewayTests {
         client.close()
     }
 
+    @Test fun voiceDecoderUnavailableRemainsRetryable() = runTest {
+        val client = HttpClient(MockEngine {
+            respond("""{"code":"chat_voice_decoder_unavailable"}""", HttpStatusCode.BadRequest, jsonHeaders())
+        }) {
+            install(ContentNegotiation) { json() }
+        }
+        val gateway = KtorChatGateway(client, "https://synthetic.invalid", credential("synthetic-voice"))
+
+        val result = gateway.sendVoice("thread", "client-voice", ChatVoiceDraft("draft", 1000, 8), ByteArray(8))
+
+        assertSame(ChatGatewayResult.RetryableFailure, result)
+        client.close()
+    }
+
     private fun credential(token: String) = ChatCredentialProvider { ChatCredential("Bearer $token") }
 
     private fun expectedConversation(conversationId: String, displayName: String) = ChatConversation(

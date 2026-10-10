@@ -704,6 +704,9 @@ private fun PendingVoiceBubble(pending: PendingChatVoice, snapshot: ChatSnapshot
     val actions = buildList {
         if (pending.failure == null) add(ChatMessageAction(strings.resend, NqrbGlyph.Send, strings.resendHint, run = appState::retryChatDelivery))
         if (pending.failure != null) {
+            if (pending.failure == ChatVoiceFailure.Rejected) add(ChatMessageAction(strings.retry, NqrbGlyph.Send, strings.resendHint) {
+                appState.retryFailedChatVoice(pending.clientMessageId)
+            })
             add(ChatMessageAction(strings.recordAgain, NqrbGlyph.Microphone, strings.recordAgainHint) {
                 appState.removeFailedChatVoice(pending.clientMessageId)
                 appState.requestChatVoiceRecording()

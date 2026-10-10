@@ -95,7 +95,10 @@ class KtorChatGateway private constructor(
         }
     }
     override suspend fun sendVoice(conversationId: String, clientMessageId: String, draft: ChatVoiceDraft, bytes: ByteArray) = request<ChatMessage>(
-        badRequest = ChatGatewayResult.Conflict,
+        badRequest = { code ->
+            if (code == "chat_voice_decoder_unavailable") ChatGatewayResult.RetryableFailure
+            else ChatGatewayResult.Conflict
+        },
     ) {
         require(bytes.size <= MaxVoiceBytes)
         client.post("$base/conversations/$conversationId/messages/voice") {
@@ -122,11 +125,11 @@ class KtorChatGateway private constructor(
         builder.header("Authorization", credential.authorization)
     }
     private suspend inline fun <reified T> request(
-        badRequest: ChatGatewayResult<T> = ChatGatewayResult.RetryableFailure,
+        badRequest: (String?) -> ChatGatewayResult<T> = { ChatGatewayResult.RetryableFailure },
         crossinline call: suspend () -> io.ktor.client.statement.HttpResponse,
     ): ChatGatewayResult<T> = try {
         val response = call()
-        when (response.status.value) { in 200..299 -> ChatGatewayResult.Success(response.body()); 400 -> badRequest; 401 -> ChatGatewayResult.AuthenticationRequired; 403, 404 -> ChatGatewayResult.Forbidden; 409 -> ChatGatewayResult.Conflict; else -> ChatGatewayResult.RetryableFailure }
+        when (response.status.value) { in 200..299 -> ChatGatewayResult.Success(response.body()); 400 -> badRequest(response.errorCode()); 401 -> ChatGatewayResult.AuthenticationRequired; 403, 404 -> ChatGatewayResult.Forbidden; 409 -> ChatGatewayResult.Conflict; else -> ChatGatewayResult.RetryableFailure }
     } catch (cancelled: CancellationException) { throw cancelled } catch (_: MissingCredential) { ChatGatewayResult.AuthenticationRequired } catch (_: Exception) { ChatGatewayResult.RetryableFailure }
     private suspend fun requestUnit(call: suspend () -> io.ktor.client.statement.HttpResponse): ChatGatewayResult<Unit> = try {
         when (call().status.value) { in 200..299 -> ChatGatewayResult.Success(Unit); 401 -> ChatGatewayResult.AuthenticationRequired; 403, 404 -> ChatGatewayResult.Forbidden; 409 -> ChatGatewayResult.Conflict; else -> ChatGatewayResult.RetryableFailure }
@@ -141,3 +144,8 @@ class KtorChatGateway private constructor(
     private object MissingCredential : Exception()
     private companion object { const val MaxVoiceBytes = 10 * 1024 * 1024 }
 }
+
+private suspend fun io.ktor.client.statement.HttpResponse.errorCode(): String? =
+    try { body<ChatErrorResponse>().code } catch (_: Exception) { null }
+
+@Serializable private data class ChatErrorResponse(val code: String? = null)
