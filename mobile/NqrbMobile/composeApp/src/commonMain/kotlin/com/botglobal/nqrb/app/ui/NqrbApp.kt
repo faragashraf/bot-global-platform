@@ -677,17 +677,6 @@ private fun NqrbListSkeleton(label: String, rows: Int = 3) {
 }
 
 @Composable
-private fun BackgroundRefreshIndicator(visible: Boolean) {
-    if (!visible) return
-    val colors = LocalNqrbColors.current
-    LinearProgressIndicator(
-        modifier = Modifier.fillMaxWidth().height(2.dp),
-        color = colors.accent,
-        trackColor = colors.accentSoft,
-    )
-}
-
-@Composable
 private fun DirectChatEntryFeedback(strings: NqrbChatStrings, appState: NqrbAppState, modifier: Modifier = Modifier) {
     val state by appState.directChatEntryState.collectAsState()
     if (state == NqrbDirectChatEntryState.Idle) return
@@ -818,7 +807,6 @@ private fun PeopleScreen(
         }
         Text(strings.savedContactsTitle, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
         Text(strings.savedContactsBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
-        BackgroundRefreshIndicator(contactBook.contactsRefreshing)
         InfoNote(strings.swipeToCallHint)
         if (contactBook.contactsRefreshFailed) {
             InfoNote(strings.savedContactsError)
@@ -2002,7 +1990,6 @@ private fun CallingDirectorySection(
         style = MaterialTheme.typography.titleLarge,
         color = colors.textPrimary,
     )
-    BackgroundRefreshIndicator(directory.isRefreshing || contactBook.contactsRefreshing)
     if (directory.refreshFailed) InfoNote(strings.callingDirectoryError)
     when (directory.status) {
         CallingDirectoryStatus.Idle,
@@ -2604,7 +2591,6 @@ private fun SettingsScreen(
             }
         }
         SettingsGroup(strings.dataUsage, NqrbGlyph.History, strings.dataUsage) {
-            BackgroundRefreshIndicator(activity.usageRefreshing)
             if (activity.usageRefreshFailed) InfoNote(strings.historyError)
             when (activity.usageState) {
                 CallActivityLoadState.Loading, CallActivityLoadState.Idle -> NqrbListSkeleton(strings.historyLoading, rows = 1)
@@ -2685,7 +2671,6 @@ private fun CallHistoryScreen(
         Text(strings.historyTitle, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
         Text(strings.historyBody, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
         HistoryFilterRow(strings, activity.historyFilter, appState::selectCallHistoryFilter)
-        BackgroundRefreshIndicator(activity.historyRefreshing)
         if (activity.historyRefreshFailed) InfoNote(strings.historyError)
         if (activity.history.any { callableHistoryParticipant(it) != null }) InfoNote(strings.swipeToCallHint)
         if (contactBook.mutationState == NqrbContactMutationState.Error) InfoNote(strings.contactAddUnavailable)
