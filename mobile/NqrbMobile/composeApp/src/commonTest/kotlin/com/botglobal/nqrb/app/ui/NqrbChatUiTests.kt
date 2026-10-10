@@ -57,6 +57,16 @@ class NqrbChatUiTests {
         assertEquals(11, latestMessageSequence(rows))
     }
 
+    @Test
+    fun replySwipeDirectionFollowsLayoutDirection() {
+        assertEquals(true, shouldStartReplyFromSwipe(72f, 64f, isRtl = false))
+        assertEquals(false, shouldStartReplyFromSwipe(-72f, 64f, isRtl = false))
+        assertEquals(false, shouldStartReplyFromSwipe(40f, 64f, isRtl = false))
+        assertEquals(true, shouldStartReplyFromSwipe(-72f, 64f, isRtl = true))
+        assertEquals(false, shouldStartReplyFromSwipe(72f, 64f, isRtl = true))
+        assertEquals(false, shouldStartReplyFromSwipe(-40f, 64f, isRtl = true))
+    }
+
     private fun textMessage(sequence: Long) = ChatMessage(
         messageId = "message-$sequence",
         conversationId = "conversation",

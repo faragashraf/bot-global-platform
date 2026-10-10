@@ -6,6 +6,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -76,10 +77,16 @@ import com.botglobal.mobile.platform.chat.PendingChatVoice
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
 import com.botglobal.mobile.platform.chat.ChatTextFailure
 import com.botglobal.mobile.platform.chat.ChatVoiceFailure
 import com.botglobal.mobile.platform.chat.ChatVoiceLoadState
+import kotlin.math.abs
 
 internal data class NqrbChatStrings(
     val chats: String,
@@ -623,6 +630,8 @@ private data class ChatReplyPreview(val author: String, val body: String)
 
 private val NqrbReadReceiptAccent = Color(0xFF5B7CFF)
 private val VoiceWaveformPattern = floatArrayOf(.34f, .58f, .82f, .48f, .72f, .4f, .64f)
+private val ReplySwipeThreshold = 64.dp
+private val ReplySwipeReveal = 88.dp
 
 private data class ChatMessageAction(
     val label: String,
@@ -644,6 +653,9 @@ internal fun chatMessageMetadata(
     message.deliveryState == "RetryPending" -> ChatMessageMetadata(time, ChatMessageStatus.RetryPending, strings.retrying)
     else -> ChatMessageMetadata(time, ChatMessageStatus.Delivered, strings.delivered)
 }
+
+internal fun shouldStartReplyFromSwipe(offsetPx: Float, thresholdPx: Float, isRtl: Boolean): Boolean =
+    if (isRtl) offsetPx <= -thresholdPx else offsetPx >= thresholdPx
 
 private fun replyPreview(message: ChatMessage, mine: Boolean, strings: NqrbChatStrings): ChatReplyPreview {
     val body = if (message.kind == "voice") {
@@ -826,13 +838,15 @@ private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, stri
                 })
         }
         Column(Modifier.fillMaxWidth(), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
-            VoiceCapsule(pendingVoice?.draftToken ?: local ?: message.voiceTransferId.orEmpty(), message.voiceDurationMilliseconds ?: 0, playback, strings,
-                unavailable = if (pendingVoice != null) pendingVoice.failure == ChatVoiceFailure.MissingOrCorrupt else local == null && (terminal || mine), mine = mine,
-                loading = message.voiceTransferId?.let(snapshot.voiceLoads::get)?.takeIf { pendingVoice == null && (local == null || it == ChatVoiceLoadState.Loading) },
-                onPlay = { if (pendingVoice != null) appState.playPendingChatVoice(pendingVoice) else appState.playChatVoice(message) },
-                onStop = appState::stopChatPlayback,
-                reply = reply,
-                onLongPress = { actionsOpen = true })
+            SwipeToReplyBox(mine = mine, label = strings.reply, onReply = onReply) {
+                VoiceCapsule(pendingVoice?.draftToken ?: local ?: message.voiceTransferId.orEmpty(), message.voiceDurationMilliseconds ?: 0, playback, strings,
+                    unavailable = if (pendingVoice != null) pendingVoice.failure == ChatVoiceFailure.MissingOrCorrupt else local == null && (terminal || mine), mine = mine,
+                    loading = message.voiceTransferId?.let(snapshot.voiceLoads::get)?.takeIf { pendingVoice == null && (local == null || it == ChatVoiceLoadState.Loading) },
+                    onPlay = { if (pendingVoice != null) appState.playPendingChatVoice(pendingVoice) else appState.playChatVoice(message) },
+                    onStop = appState::stopChatPlayback,
+                    reply = reply,
+                    onLongPress = { actionsOpen = true })
+            }
             MessageMetadataFooter(metadata)
             if (pendingVoice != null) {
                 MessageMetadataFooter(ChatMessageMetadata(status = if (pendingVoice.failure == null) ChatMessageStatus.RetryPending else ChatMessageStatus.Failed,
@@ -849,8 +863,65 @@ private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, stri
                 clipboard.setText(AnnotatedString(message.text.orEmpty()))
             },
         )
-        ChatTextBubble(message.text.orEmpty(), mine, metadata, reply = reply, onLongPress = { actionsOpen = true })
+        SwipeToReplyBox(mine = mine, label = strings.reply, onReply = onReply) {
+            ChatTextBubble(message.text.orEmpty(), mine, metadata, reply = reply, onLongPress = { actionsOpen = true })
+        }
         if (actionsOpen) ChatMessageActionDialog(strings.actions, strings.cancel, actions) { actionsOpen = false }
+    }
+}
+
+@Composable
+private fun SwipeToReplyBox(mine: Boolean, label: String, onReply: () -> Unit, content: @Composable () -> Unit) {
+    val colors = LocalNqrbColors.current
+    val layoutDirection = LocalLayoutDirection.current
+    val isRtl = layoutDirection == LayoutDirection.Rtl
+    val density = LocalDensity.current
+    val thresholdPx = with(density) { ReplySwipeThreshold.toPx() }
+    val maxRevealPx = with(density) { ReplySwipeReveal.toPx() }
+    var swipeOffsetPx by remember { mutableStateOf(0f) }
+    val revealProgress = (abs(swipeOffsetPx) / maxRevealPx).coerceIn(0f, 1f)
+    val swipeModifier = Modifier.pointerInput(isRtl, onReply) {
+        detectHorizontalDragGestures(
+            onDragStart = { swipeOffsetPx = 0f },
+            onHorizontalDrag = { change, dragAmount ->
+                val next = (swipeOffsetPx + dragAmount).let {
+                    if (isRtl) it.coerceIn(-maxRevealPx, 0f) else it.coerceIn(0f, maxRevealPx)
+                }
+                if (next != swipeOffsetPx || abs(dragAmount) > 0f) change.consume()
+                swipeOffsetPx = next
+            },
+            onDragEnd = {
+                val shouldReply = shouldStartReplyFromSwipe(swipeOffsetPx, thresholdPx, isRtl)
+                swipeOffsetPx = 0f
+                if (shouldReply) onReply()
+            },
+            onDragCancel = { swipeOffsetPx = 0f },
+        )
+    }
+    Box(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.align(if (isRtl) Alignment.CenterEnd else Alignment.CenterStart)
+                .graphicsLayer { alpha = revealProgress }
+                .padding(horizontal = NqrbSpacing.Lg),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs),
+        ) {
+            Box(
+                Modifier.size(34.dp).background(colors.accentSoft, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                NqrbIcon(NqrbGlyph.Reply, null, colors.accent, Modifier.size(19.dp))
+            }
+            Text(label, style = MaterialTheme.typography.labelMedium, color = colors.accent, maxLines = 1)
+        }
+        Box(
+            Modifier.fillMaxWidth().then(swipeModifier).graphicsLayer {
+                translationX = swipeOffsetPx
+            },
+            contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart,
+        ) {
+            content()
+        }
     }
 }
 
