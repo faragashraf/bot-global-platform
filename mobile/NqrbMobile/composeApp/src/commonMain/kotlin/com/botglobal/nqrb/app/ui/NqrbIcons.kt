@@ -45,6 +45,7 @@ enum class NqrbGlyph {
     Send,
     Play,
     Pause,
+    Stop,
     Check,
     DoubleCheck,
     Clock,
@@ -95,6 +96,15 @@ fun NqrbIcon(
             NqrbGlyph.Pause -> {
                 drawLine(tint, Offset(size.width * .35f, size.height * .2f), Offset(size.width * .35f, size.height * .8f), 3.dp.toPx(), StrokeCap.Round)
                 drawLine(tint, Offset(size.width * .65f, size.height * .2f), Offset(size.width * .65f, size.height * .8f), 3.dp.toPx(), StrokeCap.Round)
+            }
+            NqrbGlyph.Stop -> {
+                drawRoundRect(
+                    tint,
+                    topLeft = Offset(size.width * .28f, size.height * .28f),
+                    size = Size(size.width * .44f, size.height * .44f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * .06f),
+                    style = stroke,
+                )
             }
             NqrbGlyph.Chat -> {
                 drawRoundRect(

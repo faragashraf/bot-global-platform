@@ -531,22 +531,6 @@ internal fun NqrbChatThreadScreen(
             TextButton(onClick = { editing = null; editingMessage = null; replyingTo = null; text = "" }, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.cancel) }
         }
         when (recordingState) {
-            NqrbChatRecordingState.Recording -> Column(
-                Modifier.fillMaxWidth().padding(NqrbSpacing.Md).semantics { stateDescription = strings.recording; liveRegion = LiveRegionMode.Polite },
-                verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
-                    Box(Modifier.size(12.dp).background(colors.destructive, CircleShape))
-                    Text("${strings.recording} · ${strings.duration(recordingProgress.elapsedMilliseconds)}", color = colors.textPrimary)
-                }
-                LinearProgressIndicator(progress = { recordingProgress.level }, Modifier.fillMaxWidth().height(3.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(strings.limit, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
-                    TextButton(onClick = appState::cancelChatRecording, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.cancel) }
-                    TextButton(onClick = appState::finishChatRecording, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.stop) }
-                    Button(onClick = appState::finishAndSendChatRecording, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.sendVoice) }
-                }
-            }
             NqrbChatRecordingState.Finalizing, NqrbChatRecordingState.Sending -> Text(
                 strings.finalizing, Modifier.padding(NqrbSpacing.Md).semantics { liveRegion = LiveRegionMode.Polite }, color = colors.textSecondary)
             NqrbChatRecordingState.Preview, NqrbChatRecordingState.AutoStoppedPreview -> voiceDraft?.let {
@@ -554,45 +538,65 @@ internal fun NqrbChatThreadScreen(
                 VoicePreview(it, strings, appState, playback, submitting)
             }
             else -> Column(Modifier.fillMaxWidth().padding(NqrbSpacing.Md), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
-                replyingTo?.takeIf { it.conversationId == conversationId }?.let {
-                    ComposerReplyPreview(replyPreview(it, it.senderSubjectId == snapshot.account?.subjectId, strings), strings) { replyingTo = null }
+                if (recordingState == NqrbChatRecordingState.Recording) {
+                    Column(Modifier.fillMaxWidth().semantics { stateDescription = strings.recording; liveRegion = LiveRegionMode.Polite },
+                        verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                            Box(Modifier.size(12.dp).background(colors.destructive, CircleShape))
+                            Text("${strings.recording} · ${strings.duration(recordingProgress.elapsedMilliseconds)}", color = colors.textPrimary)
+                        }
+                        LinearProgressIndicator(progress = { recordingProgress.level }, Modifier.fillMaxWidth().height(3.dp))
+                    }
+                } else {
+                    replyingTo?.takeIf { it.conversationId == conversationId }?.let {
+                        ComposerReplyPreview(replyPreview(it, it.senderSubjectId == snapshot.account?.subjectId, strings), strings) { replyingTo = null }
+                    }
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
                     VoiceRecordButton(strings, !submitting, appState)
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { text = it.take(4000) },
-                        modifier = Modifier.weight(1f).focusRequester(composerFocus),
-                        placeholder = { Text(strings.messageHint) },
-                        minLines = 1,
-                        maxLines = 4,
-                        shape = RoundedCornerShape(24.dp),
-                        enabled = !submitting,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = colors.accent,
-                            unfocusedBorderColor = colors.controlOutline,
-                            disabledBorderColor = colors.border,
-                            cursorColor = colors.accent,
-                        ),
-                    )
-                    val sendEnabled = text.isNotBlank() && !submitting
-                    IconButton(
-                        enabled = sendEnabled,
-                        onClick = {
-                            val submitted = text
-                            val failed = editing
-                            val canonical = editingMessage
-                            val reply = replyingTo?.takeIf { it.conversationId == conversationId }
-                            val queued = { if (text == submitted) { text = ""; editing = null; editingMessage = null; replyingTo = null } }
-                            when {
-                                failed != null -> appState.editFailedChatText(failed.clientMessageId, submitted, queued)
-                                canonical != null -> appState.editChatText(canonical, submitted, queued)
-                                else -> appState.sendChatText(submitted, reply, queued)
-                            }
-                        },
-                        modifier = Modifier.size(48.dp).background(if (sendEnabled) colors.accent else colors.accentSoft, CircleShape),
-                    ) { NqrbIcon(NqrbGlyph.Send, strings.send,
-                        if (sendEnabled) colors.callActionContent else colors.disabledContent, Modifier.size(25.dp)) }
+                    if (recordingState == NqrbChatRecordingState.Recording) {
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
+                            Text(strings.limit, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
+                            RecordingIconButton(strings.cancel, NqrbGlyph.Delete, colors.destructive, colors.destructive.copy(alpha = .12f), appState::cancelChatRecording)
+                            RecordingIconButton(strings.stop, NqrbGlyph.Stop, colors.accent, colors.accentSoft, appState::finishChatRecording)
+                            Button(onClick = appState::finishAndSendChatRecording, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.sendVoice) }
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = text,
+                            onValueChange = { text = it.take(4000) },
+                            modifier = Modifier.weight(1f).focusRequester(composerFocus),
+                            placeholder = { Text(strings.messageHint) },
+                            minLines = 1,
+                            maxLines = 4,
+                            shape = RoundedCornerShape(24.dp),
+                            enabled = !submitting,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = colors.accent,
+                                unfocusedBorderColor = colors.controlOutline,
+                                disabledBorderColor = colors.border,
+                                cursorColor = colors.accent,
+                            ),
+                        )
+                        val sendEnabled = text.isNotBlank() && !submitting
+                        IconButton(
+                            enabled = sendEnabled,
+                            onClick = {
+                                val submitted = text
+                                val failed = editing
+                                val canonical = editingMessage
+                                val reply = replyingTo?.takeIf { it.conversationId == conversationId }
+                                val queued = { if (text == submitted) { text = ""; editing = null; editingMessage = null; replyingTo = null } }
+                                when {
+                                    failed != null -> appState.editFailedChatText(failed.clientMessageId, submitted, queued)
+                                    canonical != null -> appState.editChatText(canonical, submitted, queued)
+                                    else -> appState.sendChatText(submitted, reply, queued)
+                                }
+                            },
+                            modifier = Modifier.size(48.dp).background(if (sendEnabled) colors.accent else colors.accentSoft, CircleShape),
+                        ) { NqrbIcon(NqrbGlyph.Send, strings.send,
+                            if (sendEnabled) colors.callActionContent else colors.disabledContent, Modifier.size(25.dp)) }
+                    }
                 }
             }
         }
@@ -1177,6 +1181,19 @@ private fun ChatMessageActionDialog(title: String, cancel: String, actions: List
         confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text(cancel) } },
     )
+}
+
+@Composable
+private fun RecordingIconButton(label: String, glyph: NqrbGlyph, tint: Color, container: Color, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(48.dp)
+            .background(container, CircleShape)
+            .semantics { contentDescription = label },
+    ) {
+        NqrbIcon(glyph, null, tint, Modifier.size(23.dp))
+    }
 }
 
 @Composable

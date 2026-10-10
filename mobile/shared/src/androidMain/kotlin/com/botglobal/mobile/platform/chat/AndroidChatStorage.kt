@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 private val ChatDiskLock = Any()
 private const val ChatVoiceLogTag = "ChatVoiceRecorder"
+private const val ChatVoiceMinimumStopMilliseconds = 700L
 
 class AndroidChatDurableStore(context: Context) : ChatDurableStore {
     private val root = durableDirectory(File(context.noBackupFilesDir, "platform-chat/state"))
@@ -178,10 +179,12 @@ class AndroidChatVoiceRecorder(
     override suspend fun stop(): ChatVoiceDraft? = withContext(Dispatchers.Main.immediate) {
         val active = recorder ?: return@withContext null
         val target = file
-        val elapsedMilliseconds = (SystemClock.elapsedRealtime() - startedAt).coerceIn(1L, 300_000L).toInt()
         val amplitudeSnapshot = amplitudes.toList()
         try {
             amplitudeJob?.cancel(); amplitudeJob = null
+            val elapsedBeforeStop = (SystemClock.elapsedRealtime() - startedAt).coerceIn(1L, 300_000L)
+            if (elapsedBeforeStop < ChatVoiceMinimumStopMilliseconds) delay(ChatVoiceMinimumStopMilliseconds - elapsedBeforeStop)
+            val elapsedMilliseconds = (SystemClock.elapsedRealtime() - startedAt).coerceIn(1L, 300_000L).toInt()
             active.stop()
             runCatching { active.release() }.onFailure { logRecorderFailure("release", it) }
             recorder = null; file = null; abandonFocus()
