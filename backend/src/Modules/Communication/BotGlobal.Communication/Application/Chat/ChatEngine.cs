@@ -94,12 +94,17 @@ internal sealed class ChatEngine(
             rows.Count > take, rows.Take(take).LastOrDefault()?.Sequence);
     }
 
-    public async Task<ChatSendResult> SendTextAsync(Guid conversationId, string clientMessageId, string text, CancellationToken cancellationToken)
+    public Task<ChatSendResult> SendTextAsync(Guid conversationId, string clientMessageId, string text, CancellationToken cancellationToken) =>
+        SendTextAsync(conversationId, clientMessageId, text, null, cancellationToken);
+
+    public async Task<ChatSendResult> SendTextAsync(Guid conversationId, string clientMessageId, string text,
+        Guid? replyToMessageId, CancellationToken cancellationToken)
     {
         var normalized = text?.Trim() ?? string.Empty;
         if (normalized.Length is 0 or > ChatLimits.Text) return new ChatSendResult(null, Conflict: true);
-        var fingerprint = ChatMessage.FingerprintText(normalized);
-        return await SendAsync(conversationId, clientMessageId, fingerprint, ChatMessageKind.Text, normalized, null, cancellationToken);
+        var fingerprint = ChatMessage.FingerprintText(normalized, replyToMessageId);
+        return await SendAsync(conversationId, clientMessageId, fingerprint, ChatMessageKind.Text, normalized, null,
+            replyToMessageId, cancellationToken);
     }
 
     public async Task<ChatSendResult> SendVoiceAsync(Guid conversationId, string clientMessageId, Stream content,
@@ -118,7 +123,7 @@ internal sealed class ChatEngine(
         try
         {
             var result = await SendAsync(conversationId, clientMessageId, fingerprint, ChatMessageKind.Voice, null,
-                (transferId, upload, measuredDuration), cancellationToken);
+                (transferId, upload, measuredDuration), null, cancellationToken);
             if (result.Message?.VoiceTransferId != transferId) voiceStorage.Delete(upload.FileKey);
             return result;
         }
@@ -132,7 +137,8 @@ internal sealed class ChatEngine(
     }
 
     private async Task<ChatSendResult> SendAsync(Guid conversationId, string clientMessageId, string fingerprint,
-        ChatMessageKind kind, string? text, (Guid Id, ChatVoiceUpload Upload, int Duration)? voice, CancellationToken cancellationToken)
+        ChatMessageKind kind, string? text, (Guid Id, ChatVoiceUpload Upload, int Duration)? voice,
+        Guid? replyToMessageId, CancellationToken cancellationToken)
     {
         ChatMessage.NormalizeClientId(clientMessageId);
         for (var attempt = 0; attempt < 3; attempt++)
@@ -160,9 +166,14 @@ internal sealed class ChatEngine(
                 var counterpart = await directory.FindBySubjectAsync(actor.Application, counterpartSubject, cancellationToken);
                 if (self is null || counterpart is null || !await policy.CanStartDirectConversationAsync(actor, self, counterpart, cancellationToken))
                     return new ChatSendResult(null, Forbidden: true);
+                var reply = replyToMessageId.HasValue
+                    ? await ReplySnapshotAsync(actor.Application.ApplicationId, conversation.Id, replyToMessageId.Value, cancellationToken)
+                    : null;
+                if (replyToMessageId.HasValue && reply is null) return new ChatSendResult(null, Conflict: true);
                 var now = clock.GetUtcNow();
                 var message = new ChatMessage(actor.Application.ApplicationId, conversation.Id,
-                    conversation.AllocateSequence(now), actor.SubjectId, clientMessageId, kind, fingerprint, now, text, voice?.Id);
+                    conversation.AllocateSequence(now), actor.SubjectId, clientMessageId, kind, fingerprint, now, text, voice?.Id,
+                    reply?.MessageId, reply?.SenderSubjectId, reply?.Kind, reply?.Text, reply?.VoiceDurationMilliseconds);
                 if (voice.HasValue)
                 {
                     var retention = TimeSpan.FromDays(Math.Clamp(voiceOptions.Value.PublishedRetentionDays, 1, 7));
@@ -329,8 +340,27 @@ internal sealed class ChatEngine(
             return new ChatMessageView(x.Id, x.ConversationId, x.Sequence, x.SenderSubjectId, x.ClientMessageId,
                 x.Kind == ChatMessageKind.Text ? "text" : "voice", x.Text, x.VoiceTransferId, transfer?.Sha256,
                 transfer?.Length, transfer?.DurationMilliseconds, transfer?.State.ToString(),
+                x.ReplyToMessageId, x.ReplyToSenderSubjectId, x.ReplyToKind?.ToString().ToLowerInvariant(),
+                x.ReplyToText, x.ReplyToVoiceDurationMilliseconds,
                 dispatches.GetValueOrDefault(x.Id, ChatDispatchState.Pending).ToString(), x.CreatedAtUtc);
         }).ToArray();
+    }
+
+    private sealed record ReplySnapshot(Guid MessageId, string SenderSubjectId, ChatMessageKind Kind, string? Text,
+        int? VoiceDurationMilliseconds);
+
+    private async Task<ReplySnapshot?> ReplySnapshotAsync(Guid applicationId, Guid conversationId, Guid replyToMessageId,
+        CancellationToken token)
+    {
+        var message = await db.ChatMessages.AsNoTracking().SingleOrDefaultAsync(x =>
+            x.ApplicationId == applicationId && x.ConversationId == conversationId && x.Id == replyToMessageId, token);
+        if (message is null) return null;
+        int? duration = null;
+        if (message.VoiceTransferId.HasValue)
+            duration = await db.ChatVoiceTransfers.AsNoTracking().Where(x =>
+                    x.ApplicationId == applicationId && x.Id == message.VoiceTransferId.Value)
+                .Select(x => (int?)x.DurationMilliseconds).SingleOrDefaultAsync(token);
+        return new ReplySnapshot(message.Id, message.SenderSubjectId, message.Kind, message.Text, duration);
     }
 
     private async Task<ChatActor?> RequireActorAsync(CancellationToken token) =>

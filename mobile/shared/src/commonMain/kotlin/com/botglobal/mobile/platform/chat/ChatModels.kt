@@ -44,6 +44,11 @@ data class ChatMessage(
     val voiceLength: Long? = null,
     val voiceDurationMilliseconds: Int? = null,
     val voiceState: String? = null,
+    val replyToMessageId: String? = null,
+    val replyToSenderSubjectId: String? = null,
+    val replyToKind: String? = null,
+    val replyToText: String? = null,
+    val replyToVoiceDurationMilliseconds: Int? = null,
     val deliveryState: String = "Pending",
     val createdAtUtc: String,
 )
@@ -72,6 +77,11 @@ data class PendingChatText(
     val failure: ChatTextFailure? = null,
     val afterSequence: Long? = null,
     val beforeSequence: Long? = null,
+    val replyToMessageId: String? = null,
+    val replyToSenderSubjectId: String? = null,
+    val replyToKind: String? = null,
+    val replyToText: String? = null,
+    val replyToVoiceDurationMilliseconds: Int? = null,
 )
 
 @Serializable
@@ -147,6 +157,7 @@ data class ChatPendingActivity(val text: PendingChatText? = null, val voice: Pen
         message.senderSubjectId == scope.subjectId && message.conversationId == conversationId &&
             message.clientMessageId == clientMessageId && when {
                 text != null -> message.kind == "text" && message.text == text.text
+                    && message.replyToMessageId.orEmpty() == text.replyToMessageId.orEmpty()
                 voice != null -> message.kind == "voice" && voice.encodedDurationVerified && voice.sha256 != null &&
                     message.voiceSha256 == voice.sha256 && message.voiceLength == voice.length &&
                     message.voiceDurationMilliseconds == voice.durationMilliseconds

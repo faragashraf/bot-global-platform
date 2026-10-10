@@ -129,10 +129,12 @@ internal data class NqrbChatStrings(
     val remove get() = localized("إزالة", "Remove")
     val edit get() = localized("تعديل", "Edit")
     val copy get() = localized("نسخ", "Copy")
+    val reply get() = localized("رد", "Reply")
     val actions get() = localized("إجراءات الرسالة", "Message actions")
     val resend get() = localized("إعادة إرسال", "Resend")
     val resendHint get() = localized("محاولة إرسال الرسالة المعلقة الآن", "Try sending the queued message now")
     val copyHint get() = localized("نسخ محتوى الرسالة", "Copy the message content")
+    val replyHint get() = localized("الرد على هذه الرسالة", "Reply to this message")
     val editHint get() = localized("تعديل النص ثم إرساله مرة أخرى", "Edit the text and send it again")
     val removeHint get() = localized("حذف النسخة المعلقة من هذا الجهاز", "Remove the queued local copy")
     val checkDeliveryHint get() = localized("مطابقة الرسالة مع الخادم قبل الحذف", "Match the message with the server before removing it")
@@ -149,6 +151,9 @@ internal data class NqrbChatStrings(
         else localized("${digits(count.toString())} غير مقروءة", "$count unread")
     val limit get() = localized("الحد الأقصى ٥ دقائق", "5 minute maximum")
     val localOnly get() = localized("المحفوظ على هذا الجهاز · أعد الاتصال للمزامنة", "Saved on this device · reconnect to sync")
+    val replyingTo get() = localized("رد على", "Replying to")
+    val you get() = localized("أنت", "You")
+    val contact get() = localized("الطرف الآخر", "Contact")
     val openingConversation get() = localized("جارٍ فتح المحادثة الخاصة…", "Opening private conversation…")
     val conversationOpenFailed get() = localized("تعذّر فتح المحادثة. تحقق من الاتصال ثم حاول مرة أخرى.", "Could not open the conversation. Check your connection and try again.")
     val loadingConversation get() = localized("جارٍ تحميل الرسائل", "Loading messages")
@@ -436,6 +441,7 @@ internal fun NqrbChatThreadScreen(
     }
     var text by remember(conversationId) { mutableStateOf("") }
     var editing by remember(conversationId) { mutableStateOf<PendingChatText?>(null) }
+    var replyingTo by remember(conversationId) { mutableStateOf<ChatMessage?>(null) }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(Modifier.widthIn(max = NqrbLayout.ThreadMaxWidth).fillMaxSize().imePadding()) {
         ChatHeader(
@@ -465,9 +471,11 @@ internal fun NqrbChatThreadScreen(
                     items(rows, key = { it.key }) { row ->
                         when {
                             row.date != null -> Text(row.date, Modifier.fillMaxWidth().padding(vertical = NqrbSpacing.Sm), style = MaterialTheme.typography.labelMedium, color = colors.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                            row.message != null -> ChatMessageBubble(row.message, snapshot, strings, appState, playback, row.time, row.voice)
-                            row.text != null -> PendingTextBubble(row.text, row.time, strings, appState) {
-                                editing = row.text; text = row.text.text; composerFocus.requestFocus()
+                            row.message != null -> ChatMessageBubble(row.message, snapshot, strings, appState, playback, row.time, row.voice) {
+                                editing = null; replyingTo = row.message; composerFocus.requestFocus()
+                            }
+                            row.text != null -> PendingTextBubble(row.text, row.time, strings, appState, snapshot.account?.subjectId) {
+                                editing = row.text; replyingTo = null; text = row.text.text; composerFocus.requestFocus()
                             }
                             row.voice != null -> PendingVoiceBubble(row.voice, snapshot, strings, appState, playback)
                         }
@@ -481,7 +489,7 @@ internal fun NqrbChatThreadScreen(
         }
         if (editing != null) Row(Modifier.fillMaxWidth().padding(horizontal = NqrbSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
             Text(strings.localized("تعديل الرسالة المحفوظة", "Editing saved message"), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
-            TextButton(onClick = { editing = null; text = "" }, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.cancel) }
+            TextButton(onClick = { editing = null; replyingTo = null; text = "" }, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.cancel) }
         }
         when (recordingState) {
             NqrbChatRecordingState.Recording -> Column(
@@ -505,44 +513,47 @@ internal fun NqrbChatThreadScreen(
                 if (recordingState == NqrbChatRecordingState.AutoStoppedPreview) Text(strings.autoStopped, Modifier.padding(NqrbSpacing.Md), color = colors.textSecondary)
                 VoicePreview(it, strings, appState, playback, submitting)
             }
-            else -> Row(
-                Modifier.fillMaxWidth().padding(NqrbSpacing.Md), verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
-            ) {
-                IconButton(onClick = appState::requestChatVoiceRecording, enabled = !submitting,
-                    modifier = Modifier.size(48.dp).background(colors.elevatedSurface, CircleShape)) {
-                    NqrbIcon(NqrbGlyph.Microphone, strings.record,
-                        if (submitting) colors.disabledContent else colors.accent, Modifier.size(25.dp))
+            else -> Column(Modifier.fillMaxWidth().padding(NqrbSpacing.Md), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                replyingTo?.let {
+                    ComposerReplyPreview(replyPreview(it, it.senderSubjectId == snapshot.account?.subjectId, strings), strings) { replyingTo = null }
                 }
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it.take(4000) },
-                    modifier = Modifier.weight(1f).focusRequester(composerFocus),
-                    placeholder = { Text(strings.messageHint) },
-                    minLines = 1,
-                    maxLines = 4,
-                    shape = RoundedCornerShape(24.dp),
-                    enabled = !submitting,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = colors.accent,
-                        unfocusedBorderColor = colors.controlOutline,
-                        disabledBorderColor = colors.border,
-                        cursorColor = colors.accent,
-                    ),
-                )
-                val sendEnabled = text.isNotBlank() && !submitting
-                IconButton(
-                    enabled = sendEnabled,
-                    onClick = {
-                        val submitted = text
-                        val failed = editing
-                        val queued = { if (text == submitted) text = ""; editing = null }
-                        if (failed == null) appState.sendChatText(submitted, queued)
-                        else appState.editFailedChatText(failed.clientMessageId, submitted, queued)
-                    },
-                    modifier = Modifier.size(48.dp).background(if (sendEnabled) colors.accent else colors.accentSoft, CircleShape),
-                ) { NqrbIcon(NqrbGlyph.Send, strings.send,
-                    if (sendEnabled) colors.callActionContent else colors.disabledContent, Modifier.size(25.dp)) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                    IconButton(onClick = appState::requestChatVoiceRecording, enabled = !submitting,
+                        modifier = Modifier.size(48.dp).background(colors.elevatedSurface, CircleShape)) {
+                        NqrbIcon(NqrbGlyph.Microphone, strings.record,
+                            if (submitting) colors.disabledContent else colors.accent, Modifier.size(25.dp))
+                    }
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it.take(4000) },
+                        modifier = Modifier.weight(1f).focusRequester(composerFocus),
+                        placeholder = { Text(strings.messageHint) },
+                        minLines = 1,
+                        maxLines = 4,
+                        shape = RoundedCornerShape(24.dp),
+                        enabled = !submitting,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.accent,
+                            unfocusedBorderColor = colors.controlOutline,
+                            disabledBorderColor = colors.border,
+                            cursorColor = colors.accent,
+                        ),
+                    )
+                    val sendEnabled = text.isNotBlank() && !submitting
+                    IconButton(
+                        enabled = sendEnabled,
+                        onClick = {
+                            val submitted = text
+                            val failed = editing
+                            val reply = replyingTo
+                            val queued = { if (text == submitted) { text = ""; editing = null; replyingTo = null } }
+                            if (failed == null) appState.sendChatText(submitted, reply, queued)
+                            else appState.editFailedChatText(failed.clientMessageId, submitted, queued)
+                        },
+                        modifier = Modifier.size(48.dp).background(if (sendEnabled) colors.accent else colors.accentSoft, CircleShape),
+                    ) { NqrbIcon(NqrbGlyph.Send, strings.send,
+                        if (sendEnabled) colors.callActionContent else colors.disabledContent, Modifier.size(25.dp)) }
+                }
             }
         }
     }
@@ -608,7 +619,9 @@ internal data class ChatMessageMetadata(
     val statusLabel: String? = null,
 )
 
-private val WhatsAppReadReceiptBlue = Color(0xFF34B7F1)
+private data class ChatReplyPreview(val author: String, val body: String)
+
+private val NqrbReadReceiptAccent = Color(0xFF5B7CFF)
 private val VoiceWaveformPattern = floatArrayOf(.34f, .58f, .82f, .48f, .72f, .4f, .64f)
 
 private data class ChatMessageAction(
@@ -630,6 +643,34 @@ internal fun chatMessageMetadata(
     message.sequence <= counterpartReadSequence -> ChatMessageMetadata(time, ChatMessageStatus.Read, strings.read)
     message.deliveryState == "RetryPending" -> ChatMessageMetadata(time, ChatMessageStatus.RetryPending, strings.retrying)
     else -> ChatMessageMetadata(time, ChatMessageStatus.Delivered, strings.delivered)
+}
+
+private fun replyPreview(message: ChatMessage, mine: Boolean, strings: NqrbChatStrings): ChatReplyPreview {
+    val body = if (message.kind == "voice") {
+        message.voiceDurationMilliseconds?.let { "${strings.voiceNote} · ${strings.duration(it)}" } ?: strings.voiceNote
+    } else message.text.orEmpty().ifBlank { strings.messageHint }
+    return ChatReplyPreview(if (mine) strings.you else strings.contact, body)
+}
+
+private fun replyPreviewFromMessage(message: ChatMessage, strings: NqrbChatStrings, accountSubjectId: String?): ChatReplyPreview? {
+    val replyMessageId = message.replyToMessageId ?: return null
+    if (replyMessageId.isBlank()) return null
+    val kind = message.replyToKind.orEmpty()
+    val body = if (kind == "voice") {
+        message.replyToVoiceDurationMilliseconds?.let { "${strings.voiceNote} · ${strings.duration(it)}" } ?: strings.voiceNote
+    } else message.replyToText.orEmpty().ifBlank { strings.messageHint }
+    val mine = message.replyToSenderSubjectId == accountSubjectId
+    return ChatReplyPreview(if (mine) strings.you else strings.contact, body)
+}
+
+private fun replyPreviewFromPending(pending: PendingChatText, strings: NqrbChatStrings, accountSubjectId: String?): ChatReplyPreview? {
+    val replyMessageId = pending.replyToMessageId ?: return null
+    if (replyMessageId.isBlank()) return null
+    val body = if (pending.replyToKind == "voice") {
+        pending.replyToVoiceDurationMilliseconds?.let { "${strings.voiceNote} · ${strings.duration(it)}" } ?: strings.voiceNote
+    } else pending.replyToText.orEmpty().ifBlank { strings.messageHint }
+    val mine = pending.replyToSenderSubjectId == accountSubjectId
+    return ChatReplyPreview(if (mine) strings.you else strings.contact, body)
 }
 
 @Composable
@@ -676,10 +717,14 @@ private fun ChatHeader(
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, colors.border),
     ) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                NqrbIcon(NqrbGlyph.Back, back, colors.textPrimary, Modifier.size(24.dp))
+        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = NqrbSpacing.Xs), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.size(48.dp).background(colors.surface, CircleShape),
+            ) {
+                NqrbIcon(NqrbGlyph.Back, back, colors.accent, Modifier.size(26.dp))
             }
+            Spacer(Modifier.width(NqrbSpacing.Sm))
             Box(Modifier.size(40.dp).background(colors.accentSoft, CircleShape), contentAlignment = Alignment.Center) {
                 Text(title.take(1), color = colors.accent, style = MaterialTheme.typography.titleMedium)
             }
@@ -732,7 +777,7 @@ private fun PendingVoiceBubble(pending: PendingChatVoice, snapshot: ChatSnapshot
 
 @Composable
 private fun PendingTextBubble(pending: PendingChatText, time: String, strings: NqrbChatStrings,
-    appState: NqrbAppState, onEdit: () -> Unit) {
+    appState: NqrbAppState, accountSubjectId: String?, onEdit: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     var actionsOpen by remember(pending.clientMessageId) { mutableStateOf(false) }
     val actions = buildList {
@@ -752,14 +797,15 @@ private fun PendingTextBubble(pending: PendingChatText, time: String, strings: N
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
         ChatTextBubble(pending.text, true, ChatMessageMetadata(time,
             if (pending.failure == null) ChatMessageStatus.Pending else ChatMessageStatus.Failed,
-            pending.failure?.let(strings::textFailure) ?: strings.queued), onLongPress = { actionsOpen = true })
+            pending.failure?.let(strings::textFailure) ?: strings.queued),
+            reply = replyPreviewFromPending(pending, strings, accountSubjectId), onLongPress = { actionsOpen = true })
     }
     if (actionsOpen) ChatMessageActionDialog(strings.actions, strings.cancel, actions) { actionsOpen = false }
 }
 
 @Composable
 private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, strings: NqrbChatStrings, appState: NqrbAppState,
-    playback: ChatPlayback, time: String, pendingVoice: PendingChatVoice? = null) {
+    playback: ChatPlayback, time: String, pendingVoice: PendingChatVoice? = null, onReply: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val mine = message.senderSubjectId == snapshot.account?.subjectId
     val terminal = message.voiceState?.contains("Deleted") == true || message.voiceState?.contains("Expired") == true
@@ -767,9 +813,11 @@ private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, stri
     val counterpartRead = snapshot.conversations.firstOrNull { it.conversationId == message.conversationId }
         ?.counterpartLastReadSequence ?: 0
     val metadata = chatMessageMetadata(mine, time, message, counterpartRead, strings)
+    val reply = replyPreviewFromMessage(message, strings, snapshot.account?.subjectId)
     if (message.kind == "voice") {
         var actionsOpen by remember(message.messageId) { mutableStateOf(false) }
         val actions = buildList {
+            add(ChatMessageAction(strings.reply, NqrbGlyph.Reply, strings.replyHint, run = onReply))
             if (pendingVoice != null && pendingVoice.failure != ChatVoiceFailure.MissingOrCorrupt)
                 add(ChatMessageAction(strings.retry, NqrbGlyph.Send, strings.resendHint, run = appState::retryChatDelivery))
             if (pendingVoice?.failure != null)
@@ -783,7 +831,8 @@ private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, stri
                 loading = message.voiceTransferId?.let(snapshot.voiceLoads::get)?.takeIf { pendingVoice == null && (local == null || it == ChatVoiceLoadState.Loading) },
                 onPlay = { if (pendingVoice != null) appState.playPendingChatVoice(pendingVoice) else appState.playChatVoice(message) },
                 onStop = appState::stopChatPlayback,
-                onLongPress = { if (actions.isNotEmpty()) actionsOpen = true })
+                reply = reply,
+                onLongPress = { actionsOpen = true })
             MessageMetadataFooter(metadata)
             if (pendingVoice != null) {
                 MessageMetadataFooter(ChatMessageMetadata(status = if (pendingVoice.failure == null) ChatMessageStatus.RetryPending else ChatMessageStatus.Failed,
@@ -794,26 +843,68 @@ private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, stri
         if (actionsOpen) ChatMessageActionDialog(strings.actions, strings.cancel, actions) { actionsOpen = false }
     } else {
         var actionsOpen by remember(message.messageId) { mutableStateOf(false) }
-        val actions = listOf(ChatMessageAction(strings.copy, NqrbGlyph.Link, strings.copyHint) {
-            clipboard.setText(AnnotatedString(message.text.orEmpty()))
-        })
-        ChatTextBubble(message.text.orEmpty(), mine, metadata, onLongPress = { actionsOpen = true })
+        val actions = listOf(
+            ChatMessageAction(strings.reply, NqrbGlyph.Reply, strings.replyHint, run = onReply),
+            ChatMessageAction(strings.copy, NqrbGlyph.Link, strings.copyHint) {
+                clipboard.setText(AnnotatedString(message.text.orEmpty()))
+            },
+        )
+        ChatTextBubble(message.text.orEmpty(), mine, metadata, reply = reply, onLongPress = { actionsOpen = true })
         if (actionsOpen) ChatMessageActionDialog(strings.actions, strings.cancel, actions) { actionsOpen = false }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatTextBubble(text: String, mine: Boolean, metadata: ChatMessageMetadata, onLongPress: (() -> Unit)? = null) {
+private fun ChatTextBubble(text: String, mine: Boolean, metadata: ChatMessageMetadata, reply: ChatReplyPreview? = null,
+    onLongPress: (() -> Unit)? = null) {
     val colors = LocalNqrbColors.current
     BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart) {
         val bubbleModifier = Modifier.widthIn(max = maxWidth * .84f).then(
             if (onLongPress == null) Modifier else Modifier.combinedClickable(onClick = {}, onLongClick = onLongPress)
         )
-        Surface(bubbleModifier, color = if (mine) colors.accentSoft else colors.surface, shape = RoundedCornerShape(16.dp)) {
+        Surface(bubbleModifier, color = if (mine) colors.accentSoft else colors.surface, shape = RoundedCornerShape(14.dp)) {
             Column(Modifier.padding(horizontal = NqrbSpacing.Md, vertical = NqrbSpacing.Sm).semantics(mergeDescendants = true) {}) {
+                reply?.let { InlineReplyPreview(it, Modifier.padding(bottom = NqrbSpacing.Xs)) }
                 Text(text, color = colors.textPrimary)
                 MessageMetadataFooter(metadata, Modifier.align(Alignment.End))
+            }
+        }
+    }
+}
+
+@Composable
+private fun InlineReplyPreview(reply: ChatReplyPreview, modifier: Modifier = Modifier) {
+    val colors = LocalNqrbColors.current
+    Surface(modifier.fillMaxWidth(), color = colors.surface.copy(alpha = .62f), shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, colors.border)) {
+        Row(Modifier.padding(horizontal = NqrbSpacing.Sm, vertical = NqrbSpacing.Xs), horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
+            verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(3.dp).height(34.dp).background(colors.accent, RoundedCornerShape(2.dp)))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(reply.author, style = MaterialTheme.typography.labelMedium, color = colors.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(reply.body, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ComposerReplyPreview(reply: ChatReplyPreview, strings: NqrbChatStrings, onCancel: () -> Unit) {
+    val colors = LocalNqrbColors.current
+    Surface(Modifier.fillMaxWidth(), color = colors.elevatedSurface, shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, colors.border)) {
+        Row(Modifier.padding(start = NqrbSpacing.Md, end = NqrbSpacing.Xs, top = NqrbSpacing.Sm, bottom = NqrbSpacing.Sm),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+            NqrbIcon(NqrbGlyph.Reply, null, colors.accent, Modifier.size(20.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text("${strings.replyingTo} ${reply.author}", style = MaterialTheme.typography.labelMedium, color = colors.accent,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(reply.body, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = onCancel, modifier = Modifier.size(44.dp)) {
+                NqrbIcon(NqrbGlyph.Close, strings.cancel, colors.textSecondary, Modifier.size(20.dp))
             }
         }
     }
@@ -829,7 +920,7 @@ private fun MessageMetadataFooter(metadata: ChatMessageMetadata, modifier: Modif
         null -> null
     }
     val tint = when (metadata.status) {
-        ChatMessageStatus.Read -> WhatsAppReadReceiptBlue
+        ChatMessageStatus.Read -> NqrbReadReceiptAccent
         ChatMessageStatus.RetryPending, ChatMessageStatus.Failed -> colors.destructive
         else -> colors.textSecondary
     }
@@ -854,7 +945,8 @@ private fun MessageMetadataFooter(metadata: ChatMessageMetadata, modifier: Modif
 @Composable
 private fun VoiceCapsule(key: String, duration: Int, playback: ChatPlayback, strings: NqrbChatStrings,
     unavailable: Boolean = false, mine: Boolean = true, onPlay: () -> Unit, onStop: () -> Unit,
-    playModifier: Modifier = Modifier, loading: ChatVoiceLoadState? = null, onLongPress: (() -> Unit)? = null) {
+    playModifier: Modifier = Modifier, loading: ChatVoiceLoadState? = null, reply: ChatReplyPreview? = null,
+    onLongPress: (() -> Unit)? = null) {
     val colors = LocalNqrbColors.current
     val active = playback.takeIf { it.key == key } ?: ChatPlayback()
     val playing = active.phase == ChatPlaybackPhase.Playing
@@ -878,11 +970,12 @@ private fun VoiceCapsule(key: String, duration: Int, playback: ChatPlayback, str
         Surface(
             capsuleModifier,
             color = if (mine) colors.accentSoft else colors.surface,
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(14.dp),
         ) {
             Column(Modifier.padding(NqrbSpacing.Sm).semantics(mergeDescendants = true) {
                 stateDescription = stateLabel
             }) {
+                reply?.let { InlineReplyPreview(it, Modifier.padding(bottom = NqrbSpacing.Sm)) }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
                     IconButton(onClick = onPlay, enabled = !unavailable && active.phase != ChatPlaybackPhase.Preparing && loading !in setOf(ChatVoiceLoadState.Loading, ChatVoiceLoadState.Unavailable),
                         modifier = playModifier.size(44.dp).background(colors.elevatedSurface, CircleShape)

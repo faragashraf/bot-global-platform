@@ -142,22 +142,31 @@ class ChatController(
         lock.withLock { mutableState.value = mutableState.value.copy(selectedConversationId = conversationId) }
     }
 
-    suspend fun sendText(conversationId: String, text: String, expectedAccount: ChatAccountScope? = null): String? {
+    suspend fun sendText(conversationId: String, text: String, expectedAccount: ChatAccountScope? = null,
+        replyTo: ChatMessage? = null): String? {
         val (scope, ticket) = active() ?: return null
-        val id = enqueueText(conversationId, text, expectedAccount ?: scope) ?: return null
+        val id = enqueueText(conversationId, text, expectedAccount ?: scope, replyTo) ?: return null
         flush(ticket)
         return id
     }
 
-    suspend fun enqueueText(conversationId: String, text: String, expectedAccount: ChatAccountScope? = null): String? {
+    suspend fun enqueueText(conversationId: String, text: String, expectedAccount: ChatAccountScope? = null,
+        replyTo: ChatMessage? = null): String? {
         val normalized = text.trim()
         if (normalized.isEmpty() || normalized.length > 4000) return null
         val (scope, requestGeneration) = active() ?: return null
         if (expectedAccount != null && expectedAccount != scope) return null
+        if (replyTo != null && replyTo.conversationId != conversationId) return null
         return lock.withLock {
             if (!isCurrent(scope, requestGeneration)) return null
+            val reply = replyTo?.takeIf { durable.messages[conversationId].orEmpty().any { known -> known.messageId == it.messageId } }
             val pending = PendingChatText(conversationId, ids.next(), normalized, durable.nextEnqueueOrdinal, creationTime(),
-                afterSequence = durable.knownSequence(conversationId))
+                afterSequence = durable.knownSequence(conversationId),
+                replyToMessageId = reply?.messageId,
+                replyToSenderSubjectId = reply?.senderSubjectId,
+                replyToKind = reply?.kind,
+                replyToText = reply?.text,
+                replyToVoiceDurationMilliseconds = reply?.voiceDurationMilliseconds)
             durable = durable.copy(textOutbox = durable.textOutbox + pending, nextEnqueueOrdinal = durable.nextEnqueueOrdinal + 1)
             persistAndPublish(scope)
             pending.clientMessageId

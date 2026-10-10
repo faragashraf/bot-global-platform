@@ -75,6 +75,23 @@ public sealed class ChatEngineRegressionTests
     }
 
     [Fact]
+    public async Task TextReplyIsScopedToTheSameConversationAndReturnedWithPreview()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var first = (await f.Engine.CreateOrGetDirectAsync("staff:beta", default))!;
+        var second = (await f.Engine.CreateOrGetDirectAsync("staff:gamma", default))!;
+        var root = (await f.Engine.SendTextAsync(first.ConversationId, "root", "original message", default)).Message!;
+        var reply = (await f.Engine.SendTextAsync(first.ConversationId, "reply", "answer", root.MessageId, default)).Message!;
+
+        Assert.Equal(root.MessageId, reply.ReplyToMessageId);
+        Assert.Equal("staff:alpha", reply.ReplyToSenderSubjectId);
+        Assert.Equal("text", reply.ReplyToKind);
+        Assert.Equal("original message", reply.ReplyToText);
+        Assert.Null(reply.ReplyToVoiceDurationMilliseconds);
+        Assert.True((await f.Engine.SendTextAsync(second.ConversationId, "bad-reply", "denied", root.MessageId, default)).Conflict);
+    }
+
+    [Fact]
     public async Task ConcurrentInitialReceiptInsertsKeepTheHighestSequence()
     {
         await using var f = await Fixture.CreateAsync();

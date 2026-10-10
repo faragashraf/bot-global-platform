@@ -233,6 +233,25 @@ namespace BotGlobal.Communication.Infrastructure.Persistence.Migrations
                         .IsUnicode(false)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<int?>("ReplyToKind")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("ReplyToMessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReplyToSenderSubjectId")
+                        .HasMaxLength(200)
+                        .IsUnicode(true)
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
+
+                    b.Property<string>("ReplyToText")
+                        .HasMaxLength(240)
+                        .HasColumnType("character varying(240)");
+
+                    b.Property<int?>("ReplyToVoiceDurationMilliseconds")
+                        .HasColumnType("integer");
+
                     b.Property<string>("SenderSubjectId")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -254,6 +273,8 @@ namespace BotGlobal.Communication.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ApplicationId", "ConversationId", "Sequence")
                         .IsUnique();
+
+                    b.HasIndex("ApplicationId", "ReplyToMessageId");
 
                     b.HasIndex("ApplicationId", "SenderSubjectId", "ClientMessageId")
                         .IsUnique();
@@ -606,6 +627,12 @@ namespace BotGlobal.Communication.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("ApplicationId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("BotGlobal.Communication.Domain.Chat.ChatMessage", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId", "ReplyToMessageId")
+                        .HasPrincipalKey("ApplicationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("BotGlobal.Communication.Domain.Chat.ChatReceipt", b =>

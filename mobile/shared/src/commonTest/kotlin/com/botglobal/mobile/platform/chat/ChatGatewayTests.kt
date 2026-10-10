@@ -60,6 +60,31 @@ class ChatGatewayTests {
         client.close()
     }
 
+    @Test fun rawClientSerializesTextReplyBody() = runTest {
+        var body = ""
+        val client = HttpClient(MockEngine { request ->
+            assertEquals(HttpMethod.Post, request.method)
+            assertEquals("/api/mobile/communications/chat/conversations/conversation-1/messages/text", request.url.encodedPath)
+            assertEquals(ContentType.Application.Json, request.body.contentType)
+            body = requestBody(request)
+            respond(
+                """{"messageId":"message-1","conversationId":"conversation-1","sequence":2,"senderSubjectId":"nqrb:registered:self","clientMessageId":"client-1","kind":"text","text":"reply","deliveryState":"Pending","createdAtUtc":"2099-01-02T03:04:05Z"}""",
+                HttpStatusCode.OK,
+                jsonHeaders(),
+            )
+        }) {
+            install(ContentNegotiation) { json() }
+        }
+        val gateway = KtorChatGateway(client, "https://synthetic.invalid", credential("synthetic-reply"))
+
+        assertIs<ChatGatewayResult.Success<ChatMessage>>(
+            gateway.sendText(PendingChatText("conversation-1", "client-1", "reply", replyToMessageId = "message-root")),
+        )
+
+        assertEquals("""{"clientMessageId":"client-1","text":"reply","replyToMessageId":"message-root"}""", body)
+        client.close()
+    }
+
     @Test fun rawClientDecodesPagedConversationListContract() = runTest {
         val client = HttpClient(MockEngine { request ->
             assertEquals(HttpMethod.Get, request.method)

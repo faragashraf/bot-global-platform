@@ -39,6 +39,7 @@ enum class NqrbGlyph {
     More,
     Close,
     Chat,
+    Reply,
     Send,
     Play,
     Pause,
@@ -54,7 +55,7 @@ fun NqrbIcon(
     tint: Color,
     modifier: Modifier = Modifier,
 ) {
-    val mirror = LocalLayoutDirection.current == LayoutDirection.Rtl && glyph in setOf(NqrbGlyph.Back, NqrbGlyph.Send)
+    val mirror = LocalLayoutDirection.current == LayoutDirection.Rtl && glyph in setOf(NqrbGlyph.Back, NqrbGlyph.Send, NqrbGlyph.Reply)
     val semantics = if (contentDescription == null) Modifier else Modifier.semantics { this.contentDescription = contentDescription }
     Canvas(modifier.then(semantics).graphicsLayer { scaleX = if (mirror) -1f else 1f }) {
         val stroke = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
@@ -107,6 +108,12 @@ fun NqrbIcon(
                     lineTo(size.width * .47f, size.height * .72f)
                 }
                 drawPath(tail, tint, style = stroke)
+            }
+            NqrbGlyph.Reply -> {
+                drawLine(tint, Offset(size.width * .2f, center.y), Offset(size.width * .48f, size.height * .25f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .2f, center.y), Offset(size.width * .48f, size.height * .75f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .22f, center.y), Offset(size.width * .7f, center.y), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawArc(tint, -90f, 180f, false, Offset(size.width * .58f, size.height * .28f), Size(size.width * .28f, size.height * .44f), style = stroke)
             }
             NqrbGlyph.Send -> {
                 val path = Path().apply {

@@ -784,13 +784,13 @@ class NqrbAppState(
         resolveChatCallTarget(conversationId).participant?.let(::requestOutgoingCall)
     }
 
-    fun sendChatText(text: String, onQueued: () -> Unit = {}) {
+    fun sendChatText(text: String, replyTo: ChatMessage? = null, onQueued: () -> Unit = {}) {
         val conversationId = chat.state.value.selectedConversationId ?: return
         val account = chat.state.value.account ?: return
         if (!mutableChatSubmitting.compareAndSet(false, true)) return
         callActionScope.launch {
             try {
-                val sent = runCatching { chat.enqueueText(conversationId, text, account) }.getOrNull()
+                val sent = runCatching { chat.enqueueText(conversationId, text, account, replyTo) }.getOrNull()
                 if (sent != null) { onQueued(); launch { resumeChatOnline(force = true, conversationId = conversationId) } }
                 else mutableChatRecordingState.value = NqrbChatRecordingState.StorageUnavailable
             } finally { mutableChatSubmitting.value = false }

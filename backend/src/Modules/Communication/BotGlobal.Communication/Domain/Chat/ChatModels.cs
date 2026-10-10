@@ -106,7 +106,9 @@ public sealed class ChatMessage
 
     public ChatMessage(Guid applicationId, Guid conversationId, long sequence, string senderSubjectId,
         string clientMessageId, ChatMessageKind kind, string payloadFingerprint, DateTimeOffset createdAtUtc,
-        string? text = null, Guid? voiceTransferId = null)
+        string? text = null, Guid? voiceTransferId = null, Guid? replyToMessageId = null,
+        string? replyToSenderSubjectId = null, ChatMessageKind? replyToKind = null, string? replyToText = null,
+        int? replyToVoiceDurationMilliseconds = null)
     {
         if (applicationId == Guid.Empty || conversationId == Guid.Empty || sequence <= 0)
             throw new ArgumentException("A scoped conversation sequence is required.");
@@ -120,6 +122,11 @@ public sealed class ChatMessage
         PayloadFingerprint = payloadFingerprint;
         Text = text;
         VoiceTransferId = voiceTransferId;
+        ReplyToMessageId = replyToMessageId;
+        ReplyToSenderSubjectId = replyToSenderSubjectId is null ? null : ChatConversation.NormalizeSubject(replyToSenderSubjectId);
+        ReplyToKind = replyToKind;
+        ReplyToText = replyToText is null ? null : NormalizeReplyText(replyToText);
+        ReplyToVoiceDurationMilliseconds = replyToVoiceDurationMilliseconds;
         CreatedAtUtc = createdAtUtc;
     }
 
@@ -133,6 +140,11 @@ public sealed class ChatMessage
     public string PayloadFingerprint { get; private set; } = string.Empty;
     public string? Text { get; private set; }
     public Guid? VoiceTransferId { get; private set; }
+    public Guid? ReplyToMessageId { get; private set; }
+    public string? ReplyToSenderSubjectId { get; private set; }
+    public ChatMessageKind? ReplyToKind { get; private set; }
+    public string? ReplyToText { get; private set; }
+    public int? ReplyToVoiceDurationMilliseconds { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public static string NormalizeClientId(string value)
@@ -143,12 +155,19 @@ public sealed class ChatMessage
         return normalized;
     }
 
-    public static string FingerprintText(string text)
+    public static string FingerprintText(string text, Guid? replyToMessageId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         var normalized = text.Trim();
         if (normalized.Length > ChatLimits.Text) throw new ArgumentOutOfRangeException(nameof(text));
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"text\n{normalized}"))).ToLowerInvariant();
+        var reply = replyToMessageId?.ToString("D") ?? string.Empty;
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"text\n{reply}\n{normalized}"))).ToLowerInvariant();
+    }
+
+    public static string NormalizeReplyText(string value)
+    {
+        var normalized = value.Trim();
+        return normalized.Length <= 240 ? normalized : normalized[..240];
     }
 
     public static string FingerprintVoice(string sha256, long length, int durationMilliseconds) =>

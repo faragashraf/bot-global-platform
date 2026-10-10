@@ -102,7 +102,7 @@ class KtorChatGateway private constructor(
     }
     override suspend fun sendText(message: PendingChatText) = request<ChatMessage> {
         client.post("$base/conversations/${message.conversationId}/messages/text") {
-            authenticate(this); contentType(ContentType.Application.Json); setBody(TextRequest(message.clientMessageId, message.text))
+            authenticate(this); contentType(ContentType.Application.Json); setBody(TextRequest(message.clientMessageId, message.text, message.replyToMessageId))
         }
     }
     override suspend fun sendVoice(conversationId: String, clientMessageId: String, draft: ChatVoiceDraft, bytes: ByteArray) = request<ChatMessage>(
@@ -157,7 +157,7 @@ class KtorChatGateway private constructor(
     } catch (cancelled: CancellationException) { throw cancelled } catch (_: MissingCredential) { ChatGatewayResult.AuthenticationRequired } catch (_: Exception) { ChatGatewayResult.RetryableFailure }
 
     @Serializable private data class DirectRequest(val reference: String)
-    @Serializable private data class TextRequest(val clientMessageId: String, val text: String)
+    @Serializable private data class TextRequest(val clientMessageId: String, val text: String, val replyToMessageId: String? = null)
     @Serializable private data class AckRequest(val installationId: String, val sha256: String, val length: Long)
     @Serializable private data class ReadRequest(val sequence: Long)
     @Serializable private data class ReadResponse(val lastReadSequence: Long)

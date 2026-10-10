@@ -52,6 +52,30 @@ class ChatControllerTests {
     }
 
     @Test
+    fun outboundTextKeepsReplyPreviewUntilItFlushes() = runTest {
+        val scope = ChatAccountScope("application-a", "subject-a")
+        val reply = message("reply-root", sender = "subject-b").copy(messageId = "message-root", text = "original message")
+        val store = MemoryStore().apply {
+            states[scope] = ChatDurableState(
+                conversations = listOf(conversation()),
+                messages = mapOf(ConversationId to listOf(reply)),
+            )
+        }
+        val gateway = FakeGateway(scope).apply { textResult = ChatGatewayResult.RetryableFailure }
+        val controller = controller(gateway, store)
+        controller.bindAuthenticated()
+
+        controller.sendText(ConversationId, "answer", replyTo = reply)
+
+        val pending = store.states.getValue(scope).textOutbox.single()
+        assertEquals("message-root", pending.replyToMessageId)
+        assertEquals("subject-b", pending.replyToSenderSubjectId)
+        assertEquals("text", pending.replyToKind)
+        assertEquals("original message", pending.replyToText)
+        assertEquals("message-root", gateway.sentTexts.single().replyToMessageId)
+    }
+
+    @Test
     fun corruptDownloadIsNeverIndexedOrAcknowledged() = runTest {
         val scope = ChatAccountScope("application-a", "recipient")
         val gateway = FakeGateway(scope).apply { downloadBytes = byteArrayOf(1, 2, 3) }
@@ -109,6 +133,7 @@ class ChatControllerTests {
         var beforeTextResponse: CompletableDeferred<Unit>? = null
         val textStarted = CompletableDeferred<Unit>()
         val sentClientIds = mutableListOf<String>()
+        val sentTexts = mutableListOf<PendingChatText>()
         var downloadBytes = ByteArray(0)
         var ackCount = 0
         override suspend fun context() = ChatGatewayResult.Success(scope)
@@ -117,6 +142,7 @@ class ChatControllerTests {
         override suspend fun messages(conversationId: String, afterSequence: Long) = ChatGatewayResult.Success(ChatPage<ChatMessage>(emptyList(), false))
         override suspend fun sendText(message: PendingChatText): ChatGatewayResult<ChatMessage> {
             sentClientIds += message.clientMessageId
+            sentTexts += message
             textStarted.complete(Unit)
             beforeTextResponse?.await()
             return when (val result = textResult) {

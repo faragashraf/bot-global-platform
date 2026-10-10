@@ -25,6 +25,11 @@ public sealed record ChatMessageView(
     long? VoiceLength,
     int? VoiceDurationMilliseconds,
     string? VoiceState,
+    Guid? ReplyToMessageId,
+    string? ReplyToSenderSubjectId,
+    string? ReplyToKind,
+    string? ReplyToText,
+    int? ReplyToVoiceDurationMilliseconds,
     string DeliveryState,
     DateTimeOffset CreatedAtUtc);
 
@@ -37,7 +42,7 @@ public interface IChatEngine
     Task<ChatConversationView?> CreateOrGetDirectAsync(string reference, CancellationToken cancellationToken);
     Task<ChatPage<ChatConversationView>> ListConversationsAsync(DateTimeOffset? before, int take, CancellationToken cancellationToken, string? cursor = null);
     Task<ChatPage<ChatMessageView>?> ListMessagesAsync(Guid conversationId, long afterSequence, int take, CancellationToken cancellationToken);
-    Task<ChatSendResult> SendTextAsync(Guid conversationId, string clientMessageId, string text, CancellationToken cancellationToken);
+    Task<ChatSendResult> SendTextAsync(Guid conversationId, string clientMessageId, string text, Guid? replyToMessageId, CancellationToken cancellationToken);
     Task<ChatSendResult> SendVoiceAsync(Guid conversationId, string clientMessageId, Stream content, string contentType, int durationMilliseconds, CancellationToken cancellationToken);
     Task<(ChatVoiceTransfer Transfer, Stream Content)?> DownloadVoiceAsync(Guid transferId, CancellationToken cancellationToken);
     Task<bool> AcknowledgeVoiceAsync(Guid transferId, Guid installationId, string sha256, long length, CancellationToken cancellationToken);

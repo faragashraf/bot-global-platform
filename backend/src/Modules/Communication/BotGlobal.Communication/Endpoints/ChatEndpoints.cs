@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace BotGlobal.Communication.Endpoints;
 
 public sealed record CreateDirectChatRequest(string Reference);
-public sealed record SendChatTextRequest(string ClientMessageId, string Text);
+public sealed record SendChatTextRequest(string ClientMessageId, string Text, Guid? ReplyToMessageId = null);
 public sealed record ChatVoiceAckRequest(Guid InstallationId, string Sha256, long Length);
 public sealed record ChatReadReceiptRequest(long Sequence);
 
@@ -53,7 +53,7 @@ public static class ChatEndpoints
 
         group.MapPost("/conversations/{conversationId:guid}/messages/text", async (Guid conversationId,
             SendChatTextRequest request, [FromServices] IChatEngine engine, CancellationToken token) =>
-            ToSendResult(await engine.SendTextAsync(conversationId, request.ClientMessageId, request.Text, token)))
+            ToSendResult(await engine.SendTextAsync(conversationId, request.ClientMessageId, request.Text, request.ReplyToMessageId, token)))
             .WithName("SendChatTextMessage");
 
         group.MapPost("/conversations/{conversationId:guid}/messages/voice", async (Guid conversationId,
