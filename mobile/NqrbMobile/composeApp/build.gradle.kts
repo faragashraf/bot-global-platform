@@ -33,6 +33,7 @@ kotlin {
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
             implementation(libs.compose.ui)
+            implementation(libs.compose.components.resources)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.kotlinx.coroutines.core)
             api(libs.ktor.client.core)
@@ -61,4 +62,9 @@ kotlin {
 
 dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
+}
+
+compose.resources {
+    publicResClass = true
+    packageOfResClass = "com.botglobal.nqrb.resources"
 }

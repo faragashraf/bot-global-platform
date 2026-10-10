@@ -15,8 +15,17 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using BotGlobal.Contracts.Notifications;
 using BotGlobal.Contracts.Calling;
+using BotGlobal.Contracts.Communication;
+using BotGlobal.Communication.Application.Chat;
+using BotGlobal.Communication.Application.Presence;
+using BotGlobal.Communication.Infrastructure.Presence;
+using FirebaseAdmin;
+using FirebaseAdmin.Auth;
+using Google.Apis.Auth.OAuth2;
 
 namespace BotGlobal.Communication;
 
@@ -49,6 +58,36 @@ public static class CommunicationModule
                     connectionString,
                     DatabaseSchema,
                     MigrationsHistoryTableName));
+
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddHttpContextAccessor();
+        var chatRuntime = configuration.GetSection(ChatRuntimeOptions.SectionName)
+            .Get<ChatRuntimeOptions>() ?? new ChatRuntimeOptions();
+        services.AddOptions<ChatRuntimeOptions>()
+            .Bind(configuration.GetSection(ChatRuntimeOptions.SectionName))
+            .Validate(x => !x.WorkersEnabled || BotGlobalDatabaseOptions.IsPostgreSql(configuration),
+                "Chat workers require the PostgreSql database provider.")
+            .ValidateOnStart();
+        services.AddOptions<ChatVoiceOptions>()
+            .Bind(configuration.GetSection(ChatVoiceOptions.SectionName))
+            .Validate(x => !string.IsNullOrWhiteSpace(x.StoragePath), "Chat voice storage path is required.")
+            .Validate(x => x.PublishedRetentionDays is >= 1 and <= 7, "Chat voice retention must be between 1 and 7 days.")
+            .Validate(x => x.SweepMinutes is >= 1 and <= 60, "Chat voice sweep interval must be between 1 and 60 minutes.")
+            .Validate(x => !string.IsNullOrWhiteSpace(x.DecoderPath), "Chat voice decoder path is required.")
+            .Validate(x => !chatRuntime.WorkersEnabled || Path.IsPathFullyQualified(x.StoragePath),
+                "Active Chat workers require an absolute private durable voice storage path.")
+            .ValidateOnStart();
+        services.AddScoped<IChatActorResolver, ChatActorResolver>();
+        services.AddScoped<ChatPolicyRegistry>();
+        services.AddScoped<IChatEngine, ChatEngine>();
+        services.AddSingleton<IChatVoiceStorage, PrivateChatVoiceStorage>();
+        services.AddScoped<ChatDispatchProcessor>();
+        services.AddSingleton<ChatConnectionRegistry>();
+        services.AddScoped<ChatVoiceSweeper>();
+        if (chatRuntime.WorkersEnabled) {
+            services.AddHostedService<ChatMaintenanceBackgroundService>();
+            services.AddHostedService<ChatDispatchBackgroundService>();
+        }
 
         services.AddSignalR();
         services.Configure<FcmOptions>(
@@ -121,6 +160,59 @@ public static class CommunicationModule
             IMobileNotificationConnectionRegistry,
             MobileNotificationConnectionRegistry>();
         services.AddScoped<IApplicationAccountDeletionHandler, CommunicationAccountDeletionHandler>();
+
+        var presenceProfiles = FirebasePresenceProfile.ReadAll(configuration);
+        foreach (var profile in presenceProfiles)
+            if (!profile.IsValid(out var presenceProfileError))
+                throw new InvalidOperationException(presenceProfileError);
+        var enabledPresenceProfiles = presenceProfiles.Where(profile => profile.Enabled).ToArray();
+        if (enabledPresenceProfiles.GroupBy(profile => profile.ApplicationKey, StringComparer.Ordinal).Any(group => group.Count() > 1))
+            throw new InvalidOperationException("Only one presence profile may be enabled per application.");
+        services.AddOptions<PresenceOptions>()
+            .Bind(configuration.GetSection(PresenceOptions.SectionName))
+            .Validate(options => options.IsValid(), "Presence lease/freshness bounds are invalid.")
+            .ValidateOnStart();
+        services.AddSingleton<IPresenceProvider>(serviceProvider =>
+        {
+            if (enabledPresenceProfiles.Length == 0) return new DisabledPresenceProvider();
+            var options = serviceProvider.GetRequiredService<IOptions<PresenceOptions>>();
+            var clock = serviceProvider.GetRequiredService<TimeProvider>();
+            var providers = new Dictionary<string, FirebasePresenceProvider>(StringComparer.Ordinal);
+            foreach (var profile in enabledPresenceProfiles)
+            {
+                var transport = new FirebasePresenceHttpTransport(new HttpClient(
+                    new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(2) });
+                IFirebasePresenceTokenIssuer tokenIssuer;
+                IFirebasePresenceAdminTokenSource adminTokens;
+                if (profile.Emulator)
+                {
+                    tokenIssuer = new EmulatorPresenceTokenIssuer();
+                    adminTokens = new EmulatorPresenceAdminTokenSource();
+                }
+                else
+                {
+                    var credential = CredentialFactory.FromJson<ServiceAccountCredential>(profile.CredentialJson)
+                        .ToGoogleCredential()
+                        .CreateScoped(
+                            "https://www.googleapis.com/auth/firebase.database",
+                            "https://www.googleapis.com/auth/userinfo.email");
+                    var app = FirebaseApp.Create(new AppOptions
+                    {
+                        Credential = credential,
+                        ProjectId = profile.ProjectId
+                    }, $"presence-{profile.ApplicationKey}-{profile.ProjectId}");
+                    tokenIssuer = new FirebaseAdminPresenceTokenIssuer(FirebaseAuth.GetAuth(app));
+                    adminTokens = new GooglePresenceAdminTokenSource((ITokenAccess)credential);
+                }
+                providers.Add(profile.ApplicationKey, new FirebasePresenceProvider(
+                    transport, profile, tokenIssuer, adminTokens, options, clock));
+            }
+            return new ApplicationScopedPresenceProvider(providers);
+        });
+        services.AddScoped<PresenceLeaseStore>();
+        services.AddScoped<PresenceEngine>();
+        services.AddScoped<IPresenceLeaseService>(service => service.GetRequiredService<PresenceEngine>());
+        services.AddScoped<IPresenceDecisionReader>(service => service.GetRequiredService<PresenceEngine>());
 
         services.AddScoped<
             SignalRMobileNotificationDelivery>();
@@ -258,11 +350,28 @@ public static class CommunicationModule
         endpoints.MapHub<MobileNotificationsHub>(
             MobileNotificationRealtimeContract.HubPath);
 
+        endpoints.MapHub<ChatHub>(ChatContract.HubPath);
+
         endpoints.MapCommunicationTestEndpoints();
 
         endpoints.MapMobileNotificationEndpoints(
             notificationAuthorization);
 
+        endpoints.MapChatEndpoints();
+
+        endpoints.MapPresenceEndpoints();
+
         return endpoints;
     }
+}
+
+internal sealed class EmulatorPresenceTokenIssuer : IFirebasePresenceTokenIssuer
+{
+    public Task<string> IssueAsync(string uid, string leaseId, string connectionId, DateTimeOffset expiresAtUtc, CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("Inject a local emulator token issuer for the explicit demo profile.");
+}
+
+internal sealed class EmulatorPresenceAdminTokenSource : IFirebasePresenceAdminTokenSource
+{
+    public Task<string> GetAsync(CancellationToken cancellationToken) => Task.FromResult("owner");
 }

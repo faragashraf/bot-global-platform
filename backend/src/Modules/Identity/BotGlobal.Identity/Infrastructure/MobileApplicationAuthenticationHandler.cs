@@ -1,6 +1,9 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text.Encodings.Web;
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Communication;
+using Microsoft.Extensions.DependencyInjection;
 using BotGlobal.Identity.Application;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
@@ -30,6 +33,25 @@ public sealed class MobileApplicationAuthenticationHandler(
         }
 
         var descriptor = authenticated.Identity;
+        Context.Items[PresenceConnectionCredential.HttpContextItemKey] =
+            new PresenceConnectionCredential(
+                authenticated.SessionId,
+                descriptor.MembershipId,
+                descriptor.ApplicationKey,
+                Convert.ToHexString(SHA256.HashData(MobileApplicationTokenService.Hash(token))),
+                async (services, cancellation) =>
+            {
+                var current = await services.GetRequiredService<IMobileApplicationSessionAuthenticator>()
+                    .AuthenticateAsync(token, cancellation);
+                return current is not null && current.SessionId == authenticated.SessionId &&
+                    current.Identity == descriptor;
+            });
+        if (Request.Path == ChatContract.HubPath || Request.Path == ChatContract.HubPath + "/negotiate")
+            Context.Items[ChatConnectionCredential.Key(ChatActorMechanism.ApplicationSession)] = new ChatConnectionCredential(async (services, cancellation) =>
+            {
+                var current = await services.GetRequiredService<IMobileApplicationSessionAuthenticator>().AuthenticateAsync(token, cancellation);
+                return current is not null && current.SessionId == authenticated.SessionId && current.Identity == descriptor;
+            });
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, descriptor.SubjectId),
@@ -59,7 +81,8 @@ public sealed class MobileApplicationAuthenticationHandler(
             return authorization[prefix.Length..].Trim();
         }
 
-        if (Request.Path.StartsWithSegments("/hubs/games") &&
+        if ((Request.Path.StartsWithSegments("/hubs/games") ||
+             Request.Path == ChatContract.HubPath || Request.Path == ChatContract.HubPath + "/negotiate") &&
             Request.Query.TryGetValue("access_token", out var queryToken))
         {
             return queryToken.ToString().Trim();

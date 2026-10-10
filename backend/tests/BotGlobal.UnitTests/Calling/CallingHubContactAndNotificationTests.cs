@@ -4,6 +4,7 @@ using BotGlobal.Calling.Domain;
 using BotGlobal.Calling.Infrastructure;
 using BotGlobal.Calling.Realtime;
 using BotGlobal.Contracts.Calling;
+using BotGlobal.Contracts.Communication;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Notifications;
 using Microsoft.Data.Sqlite;
@@ -123,6 +124,46 @@ public sealed class CallingHubContactAndNotificationTests
         Assert.Empty(notifications.Items);
     }
 
+    [Fact]
+    public async Task Verified_unavailable_creates_no_session_history_or_push_while_unknown_creates_one_bounded_offer()
+    {
+        await using var db = CreateDb();
+        var caller = Guid.NewGuid();
+        var callee = Guid.NewGuid();
+        var accounts = new AccountDirectory(caller, callee);
+        await new NqrbContactBookService(db, accounts, TimeProvider.System)
+            .AddAsync(caller, callee, CancellationToken.None);
+        var registry = new CallSessionRegistry();
+        registry.Connected("caller", Identity(caller));
+        var directory = new ParticipantDirectory(callee);
+        var notifications = new RecordingNotifications();
+        var activity = new NoopActivity();
+        var disconnected = new PresenceDecision(
+            PresenceEvidenceState.Disconnected,
+            DateTimeOffset.UtcNow,
+            FullyCovered: true,
+            EligibleSessionCount: 1);
+        var unavailableHub = CreateHub(
+            registry, Eligibility(db, accounts), directory, notifications, "caller", caller,
+            activity: activity, presenceDecision: disconnected, wakeRoutes: new HashSet<Guid>());
+
+        var error = await Assert.ThrowsAsync<HubException>(() =>
+            unavailableHub.StartOutgoingCall(new(callee)));
+
+        Assert.Equal("call_peer_unavailable", error.Message);
+        Assert.Equal(0, activity.StartCalls);
+        Assert.Empty(notifications.Items);
+
+        var unknownHub = CreateHub(
+            registry, Eligibility(db, accounts), directory, notifications, "caller", caller,
+            activity: activity, presenceDecision: PresenceDecision.Unknown("legacy_client"), wakeRoutes: new HashSet<Guid>());
+        var started = await unknownHub.StartOutgoingCall(new(callee));
+
+        Assert.True(registry.IsLiveCall(started.CallId));
+        Assert.Equal(1, activity.StartCalls);
+        Assert.Single(notifications.Items);
+    }
+
     [Theory]
     [InlineData(true, IncomingCallNotificationKind.AnsweredElsewhere)]
     [InlineData(false, IncomingCallNotificationKind.Cancelled)]
@@ -222,13 +263,82 @@ public sealed class CallingHubContactAndNotificationTests
         RecordingClients? clients = null,
         NqrbGuestCallInviteService? guestInvites = null,
         NoopActivity? activity = null,
-        ClaimsPrincipal? principal = null) => new(
+        ClaimsPrincipal? principal = null,
+        PresenceDecision? presenceDecision = null,
+        IReadOnlySet<Guid>? wakeRoutes = null)
+    {
+        var sessionId = Guid.NewGuid();
+        var credential = new PresenceConnectionCredential(
+            sessionId,
+            membershipId,
+            BotGlobalApplications.Nqrb,
+            "test-revision",
+            (_, _) => ValueTask.FromResult(true));
+        var presenceSessions = new CurrentPresenceSessionDirectory(sessionId, membershipId);
+        var callingPresence = new CallingPresenceAdapter(
+            new FixedPresenceReader(presenceDecision ?? PresenceDecision.Unknown("synthetic")),
+            presenceSessions,
+            new AllowPresencePolicy(),
+            [new FixedReachability(wakeRoutes ?? new HashSet<Guid>())]);
+        var context = new TestContext(connectionId, principal ?? Principal(membershipId));
+        context.Items[PresenceConnectionCredential.HttpContextItemKey] = credential;
+        return new CallingHub(
             registry, null!, guestInvites!, directory, eligibility, notifications,
-            activity ?? new NoopActivity(), TimeProvider.System, NullLogger<CallingHub>.Instance)
+            activity ?? new NoopActivity(), callingPresence, TimeProvider.System,
+            NullLogger<CallingHub>.Instance)
         {
-            Context = new TestContext(connectionId, principal ?? Principal(membershipId)),
+            Context = context,
             Clients = clients ?? new RecordingClients()
         };
+    }
+
+    private sealed class CurrentPresenceSessionDirectory(Guid sessionId, Guid membershipId) : IPresenceSessionDirectory
+    {
+        private readonly PresenceValidatedSession current = new(
+            new PresenceSessionAuthority(
+                sessionId,
+                membershipId,
+                ApplicationId,
+                BotGlobalApplications.Nqrb,
+                DateTimeOffset.UtcNow.AddHours(1),
+                "test-revision"),
+            membershipId.ToString(),
+            "Person",
+            false);
+
+        public Task<PresenceValidatedSession?> ValidateConnectionAsync(
+            PresenceConnectionCredential credential,
+            CancellationToken cancellationToken) => Task.FromResult<PresenceValidatedSession?>(current);
+        public Task<IReadOnlyList<PresenceSessionAuthority>> ListActiveSessionsAsync(
+            string applicationKey,
+            Guid requestedMembershipId,
+            int maximumCount,
+            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<PresenceSessionAuthority>>([]);
+        public Task<bool> RevalidateAsync(PresenceSessionAuthority authority, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
+    }
+
+    private sealed class FixedPresenceReader(PresenceDecision decision) : IPresenceDecisionReader
+    {
+        public bool IsEnabled(string applicationKey) => true;
+        public Task<PresenceDecision> ObserveAsync(PresenceCounterpartRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(decision);
+    }
+
+    private sealed class FixedReachability(IReadOnlySet<Guid> reachable) : ICallingReachabilityResolver
+    {
+        public Task<IReadOnlySet<Guid>> FindReachableMembershipsAsync(
+            string applicationKey,
+            IReadOnlyCollection<CallingParticipantDescriptor> participants,
+            CancellationToken cancellationToken) => Task.FromResult(reachable);
+    }
+
+    private sealed class AllowPresencePolicy : IPresenceAccessPolicy
+    {
+        public string ApplicationKey => BotGlobalApplications.Nqrb;
+        public Task<bool> CanObserveAsync(Guid actorMembershipId, Guid counterpartMembershipId, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
+    }
 
     private sealed class Applications : IPlatformClientApplicationResolver
     {
@@ -345,8 +455,13 @@ public sealed class CallingHubContactAndNotificationTests
 
     private sealed class NoopActivity : ICallActivityService
     {
+        public int StartCalls { get; private set; }
         public int FinishCalls { get; private set; }
-        public Task StartAsync(CallSessionRegistry.Session session, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task StartAsync(CallSessionRegistry.Session session, CancellationToken cancellationToken)
+        {
+            StartCalls++;
+            return Task.CompletedTask;
+        }
         public Task AnswerAsync(CallSessionRegistry.Session session, DateTimeOffset at, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task FinishAsync(CallSessionRegistry.Session session, DateTimeOffset at, CancellationToken cancellationToken)
         {

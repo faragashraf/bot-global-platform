@@ -13,6 +13,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.graphics.graphicsLayer
 
 enum class NqrbGlyph {
     Home,
@@ -35,19 +38,95 @@ enum class NqrbGlyph {
     Ringtone,
     More,
     Close,
+    Chat,
+    Send,
+    Play,
+    Pause,
+    Check,
+    DoubleCheck,
+    Clock,
 }
 
 @Composable
 fun NqrbIcon(
     glyph: NqrbGlyph,
-    contentDescription: String,
+    contentDescription: String?,
     tint: Color,
     modifier: Modifier = Modifier,
 ) {
-    Canvas(modifier.semantics { this.contentDescription = contentDescription }) {
+    val mirror = LocalLayoutDirection.current == LayoutDirection.Rtl && glyph in setOf(NqrbGlyph.Back, NqrbGlyph.Send)
+    val semantics = if (contentDescription == null) Modifier else Modifier.semantics { this.contentDescription = contentDescription }
+    Canvas(modifier.then(semantics).graphicsLayer { scaleX = if (mirror) -1f else 1f }) {
         val stroke = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
         val center = Offset(size.width / 2f, size.height / 2f)
         when (glyph) {
+            NqrbGlyph.Check, NqrbGlyph.DoubleCheck -> {
+                fun drawCheck(horizontalOffset: Float) {
+                    drawLine(
+                        tint,
+                        Offset(size.width * (.18f + horizontalOffset), size.height * .52f),
+                        Offset(size.width * (.39f + horizontalOffset), size.height * .72f),
+                        strokeWidth = stroke.width,
+                        cap = StrokeCap.Round,
+                    )
+                    drawLine(
+                        tint,
+                        Offset(size.width * (.39f + horizontalOffset), size.height * .72f),
+                        Offset(size.width * (.78f + horizontalOffset), size.height * .28f),
+                        strokeWidth = stroke.width,
+                        cap = StrokeCap.Round,
+                    )
+                }
+                if (glyph == NqrbGlyph.DoubleCheck) {
+                    drawCheck(-.11f)
+                    drawCheck(.11f)
+                } else {
+                    drawCheck(0f)
+                }
+            }
+            NqrbGlyph.Clock -> {
+                drawCircle(tint, size.minDimension * .34f, center, style = stroke)
+                drawLine(tint, center, Offset(center.x, size.height * .3f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, center, Offset(size.width * .66f, size.height * .58f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
+            NqrbGlyph.Pause -> {
+                drawLine(tint, Offset(size.width * .35f, size.height * .2f), Offset(size.width * .35f, size.height * .8f), 3.dp.toPx(), StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .65f, size.height * .2f), Offset(size.width * .65f, size.height * .8f), 3.dp.toPx(), StrokeCap.Round)
+            }
+            NqrbGlyph.Chat -> {
+                drawRoundRect(
+                    tint,
+                    topLeft = Offset(size.width * .16f, size.height * .2f),
+                    size = Size(size.width * .68f, size.height * .52f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * .12f),
+                    style = stroke,
+                )
+                val tail = Path().apply {
+                    moveTo(size.width * .32f, size.height * .7f)
+                    lineTo(size.width * .25f, size.height * .84f)
+                    lineTo(size.width * .47f, size.height * .72f)
+                }
+                drawPath(tail, tint, style = stroke)
+            }
+            NqrbGlyph.Send -> {
+                val path = Path().apply {
+                    moveTo(size.width * .14f, size.height * .18f)
+                    lineTo(size.width * .86f, size.height * .5f)
+                    lineTo(size.width * .14f, size.height * .82f)
+                    lineTo(size.width * .3f, size.height * .53f)
+                    close()
+                }
+                drawPath(path, tint, style = stroke)
+            }
+            NqrbGlyph.Play -> {
+                val path = Path().apply {
+                    moveTo(size.width * .3f, size.height * .2f)
+                    lineTo(size.width * .78f, size.height * .5f)
+                    lineTo(size.width * .3f, size.height * .8f)
+                    close()
+                }
+                drawPath(path, tint, style = stroke)
+            }
             NqrbGlyph.Close -> {
                 drawLine(tint, Offset(size.width * .24f, size.height * .24f), Offset(size.width * .76f, size.height * .76f), strokeWidth = stroke.width, cap = StrokeCap.Round)
                 drawLine(tint, Offset(size.width * .76f, size.height * .24f), Offset(size.width * .24f, size.height * .76f), strokeWidth = stroke.width, cap = StrokeCap.Round)

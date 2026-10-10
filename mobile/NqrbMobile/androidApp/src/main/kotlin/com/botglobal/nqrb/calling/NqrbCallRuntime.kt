@@ -39,5 +39,6 @@ class NqrbCallRuntime(
         platform = AndroidCallPlatformLifecycle(application),
         nowEpochMillis = System::currentTimeMillis,
         logger = { message -> Log.i("NqrbCalling", message) },
+        requirePresentationForRingback = true,
     )
 }

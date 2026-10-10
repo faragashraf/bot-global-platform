@@ -2,12 +2,16 @@ package com.botglobal.nqrb.app.state
 
 import com.botglobal.mobile.platform.appearance.AppearanceController
 import com.botglobal.mobile.platform.calling.CallParticipant
+import com.botglobal.mobile.platform.calling.CallId
 import com.botglobal.mobile.platform.calling.CallAudioRoute
 import com.botglobal.mobile.platform.calling.CallDirection
 import com.botglobal.mobile.platform.calling.CallSessionSnapshot
 import com.botglobal.mobile.platform.calling.CallState
 import com.botglobal.mobile.platform.calling.CallableParticipant
 import com.botglobal.mobile.platform.calling.CallingDirectoryController
+import com.botglobal.mobile.platform.calling.CallingDirectorySnapshot
+import com.botglobal.mobile.platform.calling.CallingDirectoryStatus
+import com.botglobal.mobile.platform.calling.CallingParticipantAvailability
 import com.botglobal.mobile.platform.calling.CallSessionController
 import com.botglobal.mobile.platform.calling.CallTerminationReason
 import com.botglobal.mobile.platform.calling.CallActivityController
@@ -53,8 +57,20 @@ import com.botglobal.mobile.platform.voice.VoiceIceConfiguration
 import com.botglobal.mobile.platform.voice.VoiceJoinResult
 import com.botglobal.mobile.platform.voice.VoiceMediaPeerFactory
 import com.botglobal.mobile.platform.voice.VoiceSignalingTransport
+import com.botglobal.mobile.platform.chat.ChatController
+import com.botglobal.mobile.platform.chat.ChatConversation
+import com.botglobal.mobile.platform.chat.ChatSnapshot
+import com.botglobal.mobile.platform.chat.ChatVoiceDraft
+import com.botglobal.mobile.platform.chat.ChatVoicePlayer
+import com.botglobal.mobile.platform.chat.ChatVoiceRecorder
+import com.botglobal.mobile.platform.chat.ChatMessage
+import com.botglobal.mobile.platform.chat.UnavailableChatVoicePlayer
+import com.botglobal.mobile.platform.chat.UnavailableChatVoiceRecorder
+import com.botglobal.mobile.platform.preferences.InMemoryPreferenceStore
+import com.botglobal.mobile.platform.preferences.PreferenceStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -65,6 +81,13 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.collectLatest
+import com.botglobal.nqrb.app.data.NqrbSessionAvailability
+import com.botglobal.nqrb.app.data.NqrbSessionAvailabilitySource
+import com.botglobal.nqrb.app.data.chatIdentityKey
+import com.botglobal.mobile.platform.chat.ChatPlaybackPhase
+import com.botglobal.mobile.platform.chat.PendingChatVoice
+import com.botglobal.mobile.platform.chat.ChatVoiceFailure
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -81,6 +104,50 @@ enum class NqrbDestination {
     People,
     Profile,
     Settings,
+    Chats,
+    ChatThread,
+}
+
+enum class NqrbChatRecordingState { Idle, NeedsPermission, NeedsStorageDisclosure, Recording, Finalizing, Sending, Preview, AutoStoppedPreview, Unavailable, ActiveCall, CallInterrupted, BackgroundInterrupted, AudioInterrupted, PermissionDenied, PermissionPermanentlyDenied, PlaybackUnavailable, StorageUnavailable }
+
+sealed interface NqrbDirectChatEntryState {
+    data object Idle : NqrbDirectChatEntryState
+    data class Opening(val membershipReference: String) : NqrbDirectChatEntryState
+    data class Failed(val membershipReference: String) : NqrbDirectChatEntryState
+}
+
+enum class NqrbChatCallUnavailableReason { SignedOut, StaleAccount, Unknown, Self, Blocked, Offline }
+
+data class NqrbChatCallTarget(
+    val participant: CallableParticipant? = null,
+    val unavailableReason: NqrbChatCallUnavailableReason? = null,
+) {
+    val enabled: Boolean get() = participant != null && unavailableReason == null
+}
+
+internal fun resolveNqrbChatCallTarget(
+    conversation: ChatConversation?,
+    currentMembershipId: String?,
+    hasCurrentChatAccount: Boolean,
+    directory: CallingDirectorySnapshot,
+    blockedMembershipIds: Set<String>,
+    allowServerPrecheckedAttempt: Boolean = false,
+): NqrbChatCallTarget {
+    if (currentMembershipId.isNullOrBlank()) return NqrbChatCallTarget(unavailableReason = NqrbChatCallUnavailableReason.SignedOut)
+    if (!hasCurrentChatAccount) return NqrbChatCallTarget(unavailableReason = NqrbChatCallUnavailableReason.StaleAccount)
+    val reference = conversation?.counterpartReference?.takeIf(String::isNotBlank)
+        ?: return NqrbChatCallTarget(unavailableReason = NqrbChatCallUnavailableReason.Unknown)
+    if (reference == currentMembershipId) return NqrbChatCallTarget(unavailableReason = NqrbChatCallUnavailableReason.Self)
+    if (reference in blockedMembershipIds) return NqrbChatCallTarget(unavailableReason = NqrbChatCallUnavailableReason.Blocked)
+    if (directory.status != CallingDirectoryStatus.Ready) {
+        return NqrbChatCallTarget(unavailableReason = NqrbChatCallUnavailableReason.Unknown)
+    }
+    val participant = directory.participants.singleOrNull { it.membershipId == reference }
+        ?: return NqrbChatCallTarget(unavailableReason = NqrbChatCallUnavailableReason.Unknown)
+    if (!allowServerPrecheckedAttempt && participant.availability == CallingParticipantAvailability.Offline) {
+        return NqrbChatCallTarget(unavailableReason = NqrbChatCallUnavailableReason.Offline)
+    }
+    return NqrbChatCallTarget(participant = participant)
 }
 
 enum class NqrbStartupState { RestoringSession, Ready }
@@ -123,14 +190,20 @@ class NqrbAppState(
     ),
     val contactBook: NqrbContactBookController = NqrbContactBookController(),
     val callActivity: CallActivityController = CallActivityController(UnavailableCallActivityGateway),
+    val chat: ChatController = ChatController(),
+    val chatVoiceRecorder: ChatVoiceRecorder = UnavailableChatVoiceRecorder,
+    val chatVoicePlayer: ChatVoicePlayer = UnavailableChatVoicePlayer,
     val notificationInbox: NotificationInbox = InMemoryNotificationInbox(),
     private val push: PushRegistrationLifecycle = UnavailablePushRegistrationLifecycle,
     private val accountDeletion: NqrbAccountDeletionGateway = UnavailableNqrbAccountDeletionGateway,
     private val accountProfile: NqrbAccountProfileGateway = UnavailableNqrbAccountProfileGateway,
+    private val sessionAvailability: NqrbSessionAvailabilitySource? = accountProfile as? NqrbSessionAvailabilitySource,
     private val localAccountDataCleaner: NqrbLocalAccountDataCleaner = UnavailableNqrbLocalAccountDataCleaner,
     private val permissions: PermissionController = UnavailablePermissionController,
+    private val openMicrophoneSettings: () -> Unit = {},
     private val reviews: ReviewCoordinator? = null,
     private val updatePolicy: NqrbUpdatePolicyGateway = AllowCurrentNqrbUpdatePolicyGateway,
+    private val chatPreferences: PreferenceStore = InMemoryPreferenceStore(),
     private val currentVersion: String = "0.0.0",
     private val platform: String = "android",
     private val callActionScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
@@ -173,10 +246,131 @@ class NqrbAppState(
     private var foreground = false
     private var pendingReviewTrigger: ReviewTrigger? = null
     private val reviewWorkflowBlockers = MutableStateFlow<Set<String>>(emptySet())
+    private val mutableChatRecordingState = MutableStateFlow(NqrbChatRecordingState.Idle)
+    val chatRecordingState = mutableChatRecordingState.asStateFlow()
+    private val mutableChatVoiceDraft = MutableStateFlow<ChatVoiceDraft?>(null)
+    val chatVoiceDraft = mutableChatVoiceDraft.asStateFlow()
+    private var visibleChatRead: Pair<String, Long>? = null
+    private val chatBindingMutex = Mutex()
+    private var appliedAvailability: NqrbSessionAvailability? = null
+    private val mutableChatSubmitting = MutableStateFlow(false)
+    val chatSubmitting = mutableChatSubmitting.asStateFlow()
+    private val mutableChatLocalOnly = MutableStateFlow(false)
+    val chatLocalOnly = mutableChatLocalOnly.asStateFlow()
+    private val mutableDirectChatEntryState = MutableStateFlow<NqrbDirectChatEntryState>(NqrbDirectChatEntryState.Idle)
+    val directChatEntryState = mutableDirectChatEntryState.asStateFlow()
+    private var directChatRequestGeneration = 0L
+    private var directChatEntryJob: Job? = null
+    private var submittingDraft: ChatVoiceDraft? = null
+    private var abandonedSubmission = false
+    private data class PlaybackIntent(val generation: Long = 0, val key: String? = null, val job: Job? = null)
+    private val chatPlaybackIntent = MutableStateFlow(PlaybackIntent())
+    private val chatPlaybackSuspended = MutableStateFlow(false)
+
+    private fun invalidateChatPlayback(): Long {
+        while (true) {
+            val previous = chatPlaybackIntent.value
+            if (chatPlaybackIntent.compareAndSet(previous, PlaybackIntent(previous.generation + 1))) {
+                previous.job?.cancel()
+                return previous.generation + 1
+            }
+        }
+    }
+
+    private fun invalidateDirectChatEntry() {
+        directChatRequestGeneration += 1
+        directChatEntryJob?.cancel()
+        directChatEntryJob = null
+        mutableDirectChatEntryState.value = NqrbDirectChatEntryState.Idle
+    }
+
+    private fun launchChatPlayback(key: String, conversationId: String, play: suspend (Long) -> Unit) {
+        if (chatPlaybackSuspended.value || calling.state.value.state in OngoingCallStates ||
+            navigation.current != NqrbDestination.ChatThread || chat.state.value.selectedConversationId != conversationId) return
+        val binding = chat.state.value.accountGeneration
+        while (true) {
+            val previous = chatPlaybackIntent.value
+            if (previous.job?.isCompleted == false && previous.key == key) return
+            val intent = previous.generation + 1
+            val job = callActionScope.launch(start = CoroutineStart.LAZY) {
+                if (intent == chatPlaybackIntent.value.generation && binding == chat.state.value.accountGeneration &&
+                    !chatPlaybackSuspended.value && calling.state.value.state !in OngoingCallStates &&
+                    navigation.current == NqrbDestination.ChatThread && chat.state.value.selectedConversationId == conversationId) play(intent)
+            }
+            if (chatPlaybackIntent.compareAndSet(previous, PlaybackIntent(intent, key, job))) {
+                previous.job?.cancel(); job.start(); return
+            }
+            job.cancel()
+        }
+    }
+
+    private fun localChatAvailable(): Boolean = identity.state.value is FederatedAuthenticationState.SignedIn ||
+        sessionAvailability?.availability?.value is NqrbSessionAvailability.CachedLocal ||
+        sessionAvailability?.availability?.value is NqrbSessionAvailability.Online
+
+    private suspend fun applyChatAvailability(value: NqrbSessionAvailability) = chatBindingMutex.withLock {
+        if (sessionAvailability?.availability?.value != value || appliedAvailability == value) return@withLock
+        stopChatPlayback()
+        mutableChatLocalOnly.value = value is NqrbSessionAvailability.CachedLocal
+        val selected = chat.state.value.selectedConversationId
+        val previousAccount = chat.state.value.account
+        when (value) {
+            NqrbSessionAvailability.Unavailable -> {
+                invalidateDirectChatEntry()
+                chat.bind(null)
+                cancelChatRecording()
+                if (startupCompleted) navigation.reset(NqrbDestination.SignIn)
+            }
+            is NqrbSessionAvailability.CachedLocal -> chat.bindLocal(value.session.chatIdentityKey())
+            is NqrbSessionAvailability.Online -> chat.bindAuthenticated(resumeNetwork = false)
+        }
+        if (sessionAvailability?.availability?.value != value) return@withLock
+        if (previousAccount != null && previousAccount == chat.state.value.account) chat.selectConversation(selected)
+        appliedAvailability = value
+    }
+
+    private suspend fun renewChatAuthority(force: Boolean = false): Boolean {
+        val source = sessionAvailability ?: return identity.state.value is FederatedAuthenticationState.SignedIn
+        val before = source.availability.value
+        val online = (before as? NqrbSessionAvailability.Online)?.session
+        if (force || online == null || online.accessExpiresSoon() || chat.state.value.retryableFailure) runCatching { source.refreshAuthority() }
+        val value = source.availability.value
+        applyChatAvailability(value)
+        return value is NqrbSessionAvailability.Online && source.availability.value == value
+    }
 
     init {
+        sessionAvailability?.let { source -> callActionScope.launch {
+            source.availability.collectLatest { value ->
+                applyChatAvailability(value)
+                if (value is NqrbSessionAvailability.Online && source.availability.value == value) {
+                    runCatching { calling.connectSignaling() }
+                    runCatching { chat.resumeOnline() }
+                } else if (value is NqrbSessionAvailability.Unavailable) {
+                    calling.clearForAccountChange()
+                    runCatching { calling.disconnectSignaling() }
+                }
+            }
+        } }
+        chatVoiceRecorder.onAutomaticStop { draft ->
+            if (mutableChatRecordingState.value !in setOf(NqrbChatRecordingState.Recording, NqrbChatRecordingState.Finalizing)) {
+                if (draft != null) callActionScope.launch { chatVoiceRecorder.discard(draft) }
+                return@onAutomaticStop
+            }
+            if (draft != null && (draft.owner != chat.state.value.account || draft.conversationId != chat.state.value.selectedConversationId)) {
+                callActionScope.launch { chatVoiceRecorder.discard(draft) }
+                return@onAutomaticStop
+            }
+            mutableChatVoiceDraft.value = draft
+            mutableChatRecordingState.value = if (draft == null) NqrbChatRecordingState.AudioInterrupted else NqrbChatRecordingState.AutoStoppedPreview
+        }
         callActionScope.launch {
             calling.state.collect { snapshot ->
+                if (snapshot.state in OngoingCallStates) { invalidateChatPlayback(); chatVoicePlayer.stop() }
+                if (snapshot.state in OngoingCallStates && mutableChatRecordingState.value == NqrbChatRecordingState.Recording) {
+                    chatVoiceRecorder.cancel()
+                    mutableChatRecordingState.value = NqrbChatRecordingState.CallInterrupted
+                }
                 val callId = snapshot.callId?.value ?: return@collect
                 queueIncomingContactLookup(snapshot)
                 if (snapshot.state == CallState.Missed) markMissedCall(callId)
@@ -217,6 +411,7 @@ class NqrbAppState(
                 if (authenticated != null) {
                     runCatching { push.activate() }
                     runCatching { calling.connectSignaling() }
+                    runCatching { if (sessionAvailability == null) chat.bindAuthenticated() else applyChatAvailability(sessionAvailability.availability.value) }
                     contactBook.load(authenticated.session)
                     queueIncomingContactLookup(calling.state.value)
                     refreshCallingDirectory()
@@ -226,6 +421,9 @@ class NqrbAppState(
                     } else {
                         NqrbDestination.Home
                     }
+                } else if (sessionAvailability?.availability?.value is NqrbSessionAvailability.CachedLocal) {
+                    applyChatAvailability(sessionAvailability.availability.value)
+                    NqrbDestination.Chats
                 } else {
                     NqrbDestination.SignIn
                 },
@@ -237,6 +435,7 @@ class NqrbAppState(
     }
 
     suspend fun signInWithGoogle() {
+        invalidateDirectChatEntry()
         invalidateAccountProfileRequests(hideProfile = true)
         identity.signIn(FederatedIdentityProvider.Google)
         val authenticated = identity.state.value as? FederatedAuthenticationState.SignedIn
@@ -244,6 +443,7 @@ class NqrbAppState(
             invalidateAccountProfileRequests(hideProfile = true)
             runCatching { push.activate() }
             runCatching { calling.connectSignaling() }
+            runCatching { if (sessionAvailability == null) chat.bindAuthenticated() else applyChatAvailability(sessionAvailability.availability.value) }
             contactBook.load(authenticated.session)
             queueIncomingContactLookup(calling.state.value)
             refreshCallingDirectory()
@@ -264,10 +464,12 @@ class NqrbAppState(
                 NqrbAccountActionState.Deleting,
             )
         ) return
+        invalidateDirectChatEntry()
         val profileInvalidation = invalidateAccountProfileRequests(hideProfile = false)
         mutableAccountActionState.value = NqrbAccountActionState.SigningOut
         val unpair = try {
-            push.deactivate()
+            if (sessionAvailability?.availability?.value is NqrbSessionAvailability.CachedLocal)
+                PushRegistrationOutcome.Unregistered else push.deactivate()
         } catch (cancelled: CancellationException) {
             mutableAccountActionState.value = NqrbAccountActionState.Idle
             throw cancelled
@@ -280,6 +482,14 @@ class NqrbAppState(
             return
         }
         runCatching { calling.disconnectSignaling() }
+        invalidateChatPlayback()
+        runCatching { chat.bind(null) }
+        runCatching { chatVoiceRecorder.cancel() }
+        abandonedSubmission = true
+        mutableChatVoiceDraft.value?.takeUnless { it == submittingDraft }?.let { draft -> runCatching { chatVoiceRecorder.discard(draft) } }
+        runCatching { chatVoicePlayer.stop() }
+        mutableChatVoiceDraft.value = null
+        mutableChatRecordingState.value = NqrbChatRecordingState.Idle
         identity.logout()
         mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
         callingDirectory.clear()
@@ -338,7 +548,17 @@ class NqrbAppState(
     }
 
     private suspend fun completeLocalAccountDeletion() {
+        invalidateDirectChatEntry()
+        val unsentPreview = mutableChatVoiceDraft.value
+        invalidateChatPlayback()
+        chat.state.value.account?.let { runCatching { chat.deleteAccountData(it) } }
         runCatching { calling.disconnectSignaling() }
+        runCatching { chat.bind(null) }
+        if (unsentPreview != null) runCatching { chatVoiceRecorder.discard(unsentPreview) }
+        runCatching { chatVoiceRecorder.cancel() }
+        runCatching { chatVoicePlayer.stop() }
+        mutableChatVoiceDraft.value = null
+        mutableChatRecordingState.value = NqrbChatRecordingState.Idle
         runCatching { push.clearLocalState() }
         runCatching { localAccountDataCleaner.clear() }
         identity.logout()
@@ -359,13 +579,367 @@ class NqrbAppState(
     }
 
     fun openSettings() {
+        invalidateDirectChatEntry()
         navigation.push(NqrbDestination.Settings)
         callActionScope.launch { callActivity.loadUsage() }
     }
 
+    fun openChats() {
+        if (!localChatAvailable()) return
+        invalidateDirectChatEntry()
+        stopChatPlayback()
+        navigation.push(NqrbDestination.Chats)
+        callActionScope.launch { if (renewChatAuthority()) chat.sync() }
+    }
+
+    fun refreshChat() { callActionScope.launch {
+        runCatching { if (renewChatAuthority(force = true)) {
+            if (chat.state.value.account == null) chat.bindAuthenticated() else { chat.resumeOnline() }
+        } }
+            .onFailure { mutableChatRecordingState.value = NqrbChatRecordingState.StorageUnavailable }
+    } }
+
+    fun leaveChat() {
+        visibleChatRead = null
+        cancelChatRecording()
+        callActionScope.launch { chat.selectConversation(null) }
+        navigation.navigateBack()
+    }
+
+    fun openChat(conversationId: String) {
+        if (!localChatAvailable()) return
+        stopChatPlayback()
+        callActionScope.launch {
+            chat.selectConversation(conversationId)
+            navigation.push(NqrbDestination.ChatThread)
+            launch { if (renewChatAuthority()) chat.sync(conversationId) }
+        }
+    }
+
+    fun openChatWith(reference: String) {
+        val normalizedReference = reference.trim()
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn ?: return
+        val currentMembershipId = signedIn.session.identity.membershipId
+        val knownMembership = contactBook.state.value.contacts.any { it.membershipId == normalizedReference } ||
+            callingDirectory.state.value.participants.any { it.membershipId == normalizedReference }
+        val blocked = contactBook.state.value.blockedAccounts.any { it.membershipId == normalizedReference }
+        if (normalizedReference.isBlank() || normalizedReference == currentMembershipId || blocked || !knownMembership) {
+            invalidateDirectChatEntry()
+            mutableDirectChatEntryState.value = NqrbDirectChatEntryState.Failed(normalizedReference)
+            return
+        }
+        if ((mutableDirectChatEntryState.value as? NqrbDirectChatEntryState.Opening)?.membershipReference == normalizedReference) return
+        val requestOrigin = navigation.current
+        invalidateDirectChatEntry()
+        stopChatPlayback()
+        val requestGeneration = directChatRequestGeneration
+        mutableDirectChatEntryState.value = NqrbDirectChatEntryState.Opening(normalizedReference)
+        directChatEntryJob = callActionScope.launch {
+            try {
+                if (!renewChatAuthority()) {
+                    failDirectChatEntry(requestGeneration, normalizedReference)
+                    return@launch
+                }
+                val bound = chat.state.value
+                val expectedAccount = bound.account
+                val expectedAccountGeneration = bound.accountGeneration
+                if (expectedAccount == null || !isDirectChatRequestCurrent(
+                        requestGeneration,
+                        signedIn.session,
+                        expectedAccount,
+                        expectedAccountGeneration,
+                        requestOrigin,
+                    )
+                ) {
+                    failDirectChatEntry(requestGeneration, normalizedReference)
+                    return@launch
+                }
+                val existing = bound.conversations.firstOrNull { it.counterpartReference == normalizedReference }
+                val conversation = existing ?: chat.createDirect(normalizedReference)
+                if (conversation?.counterpartReference != normalizedReference ||
+                    !isDirectChatRequestCurrent(
+                        requestGeneration,
+                        signedIn.session,
+                        expectedAccount,
+                        expectedAccountGeneration,
+                        requestOrigin,
+                    )
+                ) {
+                    failDirectChatEntry(requestGeneration, normalizedReference)
+                    return@launch
+                }
+                chat.selectConversation(conversation.conversationId)
+                if (!isDirectChatRequestCurrent(
+                        requestGeneration,
+                        signedIn.session,
+                        expectedAccount,
+                        expectedAccountGeneration,
+                        requestOrigin,
+                    ) ||
+                    chat.state.value.selectedConversationId != conversation.conversationId
+                ) {
+                    failDirectChatEntry(requestGeneration, normalizedReference)
+                    return@launch
+                }
+                mutableDirectChatEntryState.value = NqrbDirectChatEntryState.Idle
+                directChatEntryJob = null
+                navigation.push(NqrbDestination.ChatThread)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                failDirectChatEntry(requestGeneration, normalizedReference)
+            }
+        }
+    }
+
+    private fun failDirectChatEntry(requestGeneration: Long, reference: String) {
+        if (requestGeneration != directChatRequestGeneration) return
+        directChatEntryJob = null
+        mutableDirectChatEntryState.value = NqrbDirectChatEntryState.Failed(reference)
+    }
+
+    private fun isDirectChatRequestCurrent(
+        requestGeneration: Long,
+        expectedSession: MobileSession,
+        expectedAccount: com.botglobal.mobile.platform.chat.ChatAccountScope,
+        expectedAccountGeneration: Long,
+        expectedOrigin: NqrbDestination,
+    ): Boolean {
+        val current = chat.state.value
+        return requestGeneration == directChatRequestGeneration &&
+            isCurrentSession(expectedSession) &&
+            current.account == expectedAccount &&
+            current.accountGeneration == expectedAccountGeneration &&
+            navigation.current == expectedOrigin
+    }
+
+    fun handleSystemBack(): Boolean {
+        val cancelledDirectChatEntry = mutableDirectChatEntryState.value is NqrbDirectChatEntryState.Opening
+        if (cancelledDirectChatEntry) invalidateDirectChatEntry()
+        if (!navigation.canNavigateBack) return cancelledDirectChatEntry
+        if (navigation.current == NqrbDestination.ChatThread) leaveChat() else navigation.navigateBack()
+        return true
+    }
+
+    fun resolveChatCallTarget(conversationId: String?): NqrbChatCallTarget {
+        val signedIn = identity.state.value as? FederatedAuthenticationState.SignedIn
+        val snapshot = chat.state.value
+        val conversation = snapshot.conversations.firstOrNull {
+            it.conversationId == conversationId && snapshot.selectedConversationId == conversationId
+        }
+        val selectedAccount = snapshot.account
+        val currentAuthority = if (
+            signedIn == null ||
+            selectedAccount == null ||
+            selectedAccount.subjectId.trim() != signedIn.session.identity.subjectId.trim()
+        ) false else {
+            when (val availability = sessionAvailability?.availability?.value) {
+                null -> isCurrentSession(signedIn.session)
+                is NqrbSessionAvailability.Online -> availability.session.sameAccountAs(signedIn.session)
+                else -> false
+            }
+        }
+        return resolveNqrbChatCallTarget(
+            conversation = conversation,
+            currentMembershipId = signedIn?.session?.identity?.membershipId,
+            hasCurrentChatAccount = currentAuthority,
+            directory = callingDirectory.state.value,
+            blockedMembershipIds = contactBook.state.value.blockedAccounts.mapTo(mutableSetOf()) { it.membershipId },
+            allowServerPrecheckedAttempt = true,
+        )
+    }
+
+    fun requestChatCall(conversationId: String) {
+        resolveChatCallTarget(conversationId).participant?.let(::requestOutgoingCall)
+    }
+
+    fun sendChatText(text: String, onQueued: () -> Unit = {}) {
+        val conversationId = chat.state.value.selectedConversationId ?: return
+        val account = chat.state.value.account ?: return
+        if (!mutableChatSubmitting.compareAndSet(false, true)) return
+        callActionScope.launch {
+            try {
+                val sent = runCatching { chat.enqueueText(conversationId, text, account) }.getOrNull()
+                if (sent != null) { onQueued(); launch { if (renewChatAuthority()) chat.flush() } }
+                else mutableChatRecordingState.value = NqrbChatRecordingState.StorageUnavailable
+            } finally { mutableChatSubmitting.value = false }
+        }
+    }
+
+    fun markChatRead(conversationId: String, sequence: Long) {
+        visibleChatRead = conversationId to sequence
+        val account = chat.state.value.account ?: return
+        if (foreground && navigation.current == NqrbDestination.ChatThread && chat.state.value.selectedConversationId == conversationId && sequence > 0)
+            callActionScope.launch { runCatching { chat.markRead(conversationId, sequence, account) } }
+    }
+
+    fun requestChatVoiceRecording() {
+        callActionScope.launch {
+            if (mutableChatSubmitting.value) return@launch
+            if (calling.state.value.state in OngoingCallStates || !chatVoiceRecorder.available) {
+                mutableChatRecordingState.value = if (calling.state.value.state in OngoingCallStates) NqrbChatRecordingState.ActiveCall else NqrbChatRecordingState.Unavailable
+                return@launch
+            }
+            when (permissions.state(PermissionKind.Microphone)) {
+                PermissionState.Granted -> continueToChatStorageDisclosure()
+                PermissionState.Unknown, PermissionState.Denied -> mutableChatRecordingState.value = NqrbChatRecordingState.NeedsPermission
+                PermissionState.PermanentlyDenied -> mutableChatRecordingState.value = NqrbChatRecordingState.PermissionPermanentlyDenied
+                PermissionState.Unavailable -> mutableChatRecordingState.value = NqrbChatRecordingState.Unavailable
+            }
+        }
+    }
+
+    fun continueChatVoicePermission() {
+        callActionScope.launch {
+            when (permissions.requestAfterExplanation(PermissionKind.Microphone)) {
+                PermissionState.Granted -> continueToChatStorageDisclosure()
+                PermissionState.PermanentlyDenied -> mutableChatRecordingState.value = NqrbChatRecordingState.PermissionPermanentlyDenied
+                else -> mutableChatRecordingState.value = NqrbChatRecordingState.PermissionDenied
+            }
+        }
+    }
+
+    private suspend fun continueToChatStorageDisclosure() {
+        if (chatPreferences.boolean(ChatStorageDisclosureKey) == true) startChatRecording()
+        else mutableChatRecordingState.value = NqrbChatRecordingState.NeedsStorageDisclosure
+    }
+
+    fun acceptChatStorageDisclosure() {
+        chatPreferences.putBoolean(ChatStorageDisclosureKey, true)
+        callActionScope.launch { startChatRecording() }
+    }
+
+    private suspend fun startChatRecording() {
+        invalidateChatPlayback()
+        if (calling.state.value.state in OngoingCallStates) {
+            mutableChatRecordingState.value = NqrbChatRecordingState.ActiveCall
+            return
+        }
+        val account = chat.state.value.account ?: return
+        val conversation = chat.state.value.selectedConversationId ?: return
+        mutableChatVoiceDraft.value?.takeUnless { it == submittingDraft }?.let { chatVoiceRecorder.discard(it) }
+        mutableChatVoiceDraft.value = null
+        chatVoicePlayer.stop()
+        mutableChatRecordingState.value = if (chatVoiceRecorder.start(account, conversation)) NqrbChatRecordingState.Recording else NqrbChatRecordingState.Unavailable
+    }
+
+    fun finishChatRecording() {
+        if (mutableChatRecordingState.value != NqrbChatRecordingState.Recording) return
+        mutableChatRecordingState.value = NqrbChatRecordingState.Finalizing
+        callActionScope.launch {
+            val draft = chatVoiceRecorder.stop()
+            if (mutableChatRecordingState.value != NqrbChatRecordingState.Finalizing) {
+                draft?.let { chatVoiceRecorder.discard(it) }; return@launch
+            }
+            mutableChatVoiceDraft.value = draft
+            mutableChatRecordingState.value = if (draft == null) NqrbChatRecordingState.StorageUnavailable else NqrbChatRecordingState.Preview
+        }
+    }
+
+    fun cancelChatRecording() {
+        val playbackIntent = invalidateChatPlayback()
+        val draft = mutableChatVoiceDraft.value
+        val previewOwned = draft != submittingDraft
+        if (submittingDraft != null) abandonedSubmission = true
+        mutableChatVoiceDraft.value = null
+        mutableChatRecordingState.value = NqrbChatRecordingState.Idle
+        callActionScope.launch {
+            chatVoiceRecorder.cancel()
+            if (draft != null && previewOwned) chatVoiceRecorder.discard(draft)
+            if (chatPlaybackIntent.value.generation == playbackIntent) chatVoicePlayer.stop()
+        }
+    }
+
+    private suspend fun toggleChatPlayback(key: String, play: suspend () -> Boolean) {
+        val state = chatVoicePlayer.state.value
+        when {
+            state.key == key && state.phase == ChatPlaybackPhase.Playing -> chatVoicePlayer.pause()
+            state.key == key && state.phase == ChatPlaybackPhase.Paused -> chatVoicePlayer.resume()
+            state.key == key && state.phase == ChatPlaybackPhase.Preparing -> Unit
+            !play() -> { mutableChatRecordingState.value = NqrbChatRecordingState.PlaybackUnavailable }
+        }
+    }
+    fun previewChatVoice() { mutableChatVoiceDraft.value?.let { draft ->
+        val conversation = draft.conversationId ?: return
+        launchChatPlayback(draft.token, conversation) { toggleChatPlayback(draft.token) { chatVoicePlayer.playDraft(draft) } }
+    } }
+    fun stopChatPlayback() {
+        val intent = invalidateChatPlayback()
+        callActionScope.launch { if (chatPlaybackIntent.value.generation == intent) chatVoicePlayer.stop() }
+    }
+    fun openChatMicrophoneSettings() { dismissChatVoiceState(); openMicrophoneSettings() }
+    fun logoutFromLocalChat() { callActionScope.launch { logout() } }
+    fun playPendingChatVoice(pending: PendingChatVoice) {
+        val account = chat.state.value.account ?: return
+        if (pending.failure == ChatVoiceFailure.MissingOrCorrupt ||
+            chat.state.value.pendingVoices.none { it == pending }) return
+        val draft = ChatVoiceDraft(pending.draftToken, pending.durationMilliseconds, pending.length,
+            owner = account, conversationId = pending.conversationId, sha256 = pending.sha256)
+        launchChatPlayback(draft.token, pending.conversationId) { toggleChatPlayback(draft.token) { chatVoicePlayer.playDraft(draft) } }
+    }
+    fun removeFailedChatVoice(id: String) { callActionScope.launch { chat.removeFailedVoice(id) } }
+    fun removeFailedChatText(id: String) { callActionScope.launch { chat.removeFailedText(id) } }
+    fun reconcileFailedChatText(id: String) { callActionScope.launch { if (renewChatAuthority()) chat.reconcileFailedText(id) } }
+    fun editFailedChatText(id: String, text: String, onQueued: () -> Unit) {
+        if (!mutableChatSubmitting.compareAndSet(false, true)) return
+        callActionScope.launch {
+            try {
+                if (runCatching { chat.editFailedText(id, text) }.getOrDefault(false)) {
+                    onQueued(); launch { if (renewChatAuthority()) chat.flush() }
+                } else mutableChatRecordingState.value = NqrbChatRecordingState.StorageUnavailable
+            } finally { mutableChatSubmitting.value = false }
+        }
+    }
+
+    fun sendChatVoice() {
+        val draft = mutableChatVoiceDraft.value ?: return
+        val conversationId = draft.conversationId ?: return
+        if (draft.owner != chat.state.value.account || conversationId != chat.state.value.selectedConversationId) return
+        if (!mutableChatSubmitting.compareAndSet(false, true)) return
+        invalidateChatPlayback()
+        submittingDraft = draft
+        abandonedSubmission = false
+        mutableChatRecordingState.value = NqrbChatRecordingState.Sending
+        callActionScope.launch {
+            try {
+                chatVoicePlayer.stop()
+                val accepted = runCatching { chat.enqueueVoice(conversationId, draft) }.getOrNull() != null
+                if (accepted) {
+                    if (mutableChatVoiceDraft.value == draft) mutableChatVoiceDraft.value = null
+                    if (!abandonedSubmission) mutableChatRecordingState.value = NqrbChatRecordingState.Idle
+                    launch { if (renewChatAuthority()) chat.flush() }
+                } else if (abandonedSubmission || draft.owner != chat.state.value.account) {
+                    chatVoiceRecorder.discard(draft)
+                } else mutableChatRecordingState.value = NqrbChatRecordingState.StorageUnavailable
+            } finally { submittingDraft = null; mutableChatSubmitting.value = false }
+        }
+    }
+
+    fun playChatVoice(message: ChatMessage) {
+        val transferId = message.voiceTransferId ?: return
+        val scope = chat.state.value.account ?: return
+        val binding = chat.state.value.accountGeneration
+        launchChatPlayback(transferId, message.conversationId) { intent ->
+            val existing = chat.state.value.localVoiceKeys[transferId]
+            if (existing == null) chatVoicePlayer.stop()
+            val key = existing ?: try { chat.downloadVoice(message)?.localKey }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { null }
+            if (key != null && intent == chatPlaybackIntent.value.generation && binding == chat.state.value.accountGeneration &&
+                chat.state.value.account == scope && !chatPlaybackSuspended.value && calling.state.value.state !in OngoingCallStates &&
+                navigation.current == NqrbDestination.ChatThread && chat.state.value.selectedConversationId == message.conversationId) {
+                toggleChatPlayback(key) { chatVoicePlayer.play(scope, key) }
+            }
+        }
+    }
+
+    fun dismissChatVoiceState() { if (mutableChatRecordingState.value != NqrbChatRecordingState.Recording)
+        mutableChatRecordingState.value = if (mutableChatVoiceDraft.value == null) NqrbChatRecordingState.Idle else NqrbChatRecordingState.Preview }
+
     fun selectTopLevel(destination: NqrbDestination): Boolean {
         require(destination in TOP_LEVEL_DESTINATIONS) { "Destination is not a top-level NQRB destination." }
         if (identity.state.value !is FederatedAuthenticationState.SignedIn) return false
+        invalidateDirectChatEntry()
         navigation.selectTopLevel(destination)
         if (destination == NqrbDestination.Home) refreshCallingDirectory()
         if (destination == NqrbDestination.People) {
@@ -457,6 +1031,7 @@ class NqrbAppState(
                     accountProfileRequestGeneration++
                     mutableAccountProfileState.value = NqrbAccountProfileState.Hidden
                     identity.logout()
+                    chat.bind(null)
                     navigation.reset(NqrbDestination.SignIn)
                 }
                 NqrbAccountProfileResult.RetryableFailure ->
@@ -523,6 +1098,11 @@ class NqrbAppState(
     }
 
     private suspend fun signedInSessionForAction(expected: MobileSession): MobileSession? {
+        sessionAvailability?.let { source ->
+            if (!renewChatAuthority()) return null
+            return (source.availability.value as? NqrbSessionAvailability.Online)?.session
+                ?.takeIf { it.sameAccountAs(expected) }
+        }
         val current = identity.state.value as? FederatedAuthenticationState.SignedIn
             ?: return null
         if (!current.session.sameAccountAs(expected)) return null
@@ -545,26 +1125,41 @@ class NqrbAppState(
     }
 
     fun onForeground() {
+        chatPlaybackSuspended.value = false
         foreground = true
         foregroundRefreshJob?.cancel()
         foregroundRefreshJob = callActionScope.launch {
             requestReviewIfReady(ReviewTrigger.Foreground)
             while (isActive) {
                 if (startupState.value == NqrbStartupState.Ready &&
-                    identity.state.value is FederatedAuthenticationState.SignedIn
+                    identity.state.value is FederatedAuthenticationState.SignedIn &&
+                    (sessionAvailability == null || sessionAvailability.availability.value is NqrbSessionAvailability.Online)
                 ) {
                     runCatching { calling.connectSignaling() }
                 }
                 refreshVisibleData()
+                runCatching {
+                    if (localChatAvailable() && renewChatAuthority()) {
+                        if (chat.state.value.account == null) chat.bindAuthenticated() else { chat.resumeOnline() }
+                    }
+                    visibleChatRead?.let { (conversation, sequence) -> markChatRead(conversation, sequence) }
+                }
                 delay(5 * 60 * 1000L)
             }
         }
     }
 
     fun onBackground() {
+        chatPlaybackSuspended.value = true
+        val playbackIntent = invalidateChatPlayback()
         foreground = false
         foregroundRefreshJob?.cancel()
         foregroundRefreshJob = null
+        callActionScope.launch {
+            if (mutableChatRecordingState.value == NqrbChatRecordingState.Recording) chatVoiceRecorder.cancel()
+            if (chatPlaybackIntent.value.generation == playbackIntent) chatVoicePlayer.stop()
+            if (mutableChatRecordingState.value == NqrbChatRecordingState.Recording) mutableChatRecordingState.value = NqrbChatRecordingState.BackgroundInterrupted
+        }
     }
 
     private suspend fun refreshVisibleData() {
@@ -852,6 +1447,10 @@ class NqrbAppState(
         callActionScope.launch { requestAcceptIncomingCallInternal() }
     }
 
+    fun confirmIncomingCallPresented(callId: CallId) {
+        callActionScope.launch { calling.confirmIncomingPresented(callId) }
+    }
+
     private suspend fun requestAcceptIncomingCallInternal() {
         pendingMicrophoneAction = PendingMicrophoneAction.Incoming
         pendingOutgoingParticipant = null
@@ -894,6 +1493,10 @@ class NqrbAppState(
 
     fun rejectIncomingCall() {
         callActionScope.launch { calling.rejectIncoming() }
+    }
+
+    fun dismissCallStatus() {
+        callActionScope.launch { calling.dismissTerminal() }
     }
 
     fun cancelMicrophoneExplanation() {
@@ -977,6 +1580,7 @@ class NqrbAppState(
             CallState.Ended,
             CallState.Failed,
         )
+        private const val ChatStorageDisclosureKey = "chat_voice_storage_disclosure"
 
         private fun unavailableCalling(): CallSessionController {
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

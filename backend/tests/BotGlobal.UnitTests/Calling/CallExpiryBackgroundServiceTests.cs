@@ -78,6 +78,39 @@ public sealed class CallExpiryBackgroundServiceTests
         Assert.Single(dispatcher.Notifications);
     }
 
+    [Fact]
+    public async Task Lazy_expiry_from_a_status_path_is_still_drained_exactly_once_by_the_worker()
+    {
+        var registry = new CallSessionRegistry();
+        var now = DateTimeOffset.Parse("2026-10-09T12:00:00Z");
+        var caller = new ApplicationIdentityDescriptor(Guid.NewGuid(), null, "caller", "nqrb", "Caller", false);
+        var callee = new ApplicationIdentityDescriptor(Guid.NewGuid(), null, "callee", "nqrb", "Callee", false);
+        registry.Connected("caller", caller);
+        registry.Connected("callee", callee);
+        var started = registry.Start("caller", new CallingParticipantDescriptor(
+            callee.MembershipId, "nqrb", callee.SubjectId, callee.DisplayName, true), now, TimeSpan.FromSeconds(1));
+        var delivery = registry.DeliveryStatus("caller", started.Session.CallId, now.AddSeconds(2));
+        Assert.True(delivery.Terminal);
+        registry.Disconnected("caller");
+        registry.Disconnected("callee");
+        var dispatcher = new RecordingDispatcher();
+        var services = new ServiceCollection()
+            .AddSingleton<IIncomingCallNotificationDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        await using (services)
+        {
+            var worker = new CallExpiryBackgroundService(
+                registry, null!, services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System,
+                NullLogger<CallExpiryBackgroundService>.Instance);
+
+            await worker.ProcessExpiredCallsAsync(now.AddSeconds(2), default);
+            await worker.ProcessExpiredCallsAsync(now.AddSeconds(3), default);
+        }
+
+        Assert.Single(dispatcher.Notifications);
+        Assert.Equal(started.Session.CallId, dispatcher.Notifications[0].CallId);
+    }
+
     private sealed class RecordingDispatcher : IIncomingCallNotificationDispatcher
     {
         public List<IncomingCallNotification> Notifications { get; } = [];

@@ -4,6 +4,7 @@ import com.botglobal.mobile.platform.calling.CallableParticipant
 import com.botglobal.mobile.platform.calling.CallingDirectory
 import com.botglobal.mobile.platform.calling.CallingParticipantAvailability
 import com.botglobal.mobile.platform.identity.SessionVault
+import com.botglobal.mobile.platform.presence.PresenceEvidence
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -42,11 +43,20 @@ class NqrbCallingDirectoryApi(
                     availability = runCatching {
                         CallingParticipantAvailability.valueOf(participant.availability)
                     }.getOrDefault(CallingParticipantAvailability.Offline),
+                    presenceEvidence = participant.presenceEvidence?.let { value ->
+                        runCatching { PresenceEvidence.valueOf(value) }.getOrDefault(PresenceEvidence.Unknown)
+                    } ?: PresenceEvidence.Unknown,
+                    presenceObservedAtEpochMillis = participant.presenceObservedAtUtc?.let(::parseEpochMillis),
+                    presenceFullyCovered = participant.presenceFullyCovered,
                 )
             }
     }
 
     private fun endpoint(path: String) = apiBaseUrl.trimEnd('/') + path
+
+    private fun parseEpochMillis(value: String): Long? = runCatching {
+        kotlin.time.Instant.parse(value).toEpochMilliseconds()
+    }.getOrNull()
 }
 
 class NqrbCallingDirectoryAuthenticationException : Exception()
@@ -58,4 +68,7 @@ private data class CallableParticipantDto(
     val membershipId: String,
     val displayName: String,
     val availability: String = "Offline",
+    val presenceEvidence: String? = null,
+    val presenceObservedAtUtc: String? = null,
+    val presenceFullyCovered: Boolean? = null,
 )

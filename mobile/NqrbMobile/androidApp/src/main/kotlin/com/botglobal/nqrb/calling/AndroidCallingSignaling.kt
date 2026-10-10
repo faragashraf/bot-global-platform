@@ -6,6 +6,8 @@ import com.botglobal.mobile.platform.calling.CallParticipant
 import com.botglobal.mobile.platform.calling.CallSignaling
 import com.botglobal.mobile.platform.calling.CallSignalingEvent
 import com.botglobal.mobile.platform.calling.CallTerminationReason
+import com.botglobal.mobile.platform.calling.CallDeliveryState
+import com.botglobal.mobile.platform.calling.CallDeliveryStatus
 import com.botglobal.mobile.platform.calling.OutgoingCallRequest
 import com.botglobal.mobile.platform.calling.StartedCall
 import com.botglobal.mobile.platform.identity.SessionVault
@@ -17,8 +19,8 @@ import com.botglobal.mobile.platform.voice.VoiceSignalingTransport
 import com.microsoft.signalr.HubConnection
 import com.microsoft.signalr.HubConnectionBuilder
 import com.microsoft.signalr.HubConnectionState
-import com.microsoft.signalr.Subscription
 import io.reactivex.rxjava3.core.Single
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
@@ -28,7 +30,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -44,70 +45,82 @@ class AndroidCallingSignaling(
     override val events = mutableEvents.asSharedFlow()
     override val signals = mutableSignals.asSharedFlow()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val hubUrl = "${apiBaseUrl.trimEnd('/')}/hubs/calling"
     @Volatile private var disconnectRequested = false
     @Volatile private var recoveryPending = false
     private var reconnectJob: Job? = null
-    private val subscriptions = mutableListOf<Subscription>()
-    private val hub: HubConnection = HubConnectionBuilder
-        .create("${apiBaseUrl.trimEnd('/')}/hubs/calling")
-        .withAccessTokenProvider(Single.defer {
-            val token = runBlocking { sessionVault.restore()?.accessToken }
-            if (token.isNullOrBlank()) Single.error(IllegalStateException("Mobile session is unavailable."))
-            else Single.just(token)
-        })
-        .build()
-        .also { connection ->
-            connection.setKeepAliveInterval(5_000)
-            connection.setServerTimeout(30_000)
-            register(connection)
-        }
+    private var connectionGeneration = 0L
+    @Volatile private var activeBinding: ConnectionBinding? = null
 
     override suspend fun connect() {
         disconnectRequested = false
         ensureConnected()
     }
 
-    override suspend fun disconnect() = connectionMutex.withLock {
-        disconnectRequested = true
-        recoveryPending = false
-        reconnectJob?.cancel()
-        if (hub.connectionState != HubConnectionState.DISCONNECTED) io {
-            hub.stop().timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingAwait()
+    override suspend fun disconnect() {
+        val stale = connectionMutex.withLock {
+            disconnectRequested = true
+            recoveryPending = false
+            reconnectJob?.cancel()
+            connectionGeneration += 1
+            activeBinding.also { activeBinding = null }
+        }
+        stale?.hub?.takeIf { it.connectionState != HubConnectionState.DISCONNECTED }?.let { hub ->
+            io { hub.stop().timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingAwait() }
         }
     }
 
     override suspend fun startOutgoing(request: OutgoingCallRequest): StartedCall {
-        ensureConnected()
+        val binding = ensureConnected()
         return io {
-            hub.invoke(StartedCallDto::class.java, "StartOutgoingCall", StartCallDto(request.callee.membershipId))
+            binding.hub.invoke(StartedCallDto::class.java, "StartOutgoingCall", StartCallDto(request.callee.membershipId))
                 .timeout(OperationTimeoutSeconds, TimeUnit.SECONDS)
                 .blockingGet()
-        }.let { StartedCall(CallId(it.callId), CallParticipant(it.calleeMembershipId, it.calleeDisplayName)) }
+        }.also { requireCurrent(binding) }.let {
+            StartedCall(
+                CallId(it.callId),
+                CallParticipant(it.calleeMembershipId, it.calleeDisplayName),
+                it.delivery?.toDomain(),
+            )
+        }
     }
 
     override suspend fun receiveIncoming(callId: CallId) {
-        ensureConnected()
-        val value = io { hub.invoke(IncomingCallDto::class.java, "GetIncomingCall", CallIdDto(callId.value)).timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingGet() }
+        val binding = ensureConnected()
+        val value = io { binding.hub.invoke(IncomingCallDto::class.java, "GetIncomingCall", CallIdDto(callId.value)).timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingGet() }
+        requireCurrent(binding)
         mutableEvents.emit(CallSignalingEvent.IncomingOffered(CallId(value.callId), value.applicationContext,
             CallParticipant(value.callerMembershipId, value.callerDisplayName)))
+    }
+
+    override suspend fun confirmIncomingReceipt(callId: CallId) =
+        invoke("ConfirmIncomingReceipt", CallIdDto(callId.value))
+
+    override suspend fun deliveryStatus(callId: CallId): CallDeliveryStatus? {
+        val binding = ensureConnected()
+        return io {
+            binding.hub.invoke(CallDeliveryStatusDto::class.java, "GetCallDeliveryStatus", CallIdDto(callId.value))
+                .timeout(OperationTimeoutSeconds, TimeUnit.SECONDS)
+                .blockingGet()
+        }.also { requireCurrent(binding) }.toDomain()
     }
 
     override suspend fun answer(callId: CallId) = invoke("AnswerIncomingCall", CallIdDto(callId.value))
     override suspend fun reject(callId: CallId) = invoke("RejectIncomingCall", CallIdDto(callId.value))
 
     override suspend fun end(callId: CallId, reason: CallTerminationReason) {
-        if (hub.connectionState == HubConnectionState.CONNECTED) invoke(
+        if (activeBinding?.hub?.connectionState == HubConnectionState.CONNECTED) invoke(
             "EndCall", EndCallDto(callId.value, reason.name.lowercase()),
         )
     }
 
     override suspend fun iceConfiguration(roomId: String): VoiceIceConfiguration {
-        ensureConnected()
+        val binding = ensureConnected()
         return io {
-            hub.invoke(IceConfigurationDto::class.java, "GetCallIceConfiguration", roomId)
+            binding.hub.invoke(IceConfigurationDto::class.java, "GetCallIceConfiguration", roomId)
                 .timeout(OperationTimeoutSeconds, TimeUnit.SECONDS)
                 .blockingGet()
-        }.let { configuration ->
+        }.also { requireCurrent(binding) }.let { configuration ->
             VoiceIceConfiguration(
                 configuration.servers.map { IceServer(it.urls, it.username, it.credential) },
                 configuration.expiresAtUtc,
@@ -116,12 +129,12 @@ class AndroidCallingSignaling(
     }
 
     override suspend fun join(roomId: String, generation: Long): VoiceJoinResult {
-        ensureConnected()
+        val binding = ensureConnected()
         return io {
-            hub.invoke(JoinCallResultDto::class.java, "JoinCall", JoinCallDto(roomId, generation))
+            binding.hub.invoke(JoinCallResultDto::class.java, "JoinCall", JoinCallDto(roomId, generation))
                 .timeout(OperationTimeoutSeconds, TimeUnit.SECONDS)
                 .blockingGet()
-        }.let {
+        }.also { requireCurrent(binding) }.let {
             VoiceJoinResult(
                 it.callId, it.generation, it.participantId, it.isInitiator, it.peerPresent,
                 it.connectionId, it.peerParticipantId, it.peerConnectionId,
@@ -139,27 +152,64 @@ class AndroidCallingSignaling(
     override suspend fun muted(roomId: String, generation: Long, muted: Boolean) =
         invoke("CallMuteState", MuteDto(roomId, generation, muted))
 
-    private suspend fun ensureConnected() {
-        connectionMutex.withLock {
-            if (hub.connectionState == HubConnectionState.CONNECTED) return@withLock
-            if (!restoreSession()) throw IllegalStateException("Mobile session is unavailable.")
-            io { hub.start().timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingAwait() }
-            Log.i(LogTag, "calling realtime connected")
-            if (recoveryPending) {
-                recoveryPending = false
-                mutableEvents.tryEmit(CallSignalingEvent.Recovered)
+    private suspend fun ensureConnected(): ConnectionBinding {
+        if (!restoreSession()) throw IllegalStateException("Mobile session is unavailable.")
+        val session = sessionVault.restore() ?: throw IllegalStateException("Mobile session is unavailable.")
+        val key = session.connectionCredentialKey()
+        return connectionMutex.withLock {
+            activeBinding?.takeIf { it.credentialKey == key && it.hub.connectionState == HubConnectionState.CONNECTED }
+                ?.let { return@withLock it }
+
+            val stale = activeBinding
+            connectionGeneration += 1
+            val generation = connectionGeneration
+            activeBinding = null
+            stale?.hub?.takeIf { it.connectionState != HubConnectionState.DISCONNECTED }?.let { hub ->
+                io { hub.stop().timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingAwait() }
+            }
+
+            val hub = HubConnectionBuilder.create(hubUrl)
+                .withAccessTokenProvider(Single.just(session.accessToken))
+                .build()
+                .also { connection ->
+                    connection.setKeepAliveInterval(5_000)
+                    connection.setServerTimeout(30_000)
+                    register(connection, generation)
+                }
+            val binding = ConnectionBinding(key, generation, hub)
+            activeBinding = binding
+            disconnectRequested = false
+            try {
+                io { hub.start().timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingAwait() }
+                val afterStart = sessionVault.restore()
+                if (activeBinding !== binding || afterStart?.connectionCredentialKey() != key) {
+                    if (activeBinding === binding) activeBinding = null
+                    runCatching { io { hub.stop().timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingAwait() } }
+                    throw IllegalStateException("Mobile session changed while calling realtime connected.")
+                }
+                Log.i(LogTag, "calling realtime connected generation=$generation")
+                if (recoveryPending) {
+                    recoveryPending = false
+                    mutableEvents.tryEmit(CallSignalingEvent.Recovered)
+                }
+                binding
+            } catch (error: Exception) {
+                if (activeBinding === binding) activeBinding = null
+                throw error
             }
         }
     }
 
     private suspend fun invoke(method: String, argument: Any) {
-        ensureConnected()
-        io { hub.invoke(method, argument).timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingAwait() }
+        val binding = ensureConnected()
+        io { binding.hub.invoke(method, argument).timeout(OperationTimeoutSeconds, TimeUnit.SECONDS).blockingAwait() }
+        requireCurrent(binding)
     }
 
-    private fun register(connection: HubConnection) {
-        subscriptions += connection.on("CallPeerJoined", { value -> mutableSignals.tryEmit(value.toJoined()) }, PeerEventDto::class.java)
-        subscriptions += connection.on("CallOffered", { value ->
+    private fun register(connection: HubConnection, generation: Long) {
+        fun current(): Boolean = activeBinding?.let { it.generation == generation && it.hub === connection } == true
+        connection.on("CallPeerJoined", { value -> if (current()) mutableSignals.tryEmit(value.toJoined()) }, PeerEventDto::class.java)
+        connection.on("CallOffered", { value -> if (current()) {
             mutableEvents.tryEmit(
                 CallSignalingEvent.IncomingOffered(
                     CallId(value.callId),
@@ -167,13 +217,13 @@ class AndroidCallingSignaling(
                     CallParticipant(value.callerMembershipId, value.callerDisplayName),
                 ),
             )
-        }, CallOfferedDto::class.java)
-        subscriptions += connection.on("CallPeerLeft", { value -> mutableSignals.tryEmit(value.toLeft()) }, PeerEventDto::class.java)
-        subscriptions += connection.on("CallOffer", { value -> mutableSignals.tryEmit(value.toOffer()) }, DescriptionEventDto::class.java)
-        subscriptions += connection.on("CallAnswer", { value -> mutableSignals.tryEmit(value.toAnswer()) }, DescriptionEventDto::class.java)
-        subscriptions += connection.on("CallIceCandidate", { value -> mutableSignals.tryEmit(value.toSignal()) }, IceCandidateEventDto::class.java)
-        subscriptions += connection.on("CallMuteState", { value -> mutableSignals.tryEmit(value.toSignal()) }, MuteEventDto::class.java)
-        subscriptions += connection.on("CallEnded", { value ->
+        } }, CallOfferedDto::class.java)
+        connection.on("CallPeerLeft", { value -> if (current()) mutableSignals.tryEmit(value.toLeft()) }, PeerEventDto::class.java)
+        connection.on("CallOffer", { value -> if (current()) mutableSignals.tryEmit(value.toOffer()) }, DescriptionEventDto::class.java)
+        connection.on("CallAnswer", { value -> if (current()) mutableSignals.tryEmit(value.toAnswer()) }, DescriptionEventDto::class.java)
+        connection.on("CallIceCandidate", { value -> if (current()) mutableSignals.tryEmit(value.toSignal()) }, IceCandidateEventDto::class.java)
+        connection.on("CallMuteState", { value -> if (current()) mutableSignals.tryEmit(value.toSignal()) }, MuteEventDto::class.java)
+        connection.on("CallEnded", { value -> if (current()) {
             Log.i(LogTag, "call ended by peer reason=${value.reason}")
             val callId = CallId(value.callId)
             mutableEvents.tryEmit(when (value.reason) {
@@ -182,9 +232,14 @@ class AndroidCallingSignaling(
                 "expired" -> CallSignalingEvent.Expired(callId)
                 else -> CallSignalingEvent.RemoteEnded(callId)
             })
-        }, CallEndedDto::class.java)
-        subscriptions += connection.on("CallRejected", { value -> mutableEvents.tryEmit(CallSignalingEvent.Rejected(CallId(value.callId))) }, CallStateDto::class.java)
+        } }, CallEndedDto::class.java)
+        connection.on("CallRejected", { value -> if (current()) mutableEvents.tryEmit(CallSignalingEvent.Rejected(CallId(value.callId))) }, CallStateDto::class.java)
+        connection.on("CallDeliveryChanged", { value -> if (current()) {
+            mutableEvents.tryEmit(CallSignalingEvent.DeliveryUpdated(value.toDomain()))
+        }
+        }, CallDeliveryStatusDto::class.java)
         connection.onClosed { error ->
+            if (!current()) return@onClosed
             Log.i(LogTag, "calling realtime closed error=${error?.javaClass?.simpleName ?: "none"}")
             if (!disconnectRequested) {
                 recoveryPending = true
@@ -203,11 +258,32 @@ class AndroidCallingSignaling(
         }
     }
 
+    private fun requireCurrent(binding: ConnectionBinding) {
+        check(activeBinding === binding && binding.hub.connectionState == HubConnectionState.CONNECTED) {
+            "Calling credential changed while the operation was in flight."
+        }
+    }
+
     private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
 
     private companion object {
         const val LogTag = "NqrbCalling"
         const val OperationTimeoutSeconds = 5L
+    }
+
+    private data class ConnectionBinding(
+        val credentialKey: String,
+        val generation: Long,
+        val hub: HubConnection,
+    )
+}
+
+private fun com.botglobal.mobile.platform.identity.MobileSession.connectionCredentialKey(): String {
+    val binding = listOf(identity.applicationKey, identity.membershipId, identity.subjectId, accessToken)
+        .joinToString("\u0000")
+        .toByteArray(Charsets.UTF_8)
+    return MessageDigest.getInstance("SHA-256").digest(binding).joinToString("") { byte ->
+        "%02x".format(byte.toInt() and 0xff)
     }
 }
 
@@ -218,7 +294,37 @@ private data class IncomingCallDto(
     val callerDisplayName: String = "", val expiresAtUtc: String = "",
 )
 private data class CallStateDto(val callId: String = "", val state: String = "")
-private data class StartedCallDto(val callId: String = "", val calleeMembershipId: String = "", val calleeDisplayName: String = "")
+private data class StartedCallDto(
+    val callId: String = "",
+    val calleeMembershipId: String = "",
+    val calleeDisplayName: String = "",
+    val delivery: CallDeliveryStatusDto? = null,
+)
+private data class CallDeliveryStatusDto(
+    val callId: String = "",
+    val state: String = "unknown",
+    val revision: Long = 0,
+    val updatedAtUtc: String = "",
+    val terminal: Boolean = false,
+    val wasPresented: Boolean = false,
+    val terminalReason: String? = null,
+) {
+    fun toDomain() = CallDeliveryStatus(
+        callId = CallId(callId),
+        state = when (state.lowercase()) {
+            "attempting" -> CallDeliveryState.Attempting
+            "presented" -> CallDeliveryState.Presented
+            "answered" -> CallDeliveryState.Answered
+            "terminal" -> CallDeliveryState.Terminal
+            else -> CallDeliveryState.Unknown
+        },
+        revision = revision,
+        updatedAtEpochMillis = runCatching { java.time.Instant.parse(updatedAtUtc).toEpochMilli() }.getOrNull(),
+        terminal = terminal,
+        wasPresented = wasPresented,
+        terminalReason = terminalReason,
+    )
+}
 private data class CallOfferedDto(
     val callId: String = "", val applicationContext: String = "",
     val callerMembershipId: String = "", val callerDisplayName: String = "",

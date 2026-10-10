@@ -2,6 +2,7 @@ package com.botglobal.nqrb.app.ui
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -15,7 +16,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.padding
@@ -66,6 +69,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -73,6 +77,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -102,6 +107,8 @@ import com.botglobal.mobile.platform.calling.CallHistoryDetail
 import com.botglobal.mobile.platform.calling.CallHistoryFilter
 import com.botglobal.mobile.platform.calling.CallHistoryItem
 import com.botglobal.mobile.platform.calling.speakerControlTarget
+import com.botglobal.mobile.platform.chat.ChatSnapshot
+import com.botglobal.mobile.platform.chat.ChatVoiceDraft
 import com.botglobal.mobile.platform.identity.FederatedAuthenticationError
 import com.botglobal.mobile.platform.identity.FederatedAuthenticationState
 import com.botglobal.mobile.platform.localization.ContentDirection
@@ -116,6 +123,8 @@ import com.botglobal.nqrb.app.state.NqrbContactMutationState
 import com.botglobal.nqrb.app.state.NqrbBlockState
 import com.botglobal.nqrb.app.state.NqrbContactSearchState
 import com.botglobal.nqrb.app.state.NqrbDestination
+import com.botglobal.nqrb.app.state.NqrbDirectChatEntryState
+import com.botglobal.nqrb.app.state.NqrbChatRecordingState
 import com.botglobal.nqrb.app.state.NqrbRingtone
 import com.botglobal.nqrb.app.state.NqrbStartupState
 import com.botglobal.nqrb.app.state.NqrbAccountActionState
@@ -123,9 +132,12 @@ import com.botglobal.nqrb.app.state.NqrbAccountProfileState
 import com.botglobal.nqrb.app.config.NqrbPublicSite
 import com.botglobal.nqrb.app.data.NqrbContactInvite
 import com.botglobal.nqrb.app.data.NqrbContact
+import com.botglobal.nqrb.resources.Res
+import com.botglobal.nqrb.resources.google_g
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import org.jetbrains.compose.resources.painterResource
 import kotlin.math.roundToInt
 
 internal enum class NqrbDeletionConfirmation { Closed, Explanation, Final }
@@ -157,6 +169,10 @@ fun NqrbApp(
     val authentication by appState.identity.state.collectAsState()
     val startupState by appState.startupState.collectAsState()
     val contactBook by appState.contactBook.state.collectAsState()
+    val chat by appState.chat.state.collectAsState()
+    val chatRecordingState by appState.chatRecordingState.collectAsState()
+    val chatVoiceDraft by appState.chatVoiceDraft.collectAsState()
+    val directChatEntryState by appState.directChatEntryState.collectAsState()
     val call by appState.calling.state.collectAsState()
     val callingDirectory by appState.callingDirectory.state.collectAsState()
     val callActivity by appState.callActivity.state.collectAsState()
@@ -195,12 +211,12 @@ fun NqrbApp(
         CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
             NqrbSystemBackHandler(
                 enabled = (call.state in VisibleCallStates && !isCallMinimized && canMinimizeCall(call.state)) ||
-                    backStack.size > 1,
+                    backStack.size > 1 || directChatEntryState is NqrbDirectChatEntryState.Opening,
                 onBack = {
                     if (call.state in VisibleCallStates && !isCallMinimized && canMinimizeCall(call.state)) {
                         minimizedCallId = callId
                     } else {
-                        appState.navigation.navigateBack()
+                        appState.handleSystemBack()
                     }
                 },
             )
@@ -213,6 +229,9 @@ fun NqrbApp(
                 authentication = authentication,
                 startupState = startupState,
                 contactBook = contactBook,
+                chat = chat,
+                chatRecordingState = chatRecordingState,
+                chatVoiceDraft = chatVoiceDraft,
                 call = call,
                 isCallMinimized = isCallMinimized,
                 onMinimizeCall = { minimizedCallId = callId },
@@ -247,6 +266,9 @@ private fun NqrbShell(
     authentication: FederatedAuthenticationState,
     startupState: NqrbStartupState,
     contactBook: NqrbContactBookSnapshot,
+    chat: ChatSnapshot,
+    chatRecordingState: NqrbChatRecordingState,
+    chatVoiceDraft: ChatVoiceDraft?,
     call: CallSessionSnapshot,
     isCallMinimized: Boolean,
     onMinimizeCall: () -> Unit,
@@ -301,18 +323,19 @@ private fun NqrbShell(
                         listOf(colors.backgroundGlow, colors.background, colors.background),
                     ),
                 )
-                .padding(contentPadding),
+                .padding(contentPadding)
+                .consumeWindowInsets(contentPadding),
         ) {
             when {
                 microphoneExplanation -> MicrophoneExplanationScreen(strings, appState)
                 call.state in VisibleCallStates && !isCallMinimized ->
                     InCallScreen(strings, call, contactBook, appState, onMinimizeCall)
-                showsRestoringSession(startupState, call.state) -> RestoringSessionScreen(strings, appState)
+                showsRestoringSession(startupState, call.state) -> RestoringSessionScreen(strings)
                 else -> AnimatedContent(destination) { current -> when (current) {
                     NqrbDestination.SignIn -> if (showsGoogleSignIn(startupState, current)) {
                         SignInScreen(strings, authentication, appState)
                     } else {
-                        RestoringSessionScreen(strings, appState)
+                        RestoringSessionScreen(strings)
                     }
                     NqrbDestination.RequiredUpdate -> RequiredUpdateScreen(
                         strings = strings,
@@ -322,6 +345,7 @@ private fun NqrbShell(
                     )
                     NqrbDestination.Home -> HomeScreen(
                         strings,
+                        nqrbChatStrings(languageTag),
                         appState,
                         callingDirectory,
                         contactBook,
@@ -343,21 +367,26 @@ private fun NqrbShell(
                     NqrbDestination.Notifications -> NotificationsScreen(strings, languageTag, appState, notifications)
                     NqrbDestination.People -> PeopleScreen(strings, languageTag, contactBook, callingDirectory, appState, onShareInvite, callTime)
                     NqrbDestination.Profile -> ProfileScreen(strings, appState, contactBook)
+                    NqrbDestination.Chats -> NqrbChatListScreen(languageTag, chat, appState, callTime)
+                    NqrbDestination.ChatThread -> NqrbChatThreadScreen(languageTag, chat, chatRecordingState, chatVoiceDraft, appState, callTime)
                 } }
+            }
+            if (destination in setOf(NqrbDestination.Home, NqrbDestination.People) &&
+                !microphoneExplanation && (call.state !in VisibleCallStates || isCallMinimized)
+            ) {
+                DirectChatEntryFeedback(
+                    strings = nqrbChatStrings(languageTag),
+                    appState = appState,
+                    modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = NqrbSpacing.Lg, vertical = NqrbSpacing.Sm),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun RestoringSessionScreen(strings: NqrbStrings, appState: NqrbAppState) {
-    val colors = LocalNqrbColors.current
-    BrandedFlowFrame(strings, appState::openSettings) {
-        FlowHero(NqrbGlyph.Profile, strings.restoringTitle, strings.restoringBody)
-        Box(Modifier.fillMaxWidth().padding(NqrbSpacing.Lg), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = colors.accent)
-        }
-    }
+private fun RestoringSessionScreen(strings: NqrbStrings) {
+    NqrbWelcomeUi(strings = strings, loading = true)
 }
 
 @Composable
@@ -391,7 +420,8 @@ private fun RequiredUpdateScreen(
 private val NQRB_TOP_LEVEL_DESTINATIONS = NqrbAppState.TOP_LEVEL_DESTINATIONS
 private val VisibleCallStates = setOf(
     CallState.Preparing, CallState.Connecting, CallState.Ringing, CallState.Answering, CallState.Active,
-    CallState.Reconnecting, CallState.Ending,
+    CallState.Reconnecting, CallState.Ending, CallState.Rejected, CallState.Cancelled, CallState.Missed,
+    CallState.Expired, CallState.Ended, CallState.Failed,
 )
 
 internal fun canMinimizeCall(state: CallState): Boolean =
@@ -413,13 +443,29 @@ private fun SignInScreen(
     val scope = rememberCoroutineScope()
     val busy = authentication is FederatedAuthenticationState.SigningIn ||
         authentication is FederatedAuthenticationState.RestoringSession
-    BrandedFlowFrame(strings, appState::openSettings) {
-        FlowHero(NqrbGlyph.Profile, strings.signInTitle, strings.signInBody)
+    NqrbWelcomeUi(
+        strings = strings,
+        loading = false,
+        onSettings = appState::openSettings,
+        title = strings.signInTitle,
+        body = strings.signInBody,
+    ) {
         Button(
-            modifier = Modifier.fillMaxWidth().height(54.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
             enabled = !busy,
             onClick = { scope.launch { appState.signInWithGoogle() } },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFF2F2F2),
+                contentColor = Color(0xFF1F1F1F),
+            ),
         ) {
+            Image(
+                painter = painterResource(Res.drawable.google_g),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                contentScale = ContentScale.Fit,
+            )
+            Spacer(Modifier.width(10.dp))
             Text(strings.continueWithGoogle)
         }
         if (authentication is FederatedAuthenticationState.AuthenticationError) {
@@ -549,6 +595,39 @@ private fun BackgroundRefreshIndicator(visible: Boolean) {
 }
 
 @Composable
+private fun DirectChatEntryFeedback(strings: NqrbChatStrings, appState: NqrbAppState, modifier: Modifier = Modifier) {
+    val state by appState.directChatEntryState.collectAsState()
+    if (state == NqrbDirectChatEntryState.Idle) return
+    val colors = LocalNqrbColors.current
+    Surface(
+        modifier = modifier.widthIn(max = NqrbLayout.ThreadMaxWidth).fillMaxWidth().semantics {
+            liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite
+        },
+        color = colors.elevatedSurface,
+        shape = RoundedCornerShape(14.dp),
+        shadowElevation = 6.dp,
+    ) {
+        Row(
+            Modifier.padding(horizontal = NqrbSpacing.Md, vertical = NqrbSpacing.Sm).heightIn(min = 48.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
+        ) {
+            if (state is NqrbDirectChatEntryState.Opening) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = colors.accent)
+            } else {
+                NqrbIcon(NqrbGlyph.Chat, null, colors.textSecondary, Modifier.size(22.dp))
+            }
+            Text(
+                if (state is NqrbDirectChatEntryState.Opening) strings.openingConversation else strings.conversationOpenFailed,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textSecondary,
+            )
+        }
+    }
+}
+
+@Composable
 private fun PeopleScreen(
     strings: NqrbStrings,
     languageTag: String,
@@ -661,22 +740,24 @@ private fun PeopleScreen(
             }
             NqrbContactBookLoadState.Ready -> contactBook.contacts.forEach { contact ->
                 val participant = directory.participants.firstOrNull { it.membershipId == contact.membershipId }
-                val availability = participant?.availability
                 val isBlocked = contactBook.blockedAccounts.any { it.membershipId == contact.membershipId }
                 NqrbServerContactCard(
                     displayName = contact.nickname ?: contact.displayName,
                     secondaryLabel = contact.nickname?.let { strings.nicknameOriginal.replace("%s", contact.displayName) },
-                    statusLabel = if (isBlocked) strings.blockedLabel else when (availability) {
-                        CallingParticipantAvailability.Online -> strings.onlineNow
-                        CallingParticipantAvailability.Reachable -> strings.availableForCalls
-                        CallingParticipantAvailability.Offline, null -> strings.currentlyUnavailable
-                    },
+                    statusLabel = if (isBlocked) strings.blockedLabel else
+                        participant?.let { nqrbDirectoryAvailability(strings, it) } ?: strings.availabilityUnverified,
                     actionLabel = strings.removeContact,
                     actionEnabled = contactBook.mutationState != NqrbContactMutationState.Removing,
                     onAction = { appState.removeNqrbContact(contact.membershipId) },
                     callLabel = strings.call,
-                    callEnabled = !isBlocked && availability?.let { it != CallingParticipantAvailability.Offline } == true,
+                    callEnabled = !isBlocked && participant != null,
                     onCall = { participant?.let(appState::requestOutgoingCall) },
+                    messageLabel = nqrbChatStrings(languageTag).chats,
+                    messageEnabled = !isBlocked,
+                    onMessage = { appState.openChatWith(contact.membershipId) },
+                    nameActionLabel = nqrbChatStrings(languageTag).openChatWith(contact.nickname ?: contact.displayName),
+                    nameActionEnabled = !isBlocked,
+                    onNameClick = { appState.openChatWith(contact.membershipId) },
                     overflowLabel = strings.contactActions,
                     editNicknameLabel = strings.editContactNickname,
                     onEditNickname = {
@@ -1069,11 +1150,17 @@ private fun NqrbServerContactCard(
     callLabel: String? = null,
     callEnabled: Boolean = false,
     onCall: () -> Unit = {},
+    messageLabel: String? = null,
+    messageEnabled: Boolean = false,
+    onMessage: () -> Unit = {},
     overflowLabel: String? = null,
     editNicknameLabel: String? = null,
     onEditNickname: () -> Unit = {},
     blockLabel: String? = null,
     onBlock: () -> Unit = {},
+    nameActionLabel: String? = null,
+    nameActionEnabled: Boolean = false,
+    onNameClick: () -> Unit = {},
 ) {
     val colors = LocalNqrbColors.current
     var actionsExpanded by remember { mutableStateOf(false) }
@@ -1090,7 +1177,16 @@ private fun NqrbServerContactCard(
             horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm),
         ) {
             ParticipantAvatar(displayName)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(
+                Modifier.weight(1f).heightIn(min = 48.dp).then(
+                    if (nameActionLabel != null) Modifier.clickable(enabled = nameActionEnabled, onClick = onNameClick).semantics {
+                        role = Role.Button
+                        contentDescription = nameActionLabel
+                        if (!nameActionEnabled) disabled()
+                    } else Modifier
+                ),
+                verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+            ) {
                 Text(
                     displayName,
                     style = MaterialTheme.typography.titleMedium,
@@ -1106,6 +1202,15 @@ private fun NqrbServerContactCard(
                 }
             }
             if (callLabel != null) {
+                if (messageLabel != null) {
+                    IconButton(
+                        modifier = Modifier.size(48.dp),
+                        enabled = messageEnabled,
+                        onClick = onMessage,
+                    ) {
+                        NqrbIcon(NqrbGlyph.Chat, messageLabel, colors.accent, Modifier.size(22.dp))
+                    }
+                }
                 NqrbCallIconButton(
                     label = callLabel,
                     enabled = callEnabled,
@@ -1210,7 +1315,7 @@ private fun NqrbSwipeToCallBox(
 internal fun shouldStartCallFromSwipe(offsetPx: Float, thresholdPx: Float): Boolean = offsetPx >= thresholdPx
 
 @Composable
-private fun NqrbCallIconButton(
+internal fun NqrbCallIconButton(
     label: String,
     enabled: Boolean,
     onClick: () -> Unit,
@@ -1219,13 +1324,16 @@ private fun NqrbCallIconButton(
     IconButton(
         modifier = Modifier.size(48.dp).clip(CircleShape).background(
             if (enabled) colors.accent else colors.accentSoft,
-        ),
+        ).semantics {
+            contentDescription = label
+            if (!enabled) disabled()
+        },
         enabled = enabled,
         onClick = onClick,
     ) {
         NqrbIcon(
             NqrbGlyph.Call,
-            label,
+            null,
             if (enabled) MaterialTheme.colorScheme.onPrimary else colors.textSecondary,
             Modifier.size(20.dp),
         )
@@ -1555,6 +1663,7 @@ private fun AccountIdentityRow(label: String, value: String) {
 @Composable
 private fun HomeScreen(
     strings: NqrbStrings,
+    chatStrings: NqrbChatStrings,
     appState: NqrbAppState,
     directory: CallingDirectorySnapshot,
     contactBook: NqrbContactBookSnapshot,
@@ -1576,9 +1685,28 @@ private fun HomeScreen(
             color = colors.textSecondary,
         )
         if (privateDirectory.status == CallingDirectoryStatus.Ready && privateDirectory.participants.isNotEmpty()) {
-            MadarOrbit(strings, privateDirectory, contactBook, appState)
+            MadarOrbit(strings, chatStrings, privateDirectory, contactBook, appState)
         } else {
             MadarEmptyCircle(strings, appState)
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = appState::openChats),
+            color = colors.elevatedSurface,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Row(
+                Modifier.padding(NqrbSpacing.Md),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
+            ) {
+                Box(Modifier.size(50.dp).clip(RoundedCornerShape(13.dp)).background(colors.accentSoft), contentAlignment = Alignment.Center) {
+                    NqrbIcon(NqrbGlyph.Chat, chatStrings.chats, colors.accent, Modifier.size(25.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(chatStrings.chats, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                    Text(chatStrings.empty, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
+                }
+            }
         }
         if (privateDirectory.status == CallingDirectoryStatus.Ready) Surface(
             modifier = Modifier.fillMaxWidth().clickable { appState.selectTopLevel(NqrbDestination.People) },
@@ -1599,7 +1727,7 @@ private fun HomeScreen(
                 }
             }
         }
-        CallingDirectorySection(strings, privateDirectory, contactBook, appState)
+        CallingDirectorySection(strings, chatStrings, privateDirectory, contactBook, appState)
         if (microphoneBlocked) InfoNote(strings.microphoneDenied)
         Spacer(Modifier.height(NqrbSpacing.Sm))
     }
@@ -1656,7 +1784,7 @@ private fun MadarEmptyCircle(strings: NqrbStrings, appState: NqrbAppState) {
 }
 
 @Composable
-private fun MadarOrbit(strings: NqrbStrings, directory: CallingDirectorySnapshot, contactBook: NqrbContactBookSnapshot, appState: NqrbAppState) {
+private fun MadarOrbit(strings: NqrbStrings, chatStrings: NqrbChatStrings, directory: CallingDirectorySnapshot, contactBook: NqrbContactBookSnapshot, appState: NqrbAppState) {
     val colors = LocalNqrbColors.current
     val people = if (directory.status == CallingDirectoryStatus.Ready) directory.participants.take(3) else emptyList()
     Box(Modifier.fillMaxWidth().height(245.dp), contentAlignment = Alignment.Center) {
@@ -1673,16 +1801,19 @@ private fun MadarOrbit(strings: NqrbStrings, directory: CallingDirectorySnapshot
             NqrbIcon(NqrbGlyph.Call, strings.madarCircleHint, colors.callActionContent, Modifier.size(31.dp))
         }
         people.getOrNull(0)?.let { person -> OrbitPerson(
-            person, strings, contactBook, Modifier.align(Alignment.TopStart).padding(start = 7.dp, top = 67.dp),
+            person, strings, chatStrings, contactBook, Modifier.align(Alignment.TopStart).padding(start = 7.dp, top = 67.dp),
             onCall = { appState.requestOutgoingCall(person) },
+            onMessage = { appState.openChatWith(person.membershipId) },
         ) }
         people.getOrNull(1)?.let { person -> OrbitPerson(
-            person, strings, contactBook, Modifier.align(Alignment.TopEnd).padding(end = 8.dp, top = 22.dp),
+            person, strings, chatStrings, contactBook, Modifier.align(Alignment.TopEnd).padding(end = 8.dp, top = 22.dp),
             onCall = { appState.requestOutgoingCall(person) },
+            onMessage = { appState.openChatWith(person.membershipId) },
         ) }
         people.getOrNull(2)?.let { person -> OrbitPerson(
-            person, strings, contactBook, Modifier.align(Alignment.BottomEnd).padding(end = 25.dp, bottom = 31.dp),
+            person, strings, chatStrings, contactBook, Modifier.align(Alignment.BottomEnd).padding(end = 25.dp, bottom = 31.dp),
             onCall = { appState.requestOutgoingCall(person) },
+            onMessage = { appState.openChatWith(person.membershipId) },
         ) }
         Text(
             strings.madarCircleHint,
@@ -1697,23 +1828,25 @@ private fun MadarOrbit(strings: NqrbStrings, directory: CallingDirectorySnapshot
 private fun OrbitPerson(
     participant: CallableParticipant,
     strings: NqrbStrings,
+    chatStrings: NqrbChatStrings,
     contactBook: NqrbContactBookSnapshot,
     modifier: Modifier = Modifier,
     onCall: () -> Unit,
+    onMessage: () -> Unit,
 ) {
     val colors = LocalNqrbColors.current
-    val available = participant.availability != CallingParticipantAvailability.Offline
+    val available = true
     val displayName = privateContactDisplayName(contactBook, participant.membershipId, participant.displayName)
     Column(
-        modifier.clickable(enabled = available, onClick = onCall).semantics {
-            role = Role.Button
-            contentDescription = "${strings.call}: $displayName"
-            if (!available) disabled()
-        },
+        modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(48.dp).clip(CircleShape).background(colors.accentSoft),
+            Modifier.size(48.dp).clip(CircleShape).background(colors.accentSoft).clickable(enabled = available, onClick = onCall).semantics {
+                role = Role.Button
+                contentDescription = "${strings.call}: $displayName"
+                if (!available) disabled()
+            },
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -1722,18 +1855,28 @@ private fun OrbitPerson(
                 color = colors.accent,
             )
         }
-        Text(
-            displayName.substringBefore(' ').take(10),
-            style = MaterialTheme.typography.labelMedium,
-            color = if (available) colors.textPrimary else colors.textSecondary,
-            maxLines = 1,
-        )
+        Box(
+            Modifier.heightIn(min = 48.dp).widthIn(min = 72.dp).clickable(onClick = onMessage).semantics {
+                role = Role.Button
+                contentDescription = chatStrings.openChatWith(displayName)
+            },
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Text(
+                displayName.substringBefore(' ').take(10),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (available) colors.textPrimary else colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
 @Composable
 private fun CallingDirectorySection(
     strings: NqrbStrings,
+    chatStrings: NqrbChatStrings,
     directory: CallingDirectorySnapshot,
     contactBook: NqrbContactBookSnapshot,
     appState: NqrbAppState,
@@ -1767,14 +1910,14 @@ private fun CallingDirectorySection(
                 CallableParticipantCard(
                     participant = participant,
                     displayName = privateContactDisplayName(contactBook, participant.membershipId, participant.displayName),
-                    status = when (participant.availability) {
-                        CallingParticipantAvailability.Online -> strings.onlineNow
-                        CallingParticipantAvailability.Reachable -> strings.availableForCalls
-                        CallingParticipantAvailability.Offline -> strings.currentlyUnavailable
-                    },
+                    status = nqrbDirectoryAvailability(strings, participant),
                     callLabel = strings.call,
-                    canCall = participant.availability != CallingParticipantAvailability.Offline,
+                    canCall = true,
                     onCall = { appState.requestOutgoingCall(participant) },
+                    nameActionLabel = chatStrings.openChatWith(
+                        privateContactDisplayName(contactBook, participant.membershipId, participant.displayName),
+                    ),
+                    onNameClick = { appState.openChatWith(participant.membershipId) },
                 )
             }
             DirectoryRefreshAction(strings.refreshCallingDirectory, appState::refreshCallingDirectory)
@@ -1800,6 +1943,8 @@ private fun CallableParticipantCard(
     callLabel: String,
     canCall: Boolean,
     onCall: () -> Unit,
+    nameActionLabel: String,
+    onNameClick: () -> Unit,
 ) {
     val colors = LocalNqrbColors.current
     NqrbSwipeToCallBox(callLabel, canCall, onCall) { swipeModifier ->
@@ -1815,8 +1960,20 @@ private fun CallableParticipantCard(
                 horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
             ) {
                 ParticipantAvatar(displayName)
-                Column(Modifier.weight(1f)) {
-                    Text(displayName, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                Column(
+                    Modifier.weight(1f).heightIn(min = 48.dp).clickable(onClick = onNameClick).semantics {
+                        role = Role.Button
+                        contentDescription = nameActionLabel
+                    },
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text(
+                        displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.textPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     Text(
                         status,
                         style = MaterialTheme.typography.bodySmall,
@@ -1825,6 +1982,8 @@ private fun CallableParticipantCard(
                         } else {
                             colors.textSecondary
                         },
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 NqrbCallIconButton(
@@ -1860,16 +2019,15 @@ private fun InCallScreen(
     onMinimizeCall: () -> Unit,
 ) {
     val colors = LocalNqrbColors.current
-    val displayName = call.participant?.let { privateContactDisplayName(contactBook, it.membershipId, it.displayName) }.orEmpty()
-    val status = when (call.state) {
-        CallState.Preparing, CallState.Connecting, CallState.Answering -> strings.connecting
-        CallState.Ringing -> strings.ringing
-        CallState.Active -> strings.activeCall
-        CallState.Reconnecting -> strings.reconnecting
-        CallState.Ending -> strings.endingCall
-        CallState.Failed -> strings.callFailed
-        else -> strings.activeCall
+    LaunchedEffect(call.callId, call.direction, call.state) {
+        val callId = call.callId
+        if (callId != null && call.direction == CallDirection.Incoming &&
+            call.state in setOf(CallState.Ringing, CallState.Answering, CallState.Connecting)) {
+            appState.confirmIncomingCallPresented(callId)
+        }
     }
+    val displayName = call.participant?.let { privateContactDisplayName(contactBook, it.membershipId, it.displayName) }.orEmpty()
+    val presentation = nqrbCallPresentation(strings, call)
     Box(Modifier.fillMaxSize()) {
         if (canMinimizeCall(call.state)) {
             TextButton(
@@ -1894,15 +2052,34 @@ private fun InCallScreen(
                 NqrbIcon(NqrbGlyph.Profile, displayName, colors.accent, Modifier.size(46.dp))
             }
             Spacer(Modifier.height(NqrbSpacing.Lg))
-            Text(displayName, style = MaterialTheme.typography.headlineSmall, color = colors.textPrimary)
-            Text(status, style = MaterialTheme.typography.bodyLarge, color = colors.textSecondary)
+            Text(
+                displayName,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.headlineSmall,
+                color = colors.textPrimary,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                presentation.status,
+                modifier = Modifier.fillMaxWidth().semantics {
+                    liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                color = colors.textSecondary,
+                textAlign = TextAlign.Center,
+            )
             if (call.state == CallState.Active) {
                 val minutes = call.elapsedSeconds / 60
                 val seconds = call.elapsedSeconds % 60
                 Text("$minutes:${seconds.toString().padStart(2, '0')}", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
             }
             Spacer(Modifier.height(NqrbSpacing.Xl))
-            if (call.direction == CallDirection.Incoming && call.state == CallState.Ringing) {
+            if (presentation.terminal) {
+                Button(
+                    onClick = appState::dismissCallStatus,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) { Text(strings.back) }
+            } else if (call.direction == CallDirection.Incoming && call.state == CallState.Ringing) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     CallControl(NqrbGlyph.Call, strings.answerCall, selected = true) {
                         appState.requestAcceptIncomingCall()
@@ -1951,11 +2128,7 @@ private fun CompactCallBar(
     val displayName = call.participant?.let {
         privateContactDisplayName(contactBook, it.membershipId, it.displayName)
     }.orEmpty().ifBlank { strings.activeCall }
-    val status = when (call.state) {
-        CallState.Reconnecting -> strings.reconnecting
-        CallState.Ending -> strings.endingCall
-        else -> strings.activeCall
-    }
+    val status = nqrbCallPresentation(strings, call).status
     val duration = if (call.state == CallState.Active) {
         "${call.elapsedSeconds / 60}:${(call.elapsedSeconds % 60).toString().padStart(2, '0')}"
     } else null
@@ -1978,7 +2151,7 @@ private fun CompactCallBar(
                 Text(displayName, style = MaterialTheme.typography.titleSmall, color = colors.textPrimary,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("$status · ${strings.returnToCall}", style = MaterialTheme.typography.labelMedium, color = colors.textSecondary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             if (duration != null) {
                 Text(duration, style = MaterialTheme.typography.labelLarge, color = colors.textPrimary)
@@ -1986,7 +2159,7 @@ private fun CompactCallBar(
             IconButton(
                 onClick = onToggleMute,
                 enabled = call.state != CallState.Ending,
-                modifier = Modifier.size(42.dp).clip(CircleShape).background(colors.surface),
+                modifier = Modifier.size(48.dp).clip(CircleShape).background(colors.surface),
             ) {
                 NqrbIcon(
                     if (call.media.muted) NqrbGlyph.MicrophoneOff else NqrbGlyph.Microphone,
@@ -2044,7 +2217,7 @@ private fun ProductHeader(strings: NqrbStrings, onSettings: () -> Unit) {
 }
 
 @Composable
-private fun BrandMark(modifier: Modifier, tint: Color) {
+internal fun BrandMark(modifier: Modifier, tint: Color) {
     Canvas(modifier) {
         val strokeWidth = 2.2.dp.toPx()
         drawCircle(tint, size.minDimension * .12f, Offset(size.width * .25f, size.height * .5f))

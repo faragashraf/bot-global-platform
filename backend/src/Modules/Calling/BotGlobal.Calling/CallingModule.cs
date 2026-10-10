@@ -5,6 +5,7 @@ using BotGlobal.Calling.Application;
 using BotGlobal.Calling.Infrastructure;
 using BotGlobal.Contracts.Calling;
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Communication;
 using BotGlobal.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Authentication;
@@ -50,6 +51,9 @@ public static class CallingModule
         services.AddScoped<INqrbCallEligibilityService, NqrbCallEligibilityService>();
         services.AddScoped<INqrbContactBookService, NqrbContactBookService>();
         services.AddScoped<INqrbBlockService, NqrbBlockService>();
+        services.AddScoped<IChatAccessPolicy, NqrbCommunicationAccessPolicy>();
+        services.AddScoped<IPresenceAccessPolicy, NqrbPresenceAccessPolicy>();
+        services.AddScoped<CallingPresenceAdapter>();
         services.AddSingleton<NqrbGuestCallInviteService>();
         services.AddScoped<CallingAccountDataEraser>();
         services.AddScoped<IApplicationAccountDeletionHandler, CallingAccountDeletionHandler>();
@@ -725,6 +729,7 @@ public static class CallingModule
         bool? savedOnly,
         ICallingParticipantDirectory directory,
         IServiceProvider services,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
         var applicationKey = principal.FindFirstValue(
@@ -754,17 +759,49 @@ public static class CallingModule
         var reachable = reachability is null ? new HashSet<Guid>() : await reachability.FindReachableMembershipsAsync(
             applicationKey, participants, cancellationToken);
         var sessions = services.GetService<CallSessionRegistry>();
+        var presenceByMembership = new Dictionary<Guid, PresenceDecision>();
+        var configuredPresence = services.GetService<IPresenceDecisionReader>();
+        if (string.Equals(applicationKey, BotGlobalApplications.Nqrb, StringComparison.Ordinal) &&
+            context.Items.TryGetValue(PresenceConnectionCredential.HttpContextItemKey, out var credentialValue) &&
+            credentialValue is PresenceConnectionCredential credential &&
+            configuredPresence?.IsEnabled(applicationKey) == true)
+        {
+            using var concurrency = new SemaphoreSlim(4, 4);
+            var observations = await Task.WhenAll(participants.Take(64).Select(async participant =>
+            {
+                await concurrency.WaitAsync(cancellationToken);
+                try
+                {
+                    await using var scope = services.GetRequiredService<IServiceScopeFactory>().CreateAsyncScope();
+                    var presence = scope.ServiceProvider.GetRequiredService<IPresenceDecisionReader>();
+                    var decision = await presence.ObserveAsync(
+                        new PresenceCounterpartRequest(credential, participant.MembershipId), cancellationToken);
+                    return (participant.MembershipId, Decision: decision);
+                }
+                finally
+                {
+                    concurrency.Release();
+                }
+            }));
+            presenceByMembership = observations.ToDictionary(item => item.MembershipId, item => item.Decision);
+        }
 
         return Results.Ok(
             participants.Select(participant =>
-                new CallableParticipantResult(
+            {
+                presenceByMembership.TryGetValue(participant.MembershipId, out var presence);
+                return new CallableParticipantResult(
                     participant.MembershipId,
                     participant.DisplayName,
                     (sessions?.IsOnline(participant.MembershipId, applicationKey) == true
                         ? CallingParticipantAvailability.Online
                         : reachable.Contains(participant.MembershipId)
                             ? CallingParticipantAvailability.Reachable
-                            : CallingParticipantAvailability.Offline).ToString())));
+                            : CallingParticipantAvailability.Offline).ToString(),
+                    presence?.State.ToString(),
+                    presence?.ObservedAtUtc,
+                    presence?.FullyCovered);
+            }));
     }
 }
 

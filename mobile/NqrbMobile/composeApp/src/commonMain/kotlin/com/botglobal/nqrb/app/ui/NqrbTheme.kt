@@ -23,7 +23,9 @@ data class NqrbColors(
     val elevatedSurface: Color,
     val textPrimary: Color,
     val textSecondary: Color,
+    val disabledContent: Color,
     val border: Color,
+    val controlOutline: Color,
     val accent: Color,
     val accentSoft: Color,
     val compactCallSurface: Color,
@@ -41,6 +43,8 @@ object NqrbSpacing {
     val Xl = 32.dp
 }
 
+object NqrbLayout { val ThreadMaxWidth = 720.dp }
+
 private val LightTokens = NqrbColors(
     background = Color(0xFFF7FAF8),
     backgroundGlow = Color(0xFFE8F4ED),
@@ -48,7 +52,9 @@ private val LightTokens = NqrbColors(
     elevatedSurface = Color(0xFFF0F6F2),
     textPrimary = Color(0xFF182B22),
     textSecondary = Color(0xFF4D6457),
+    disabledContent = Color(0xFF8A9990),
     border = Color(0xFFDCE9E0),
+    controlOutline = Color(0xFF73877B),
     accent = Color(0xFF167347),
     accentSoft = Color(0xFFE1F3E8),
     compactCallSurface = Color(0xFFCFEAD9),
@@ -65,7 +71,9 @@ private val DarkTokens = NqrbColors(
     elevatedSurface = Color(0xFF1E3528),
     textPrimary = Color(0xFFF1FAF4),
     textSecondary = Color(0xFFC4DACB),
+    disabledContent = Color(0xFF718779),
     border = Color(0xFF355542),
+    controlOutline = Color(0xFF688675),
     accent = Color(0xFF90E7AC),
     accentSoft = Color(0xFF254632),
     compactCallSurface = Color(0xFF1D3C2A),
@@ -128,6 +136,11 @@ fun NqrbTheme(appearance: ResolvedAppearance, content: @Composable () -> Unit) {
             onBackground = colors.textPrimary,
             surface = colors.surface,
             onSurface = colors.textPrimary,
+            surfaceVariant = colors.elevatedSurface,
+            onSurfaceVariant = colors.textSecondary,
+            outline = colors.controlOutline,
+            primaryContainer = colors.accentSoft,
+            onPrimaryContainer = colors.textPrimary,
             error = colors.destructive,
         )
     } else {
@@ -139,6 +152,11 @@ fun NqrbTheme(appearance: ResolvedAppearance, content: @Composable () -> Unit) {
             onBackground = colors.textPrimary,
             surface = colors.surface,
             onSurface = colors.textPrimary,
+            surfaceVariant = colors.elevatedSurface,
+            onSurfaceVariant = colors.textSecondary,
+            outline = colors.controlOutline,
+            primaryContainer = colors.accentSoft,
+            onPrimaryContainer = colors.textPrimary,
             error = colors.destructive,
         )
     }

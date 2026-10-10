@@ -3,17 +3,33 @@ using BotGlobal.Contracts.Calling;
 namespace BotGlobal.Calling.Realtime;
 
 public sealed record StartOutgoingCallRequest(Guid CalleeMembershipId);
-public sealed record StartedCallResult(Guid CallId, Guid CalleeMembershipId, string CalleeDisplayName);
+public sealed record StartedCallResult(
+    Guid CallId,
+    Guid CalleeMembershipId,
+    string CalleeDisplayName,
+    CallDeliveryStatus? Delivery = null);
 public sealed record CallableParticipantResult(
     Guid MembershipId,
     string DisplayName,
-    string Availability);
+    string Availability,
+    string? PresenceEvidence = null,
+    DateTimeOffset? PresenceObservedAtUtc = null,
+    bool? PresenceFullyCovered = null);
 public sealed record CallOfferedEvent(Guid CallId, string ApplicationContext, Guid CallerMembershipId, string CallerDisplayName);
 public sealed record IncomingCallLookupRequest(Guid CallId);
 public sealed record IncomingCallResult(Guid CallId, string ApplicationContext, Guid CallerMembershipId, string CallerDisplayName, DateTimeOffset ExpiresAtUtc);
 public sealed record AnswerCallRequest(Guid CallId);
 public sealed record RejectCallRequest(Guid CallId);
 public sealed record CallStateEvent(Guid CallId, string State);
+public sealed record ConfirmIncomingReceiptRequest(Guid CallId);
+public sealed record CallDeliveryStatus(
+    Guid CallId,
+    string State,
+    long Revision,
+    DateTimeOffset UpdatedAtUtc,
+    bool Terminal = false,
+    bool WasPresented = false,
+    string? TerminalReason = null);
 public sealed record JoinCallRequest(Guid CallId, long Generation);
 public sealed record JoinCallResult(Guid CallId, long Generation, Guid ParticipantId, string ConnectionId,
     bool IsInitiator, bool PeerPresent, Guid? PeerParticipantId, string? PeerConnectionId);

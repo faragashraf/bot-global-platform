@@ -5,6 +5,7 @@ import com.botglobal.mobile.platform.calling.CallingParticipantAvailability
 import com.botglobal.mobile.platform.identity.IdentityKind
 import com.botglobal.mobile.platform.identity.MobileSession
 import com.botglobal.mobile.platform.identity.SessionVault
+import com.botglobal.mobile.platform.presence.PresenceEvidence
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -78,6 +79,30 @@ class NqrbCallingDirectoryApiTests {
         }
 
         assertEquals(HttpStatusCode.Unauthorized.value, error.statusCode)
+    }
+
+    @Test
+    fun provider_neutral_evidence_is_optional_and_unknown_values_fail_closed_to_unknown() = runTest {
+        val engine = MockEngine {
+            respond(
+                content = """[
+                    {"membershipId":"known","displayName":"Known","availability":"Reachable","presenceEvidence":"Connected","presenceObservedAtUtc":"2026-10-09T12:00:00Z","presenceFullyCovered":true},
+                    {"membershipId":"legacy","displayName":"Legacy","availability":"Offline"},
+                    {"membershipId":"future","displayName":"Future","availability":"NewWireValue","presenceEvidence":"NewEvidence"}
+                ]""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        }
+        val api = NqrbCallingDirectoryApi(HttpClient(engine), "https://api.example", FixedSessionVault(session()))
+
+        val result = api.loadCallableParticipants().associateBy { it.membershipId }
+
+        assertEquals(PresenceEvidence.Connected, result.getValue("known").presenceEvidence)
+        assertEquals(true, result.getValue("known").presenceFullyCovered)
+        assertEquals(PresenceEvidence.Unknown, result.getValue("legacy").presenceEvidence)
+        assertEquals(PresenceEvidence.Unknown, result.getValue("future").presenceEvidence)
+        assertEquals(CallingParticipantAvailability.Offline, result.getValue("future").availability)
     }
 
     private class FixedSessionVault(

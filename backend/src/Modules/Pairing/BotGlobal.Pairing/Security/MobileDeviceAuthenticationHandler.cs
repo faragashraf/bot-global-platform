@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using BotGlobal.Contracts.Mobile;
+using BotGlobal.Contracts.Communication;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -49,6 +51,12 @@ public sealed class MobileDeviceAuthenticationHandler(
                 MobileDeviceAuthenticationDefaults.PlatformClientIdClaim,
                 device.PlatformClientId.ToString())
         };
+        if (Request.Path == ChatContract.HubPath || Request.Path == ChatContract.HubPath + "/negotiate")
+            Context.Items[ChatConnectionCredential.Key(ChatActorMechanism.PairedDevice)] = new ChatConnectionCredential(async (services, cancellation) =>
+            {
+                var current = await services.GetRequiredService<IMobileDeviceAuthenticator>().AuthenticateAsync(credential, cancellation);
+                return current is not null && current == device;
+            });
 
         if (!string.IsNullOrWhiteSpace(
                 device.ExternalSubjectId))
@@ -103,8 +111,9 @@ public sealed class MobileDeviceAuthenticationHandler(
 
         // During WebSocket/SSE transport negotiation SignalR may place the
         // access token in the query string.
-        if (Request.Path.StartsWithSegments(
-                MobileNotificationRealtimeContract.HubPath)
+        if ((Request.Path.StartsWithSegments(
+                MobileNotificationRealtimeContract.HubPath) ||
+             Request.Path == ChatContract.HubPath || Request.Path == ChatContract.HubPath + "/negotiate")
             && Request.Query.TryGetValue(
                 "access_token",
                 out var accessToken))

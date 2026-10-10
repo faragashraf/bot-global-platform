@@ -1,0 +1,30 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "__presenceControls": {
+      ".read": false,
+      ".write": false
+    },
+    "presenceConnections": {
+      "$uid": {
+        "$lease": {
+          "$connection": {
+            ".read": false,
+            ".write": "newData.exists() && auth != null && auth.uid == $uid && auth.token.lease == $lease && auth.token.connection == $connection && auth.token.leaseExp != null && now < auth.token.leaseExp && root.child('__presenceControls').child('byCapability').child($uid).child($lease).child('active').val() == true && root.child('__presenceControls').child('byCapability').child($uid).child($lease).child('expiresAtUtc').isNumber() && root.child('__presenceControls').child('byCapability').child($uid).child($lease).child('expiresAtUtc').val() > now && root.child('__presenceControls').child('byCapability').child($uid).child($lease).child('connectionId').val() == $connection",
+            ".validate": "newData.hasChildren(['state', 'observedAt'])",
+            "state": {
+              ".validate": "newData.isString() && (newData.val() == 'connected' || newData.val() == 'disconnected')"
+            },
+            "observedAt": {
+              ".validate": "newData.isNumber() && newData.val() == now"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      }
+    }
+  }
+}

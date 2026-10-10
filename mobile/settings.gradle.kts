@@ -34,6 +34,7 @@ plugins {
 
 include(":shared")
 include(":firebaseMessaging")
+include(":firebasePresence")
 include(":FamilyGamesMobile:composeApp")
 include(":FamilyGamesMobile:androidApp")
 include(":NqrbMobile:composeApp")

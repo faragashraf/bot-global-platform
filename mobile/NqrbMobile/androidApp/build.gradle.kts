@@ -30,6 +30,13 @@ val uploadSigningValues = listOf(uploadStoreFile, uploadStorePassword, uploadKey
 val uploadSigningConfigured = uploadSigningValues.all { it != null }
 val nqrbVersionCode = providers.gradleProperty("nqrbVersionCode").map(String::toInt).getOrElse(12)
 val nqrbVersionName = providers.gradleProperty("nqrbVersionName").getOrElse("0.2.7")
+val nqrbPresenceEnabled = providers.gradleProperty("nqrbPresenceEnabled").map(String::toBoolean).getOrElse(false)
+val nqrbPresenceProjectId = providers.gradleProperty("nqrbPresenceProjectId").getOrElse("")
+val nqrbPresenceDatabaseNamespace = providers.gradleProperty("nqrbPresenceDatabaseNamespace").getOrElse("")
+val nqrbPresenceDatabaseUrl = providers.gradleProperty("nqrbPresenceDatabaseUrl").getOrElse("")
+val nqrbPresenceDatabaseHost = providers.gradleProperty("nqrbPresenceDatabaseHost").getOrElse("")
+val nqrbPresenceApiKey = providers.gradleProperty("nqrbPresenceApiKey").getOrElse("")
+val nqrbPresenceApplicationId = providers.gradleProperty("nqrbPresenceApplicationId").getOrElse("")
 val releaseTaskPrefixes = listOf("assemble", "bundle", "install", "package", "publish", "sign", "upload")
 
 if (uploadSigningValues.any { it != null } && !uploadSigningConfigured) {
@@ -40,6 +47,7 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.googleServices)
+    alias(libs.plugins.kotlinxSerialization)
 }
 
 val validateNqrbGoogleSignInConfig = tasks.register("validateNqrbGoogleSignInConfig") {
@@ -86,9 +94,12 @@ tasks.configureEach {
 dependencies {
     implementation(projects.nqrbMobile.composeApp)
     implementation(projects.firebaseMessaging)
+    implementation(projects.firebasePresence)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.telecom)
     implementation(libs.compose.uiToolingPreview)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
     implementation("com.microsoft.signalr:signalr:7.0.0")
     testImplementation(kotlin("test-junit"))
     testImplementation(libs.kotlinx.coroutines.test)
@@ -106,6 +117,13 @@ android {
         versionName = nqrbVersionName
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", googleServerClientId.asBuildConfigString())
+        buildConfigField("boolean", "PRESENCE_ENABLED", nqrbPresenceEnabled.toString())
+        buildConfigField("String", "PRESENCE_PROJECT_ID", nqrbPresenceProjectId.asBuildConfigString())
+        buildConfigField("String", "PRESENCE_DATABASE_NAMESPACE", nqrbPresenceDatabaseNamespace.asBuildConfigString())
+        buildConfigField("String", "PRESENCE_DATABASE_URL", nqrbPresenceDatabaseUrl.asBuildConfigString())
+        buildConfigField("String", "PRESENCE_DATABASE_HOST", nqrbPresenceDatabaseHost.asBuildConfigString())
+        buildConfigField("String", "PRESENCE_API_KEY", nqrbPresenceApiKey.asBuildConfigString())
+        buildConfigField("String", "PRESENCE_APPLICATION_ID", nqrbPresenceApplicationId.asBuildConfigString())
     }
 
     signingConfigs {

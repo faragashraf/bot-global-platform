@@ -41,7 +41,10 @@ internal sealed class CallExpiryBackgroundService(
                 logger.LogWarning("Expired call history finalization failed. ErrorType={ErrorType}", error.GetType().Name);
             }
             foreach (var participant in sessions.ConnectedParticipants(session.CallerMembershipId, session.ApplicationKey))
+            {
+                await hub.Clients.Client(participant.ConnectionId).SendAsync("CallDeliveryChanged", session.Delivery(), cancellationToken);
                 await hub.Clients.Client(participant.ConnectionId).SendAsync("CallEnded", new CallEndedEvent(session.CallId, "expired"), cancellationToken);
+            }
             foreach (var participant in sessions.ConnectedParticipants(session.CalleeMembershipId, session.ApplicationKey))
                 await hub.Clients.Client(participant.ConnectionId).SendAsync("CallEnded", new CallEndedEvent(session.CallId, "expired"), cancellationToken);
             try

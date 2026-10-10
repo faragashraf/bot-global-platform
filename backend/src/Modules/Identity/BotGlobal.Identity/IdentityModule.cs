@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Threading.RateLimiting;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Calling;
+using BotGlobal.Contracts.Communication;
 using BotGlobal.Contracts.Notifications;
 using BotGlobal.Identity.Application;
 using BotGlobal.Identity.Application.MobileVersionPolicies;
@@ -95,9 +96,11 @@ public static class IdentityModule
         services.AddScoped<IMobileFederatedIdentityService, MobileFederatedIdentityService>();
         services.AddScoped<ICallingParticipantDirectory, CallingParticipantDirectory>();
         services.AddScoped<ICallingAccountDirectory, CallingAccountDirectory>();
+        services.AddScoped<IChatParticipantDirectory, NqrbCommunicationParticipantDirectory>();
         services.AddScoped<IApplicationAccountDeletionService, ApplicationAccountDeletionService>();
         services.AddScoped<IPublicNqrbAccountDeletionService, PublicNqrbAccountDeletionService>();
         services.AddScoped<IApplicationMembershipActivityReader, ApplicationMembershipActivityReader>();
+        services.AddScoped<IPresenceSessionDirectory, PresenceSessionAdapter>();
         services.AddScoped<ApplicationAccountDeletionProcessor>();
         if (!BotGlobalDatabaseOptions.IsCanaryEnsureCreatedEnabled(configuration))
         {

@@ -18,6 +18,8 @@ credentials = "1.6.0"
 google-id = "1.2.0"
 play-review = "2.0.2"
 firebase-messaging = "25.1.2"
+firebase-auth = "24.0.1"
+firebase-database = "22.0.1"
 google-services = "4.5.0"
 kotlin = "2.4.10"
 serialization = "1.11.0"
@@ -68,6 +70,8 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 google-identity-googleId = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "google-id" }
 google-play-review = { module = "com.google.android.play:review", version.ref = "play-review" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging", version.ref = "firebase-messaging" }
+firebase-auth = { module = "com.google.firebase:firebase-auth", version.ref = "firebase-auth" }
+firebase-database = { module = "com.google.firebase:firebase-database", version.ref = "firebase-database" }
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }

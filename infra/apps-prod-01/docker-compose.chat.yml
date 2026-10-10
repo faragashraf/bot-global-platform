@@ -1,0 +1,17 @@
+# Review-only overlay. No SQL/init mount, provider binding, or global worker changes.
+# Use with docker-compose.yml only after the separately approved activation runbook.
+services:
+  backend:
+    environment:
+      Communication__ChatRuntime__WorkersEnabled: ${BOTGLOBAL_CHAT_WORKERS_ENABLED:-false}
+      Communication__ChatVoice__StoragePath: /var/lib/botglobal/chat-voice
+      Communication__ChatVoice__PublishedRetentionDays: "7"
+      Communication__ChatVoice__SweepMinutes: "15"
+      Communication__ChatVoice__DecoderPath: /usr/bin/ffmpeg
+    volumes:
+      - chat-voice:/var/lib/botglobal/chat-voice
+
+volumes:
+  chat-voice:
+    # Explicit stable name: changing the compose project must not lose transfer bytes.
+    name: botglobal-chat-voice

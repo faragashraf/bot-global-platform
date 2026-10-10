@@ -252,4 +252,80 @@ public sealed class CallSessionRegistryTests
 
     private static CallingParticipantDescriptor Participant(ApplicationIdentityDescriptor identity) =>
         new(identity.MembershipId, identity.ApplicationKey, identity.SubjectId, identity.DisplayName, true);
+
+    [Fact]
+    public void Receipt_is_callee_bound_idempotent_and_cannot_resurrect_a_terminal_offer()
+    {
+        var registry = new CallSessionRegistry();
+        var caller = Identity("nqrb", "Caller");
+        var callee = Identity("nqrb", "Callee");
+        var stranger = Identity("nqrb", "Stranger");
+        registry.Connected("caller", caller);
+        registry.Connected("callee", callee);
+        registry.Connected("stranger", stranger);
+        var now = DateTimeOffset.Parse("2026-10-09T09:00:00Z");
+        var started = registry.Start("caller", Participant(callee), now, TimeSpan.FromSeconds(45));
+
+        Assert.Equal("call_callee_required", Assert.Throws<InvalidOperationException>(() =>
+            registry.ConfirmIncomingReceipt("caller", started.Session.CallId, now)).Message);
+        Assert.Equal("call_participant_unauthorized", Assert.Throws<InvalidOperationException>(() =>
+            registry.ConfirmIncomingReceipt("stranger", started.Session.CallId, now)).Message);
+
+        var first = registry.ConfirmIncomingReceipt("callee", started.Session.CallId, now.AddSeconds(1));
+        var duplicate = registry.ConfirmIncomingReceipt("callee", started.Session.CallId, now.AddSeconds(2));
+        Assert.True(first.Changed);
+        Assert.False(duplicate.Changed);
+        Assert.Equal("presented", started.Session.DeliveryState);
+        Assert.Equal(2, started.Session.DeliveryRevision);
+
+        registry.Answer("callee", started.Session.CallId, now.AddSeconds(3));
+        Assert.Equal("answered", started.Session.DeliveryState);
+        Assert.False(registry.ConfirmIncomingReceipt("callee", started.Session.CallId, now.AddSeconds(4)).Changed);
+        Assert.Equal("answered", started.Session.DeliveryState);
+    }
+
+    [Fact]
+    public void Delivery_projection_is_caller_only_and_preserves_receipt_history_after_expiry()
+    {
+        var registry = new CallSessionRegistry();
+        var caller = Identity("nqrb", "Caller");
+        var callee = Identity("nqrb", "Callee");
+        var stranger = Identity("nqrb", "Stranger");
+        registry.Connected("caller", caller);
+        registry.Connected("callee", callee);
+        registry.Connected("stranger", stranger);
+        var now = DateTimeOffset.Parse("2026-10-09T09:00:00Z");
+        var started = registry.Start("caller", Participant(callee), now, TimeSpan.FromSeconds(1));
+        registry.ConfirmIncomingReceipt("callee", started.Session.CallId, now.AddMilliseconds(100));
+
+        var status = registry.DeliveryStatus("caller", started.Session.CallId, now.AddSeconds(2));
+
+        Assert.True(status.Terminal);
+        Assert.True(status.WasPresented);
+        Assert.Equal("expired", status.TerminalReason);
+        Assert.Equal("call_caller_required", Assert.Throws<InvalidOperationException>(() =>
+            registry.DeliveryStatus("callee", started.Session.CallId, now.AddSeconds(2))).Message);
+        Assert.Equal("call_participant_unauthorized", Assert.Throws<InvalidOperationException>(() =>
+            registry.DeliveryStatus("stranger", started.Session.CallId, now.AddSeconds(2))).Message);
+    }
+
+    [Fact]
+    public void Lazy_expiry_is_enqueued_once_and_drained_only_by_the_worker_entrypoint()
+    {
+        var registry = new CallSessionRegistry();
+        var caller = Identity("nqrb", "Caller");
+        var callee = Identity("nqrb", "Callee");
+        registry.Connected("caller", caller);
+        registry.Connected("callee", callee);
+        var now = DateTimeOffset.Parse("2026-10-09T09:00:00Z");
+        var started = registry.Start("caller", Participant(callee), now, TimeSpan.FromSeconds(1));
+
+        Assert.Equal("call_offer_stale", Assert.Throws<InvalidOperationException>(() =>
+            registry.RequireIncoming("callee", started.Session.CallId, now.AddSeconds(2))).Message);
+
+        Assert.Single(registry.Expire(now.AddSeconds(2)));
+        Assert.Empty(registry.Expire(now.AddSeconds(3)));
+        Assert.Equal(CallSessionRegistry.CallStatus.Expired, started.Session.Status);
+        Assert.True(started.Session.DeliveryTerminal);
+    }
 }

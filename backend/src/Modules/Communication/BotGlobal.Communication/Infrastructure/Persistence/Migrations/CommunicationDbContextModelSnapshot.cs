@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
@@ -97,6 +98,283 @@ namespace BotGlobal.Communication.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_CallSessions_TimeOrder", "([AnsweredAtUtc] IS NULL OR [AnsweredAtUtc] >= [StartedAtUtc]) AND ([EndedAtUtc] IS NULL OR [EndedAtUtc] >= [StartedAtUtc]) AND ([AnsweredAtUtc] IS NULL OR [EndedAtUtc] IS NULL OR [EndedAtUtc] >= [AnsweredAtUtc])");
                         });
+                });
+
+            modelBuilder.Entity("BotGlobal.Communication.Domain.Chat.ChatConversation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DirectPairKey")
+                        .IsRequired()
+                        .HasMaxLength(420)
+                        .IsUnicode(true)
+                        .HasColumnType("character varying(420)")
+                        .UseCollation("C");
+
+                    b.Property<string>("FirstSubjectId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .IsUnicode(true)
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
+
+                    b.Property<long>("NextSequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SecondSubjectId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .IsUnicode(true)
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApplicationId", "DirectPairKey")
+                        .IsUnique();
+
+                    b.HasIndex("ApplicationId", "FirstSubjectId", "UpdatedAtUtc");
+
+                    b.HasIndex("ApplicationId", "SecondSubjectId", "UpdatedAtUtc");
+
+                    b.ToTable("ChatConversations", "communication");
+                });
+
+            modelBuilder.Entity("BotGlobal.Communication.Domain.Chat.ChatDispatch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("LeaseId").IsConcurrencyToken().HasColumnType("uuid");
+                    b.Property<string>("RouteOutcomes").IsRequired().HasMaxLength(16000).HasColumnType("character varying(16000)");
+                    b.Property<bool>("HintsSent").HasColumnType("boolean");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RecipientSubjectId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .IsUnicode(true)
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
+
+                    b.Property<string>("SafeErrorCode")
+                        .HasMaxLength(120)
+                        .IsUnicode(false)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApplicationId", "MessageId")
+                        .IsUnique();
+
+                    b.HasIndex("State", "NextAttemptAtUtc");
+
+                    b.ToTable("ChatDispatches", "communication");
+                });
+
+            modelBuilder.Entity("BotGlobal.Communication.Domain.Chat.ChatMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ClientMessageId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(true)
+                        .HasColumnType("character varying(100)")
+                        .UseCollation("C");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PayloadFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SenderSubjectId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .IsUnicode(true)
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Text")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<Guid?>("VoiceTransferId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApplicationId", "ConversationId", "Sequence")
+                        .IsUnique();
+
+                    b.HasIndex("ApplicationId", "SenderSubjectId", "ClientMessageId")
+                        .IsUnique();
+
+                    b.ToTable("ChatMessages", "communication");
+                });
+
+            modelBuilder.Entity("BotGlobal.Communication.Domain.Chat.ChatReceipt", b =>
+                {
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SubjectId")
+                        .HasMaxLength(200)
+                        .IsUnicode(true)
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
+
+                    b.Property<long>("LastReadSequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("ApplicationId", "ConversationId", "SubjectId");
+
+                    b.ToTable("ChatReceipts", "communication");
+                });
+
+            modelBuilder.Entity("BotGlobal.Communication.Domain.Chat.ChatVoiceTransfer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("AcknowledgedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("AcknowledgedInstallationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DeleteAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("DeletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DurationMilliseconds")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FileKey")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .IsUnicode(true)
+                        .HasColumnType("character varying(160)")
+                        .UseCollation("C");
+
+                    b.Property<long>("Length")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("MessageId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("PublishedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RecipientSubjectId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .IsUnicode(true)
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
+
+                    b.Property<string>("SafeDeleteError")
+                        .HasMaxLength(120)
+                        .IsUnicode(false)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("SenderSubjectId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .IsUnicode(true)
+                        .HasColumnType("character varying(200)")
+                        .UseCollation("C");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("ApplicationId", "Id");
+
+                    b.HasIndex("ApplicationId", "ConversationId");
+
+                    b.HasIndex("ApplicationId", "FileKey")
+                        .IsUnique();
+
+                    b.HasIndex("ApplicationId", "MessageId")
+                        .IsUnique();
+
+                    b.HasIndex("State", "ExpiresAtUtc");
+
+                    b.ToTable("ChatVoiceTransfers", "communication");
                 });
 
             modelBuilder.Entity("BotGlobal.Communication.Domain.Conversations.Conversation", b =>
@@ -216,7 +494,8 @@ namespace BotGlobal.Communication.Infrastructure.Persistence.Migrations
 
                     b.Property<long>("SequenceNumber")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
+                        .HasColumnType("bigint")
+                        .HasAnnotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn);
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("SequenceNumber"));
 
@@ -306,6 +585,53 @@ namespace BotGlobal.Communication.Infrastructure.Persistence.Migrations
                     b.HasOne("BotGlobal.Communication.Domain.Conversations.Conversation", null)
                         .WithMany()
                         .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("BotGlobal.Communication.Domain.Chat.ChatDispatch", b =>
+                {
+                    b.HasOne("BotGlobal.Communication.Domain.Chat.ChatMessage", null)
+                        .WithOne()
+                        .HasForeignKey("BotGlobal.Communication.Domain.Chat.ChatDispatch", "ApplicationId", "MessageId")
+                        .HasPrincipalKey("BotGlobal.Communication.Domain.Chat.ChatMessage", "ApplicationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BotGlobal.Communication.Domain.Chat.ChatMessage", b =>
+                {
+                    b.HasOne("BotGlobal.Communication.Domain.Chat.ChatConversation", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId", "ConversationId")
+                        .HasPrincipalKey("ApplicationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BotGlobal.Communication.Domain.Chat.ChatReceipt", b =>
+                {
+                    b.HasOne("BotGlobal.Communication.Domain.Chat.ChatConversation", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId", "ConversationId")
+                        .HasPrincipalKey("ApplicationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BotGlobal.Communication.Domain.Chat.ChatVoiceTransfer", b =>
+                {
+                    b.HasOne("BotGlobal.Communication.Domain.Chat.ChatConversation", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId", "ConversationId")
+                        .HasPrincipalKey("ApplicationId", "Id")
+                        .HasConstraintName("FK_ChatVoiceTransfers_ChatConversations_App_Conversation")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BotGlobal.Communication.Domain.Chat.ChatMessage", null)
+                        .WithOne()
+                        .HasForeignKey("BotGlobal.Communication.Domain.Chat.ChatVoiceTransfer", "ApplicationId", "MessageId")
+                        .HasPrincipalKey("BotGlobal.Communication.Domain.Chat.ChatMessage", "ApplicationId", "Id")
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 

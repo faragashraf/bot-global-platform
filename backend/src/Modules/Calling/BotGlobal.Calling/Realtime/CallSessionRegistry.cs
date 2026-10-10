@@ -9,6 +9,8 @@ public sealed class CallSessionRegistry
     private readonly ConcurrentDictionary<string, ConnectedParticipant> connections = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, Session> sessions = [];
     private readonly HashSet<(string ApplicationKey, Guid MembershipId)> blockedMemberships = [];
+    private readonly Queue<Session> pendingExpired = [];
+    private readonly HashSet<Guid> queuedExpired = [];
     private readonly object gate = new();
 
     public ConnectedParticipant Connected(string connectionId, ApplicationIdentityDescriptor identity)
@@ -105,7 +107,35 @@ public sealed class CallSessionRegistry
             if (session.Status != CallStatus.Ringing) throw Error(staleError);
             session.Status = target;
             session.TerminationReason = target.ToString().ToLowerInvariant();
+            session.AdvanceDelivery(target == CallStatus.Answered ? "answered" : "terminal", now, terminal: target != CallStatus.Answered);
             return new Transition(session, true, ConnectionsFor(session.CallerMembershipId, session.ApplicationKey));
+        }
+    }
+
+    public Transition ConfirmIncomingReceipt(string connectionId, Guid callId, DateTimeOffset now)
+    {
+        lock (gate)
+        {
+            ExpireLocked(now);
+            var connection = RequireConnection(connectionId);
+            var session = RequireSession(callId);
+            session.RequireCallee(connection.MembershipId, connection.ApplicationKey);
+            if (!session.IsLive) throw Error("call_offer_stale");
+            var changed = session.Status == CallStatus.Ringing && session.DeliveryState == "attempting";
+            if (changed) session.AdvanceDelivery("presented", now);
+            return new Transition(session, changed, ConnectionsFor(session.CallerMembershipId, session.ApplicationKey));
+        }
+    }
+
+    public CallDeliveryStatus DeliveryStatus(string connectionId, Guid callId, DateTimeOffset now)
+    {
+        lock (gate)
+        {
+            ExpireLocked(now);
+            var connection = RequireConnection(connectionId);
+            var session = RequireSession(callId);
+            session.RequireCaller(connection.MembershipId, connection.ApplicationKey);
+            return session.Delivery();
         }
     }
 
@@ -163,6 +193,7 @@ public sealed class CallSessionRegistry
             {
                 session.Status = connection.MembershipId == session.CallerMembershipId && session.Status == CallStatus.Ringing ? CallStatus.Cancelled : CallStatus.Ended;
                 session.TerminationReason = NormalizeReason(reason, session.Status);
+                session.AdvanceDelivery("terminal", DateTimeOffset.UtcNow, terminal: true);
             }
             var peer = connection.MembershipId == session.CallerMembershipId ? session.CalleeMembershipId : session.CallerMembershipId;
             var peerConnections = ConnectionsFor(peer, session.ApplicationKey);
@@ -171,7 +202,17 @@ public sealed class CallSessionRegistry
         }
     }
 
-    public IReadOnlyList<Session> Expire(DateTimeOffset now) { lock (gate) return ExpireLocked(now); }
+    public IReadOnlyList<Session> Expire(DateTimeOffset now)
+    {
+        lock (gate)
+        {
+            ExpireLocked(now);
+            var result = pendingExpired.ToArray();
+            pendingExpired.Clear();
+            foreach (var session in result) queuedExpired.Remove(session.CallId);
+            return result;
+        }
+    }
     public IReadOnlyList<ConnectedParticipant> ConnectedParticipants(Guid membershipId, string applicationKey)
     { lock (gate) return ConnectionsFor(membershipId, applicationKey); }
     public bool IsOnline(Guid membershipId, string applicationKey)
@@ -212,6 +253,7 @@ public sealed class CallSessionRegistry
                 return;
             session.Status = CallStatus.Cancelled;
             session.TerminationReason = "failed";
+            session.AdvanceDelivery("terminal", DateTimeOffset.UtcNow, terminal: true);
             session.ClearParticipants();
         }
     }
@@ -233,6 +275,7 @@ public sealed class CallSessionRegistry
             {
                 session.Status = CallStatus.Ended;
                 session.TerminationReason = "account_deleted";
+                session.AdvanceDelivery("terminal", DateTimeOffset.UtcNow, terminal: true);
                 var peerId = membershipId == session.CallerMembershipId
                     ? session.CalleeMembershipId
                     : session.CallerMembershipId;
@@ -249,6 +292,8 @@ public sealed class CallSessionRegistry
         {
             session.Status = CallStatus.Expired;
             session.TerminationReason = "expired";
+            session.AdvanceDelivery("terminal", now, terminal: true);
+            if (queuedExpired.Add(session.CallId)) pendingExpired.Enqueue(session);
         }
         return result;
     }
@@ -305,14 +350,33 @@ public sealed class CallSessionRegistry
         public Guid? GuestInviteId { get; } = guestInviteId;
         public CallStatus Status { get; set; } = CallStatus.Ringing;
         public string? TerminationReason { get; internal set; }
+        public string DeliveryState { get; private set; } = "attempting";
+        public long DeliveryRevision { get; private set; } = 1;
+        public DateTimeOffset DeliveryUpdatedAtUtc { get; private set; } = createdAtUtc;
+        public bool DeliveryTerminal { get; private set; }
+        public bool WasPresented { get; private set; }
         public bool IsLive => Status is CallStatus.Ringing or CallStatus.Answered;
         public bool HasParticipant(Guid id) => id == CallerMembershipId || id == CalleeMembershipId;
         public void RequireParticipant(Guid id, string app) { if (!HasParticipant(id) || ApplicationKey != app) throw Error("call_participant_unauthorized"); }
+        public void RequireCaller(Guid id, string app) { RequireParticipant(id, app); if (id != CallerMembershipId) throw Error("call_caller_required"); }
         public void RequireCallee(Guid id, string app) { RequireParticipant(id, app); if (id != CalleeMembershipId) throw Error("call_callee_required"); }
         public void Join(ConnectedParticipant p, long generation) => participants[p.MembershipId] = new JoinedParticipant(p.ConnectionId, CallId, p.MembershipId, generation, p.MembershipId == CallerMembershipId);
         public JoinedParticipant RequireCurrent(string id, long generation) => participants.Values.SingleOrDefault(x => x.ConnectionId == id && x.Generation == generation) ?? throw Error("call_generation_stale");
         public JoinedParticipant? PeerOf(Guid id) => participants.Values.SingleOrDefault(x => x.MembershipId != id);
         public JoinedParticipant? Leave(string id) { var p = participants.Values.SingleOrDefault(x => x.ConnectionId == id); if (p is not null) participants.Remove(p.MembershipId); return p; }
         public void ClearParticipants() => participants.Clear();
+        public void AdvanceDelivery(string state, DateTimeOffset at, bool terminal = false)
+        {
+            if (DeliveryTerminal || string.Equals(DeliveryState, state, StringComparison.Ordinal)) return;
+            if (string.Equals(DeliveryState, "answered", StringComparison.Ordinal) && !terminal) return;
+            if (state is "presented" or "answered") WasPresented = true;
+            DeliveryState = state;
+            DeliveryTerminal = terminal;
+            DeliveryUpdatedAtUtc = at;
+            DeliveryRevision++;
+        }
+        public CallDeliveryStatus Delivery() =>
+            new(CallId, DeliveryState, DeliveryRevision, DeliveryUpdatedAtUtc, DeliveryTerminal,
+                WasPresented, DeliveryTerminal ? TerminationReason : null);
     }
 }

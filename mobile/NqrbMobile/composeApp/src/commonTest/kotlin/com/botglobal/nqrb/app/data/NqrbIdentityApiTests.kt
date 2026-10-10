@@ -21,6 +21,51 @@ import kotlin.test.assertIs
 
 class NqrbIdentityApiTests {
     @Test
+    fun lateRefreshCannotReplaceAnAccountChangedWhileRequestWasInFlight() = runTest {
+        val vault = RecordingSessionVault(session())
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val api = NqrbIdentityApi(HttpClient(MockEngine {
+            entered.complete(Unit); release.await()
+            respond("", HttpStatusCode.Unauthorized)
+        }), "https://synthetic.invalid", vault)
+        val refresh = async { api.restore() }
+        entered.await()
+        val newer = session("newer")
+        vault.value = newer
+        release.complete(Unit)
+        assertEquals(null, refresh.await())
+        assertEquals(newer, vault.value)
+        assertIs<NqrbSessionAvailability.Unavailable>(api.availability.value)
+    }
+
+    @Test
+    fun foreignApplicationCannotBecomeCachedLocalNqrbIdentity() = runTest {
+        val foreign = session().let { it.copy(identity = it.identity.copy(applicationKey = "other-app")) }
+        val vault = RecordingSessionVault(foreign)
+        var requests = 0
+        val api = NqrbIdentityApi(HttpClient(MockEngine { requests++; error("Unexpected request") }), "https://synthetic.invalid", vault)
+        assertEquals(null, api.restore())
+        assertIs<NqrbSessionAvailability.Unavailable>(api.availability.value)
+        assertEquals(0, requests)
+    }
+
+    @Test
+    fun coldOfflineRestoreExposesOnlyCachedLocalAndRevocationClearsIt() = runTest {
+        val vault = RecordingSessionVault(session())
+        var offline = true
+        val api = NqrbIdentityApi(HttpClient(MockEngine {
+            if (offline) throw io.ktor.utils.io.errors.IOException("synthetic offline")
+            respond("", HttpStatusCode.Unauthorized)
+        }), "https://synthetic.invalid", vault)
+        kotlin.test.assertFailsWith<NqrbIdentityNetworkException> { api.restore() }
+        assertEquals(session(), assertIs<NqrbSessionAvailability.CachedLocal>(api.availability.value).session)
+        offline = false
+        assertEquals(null, api.restore())
+        assertIs<NqrbSessionAvailability.Unavailable>(api.availability.value)
+        assertEquals(null, vault.value)
+    }
+
+    @Test
     fun versionPolicyUsesGenericNqrbEndpointWithCurrentVersionAndPlatform() = runTest {
         val engine = MockEngine { request ->
             assertEquals(HttpMethod.Get, request.method)
@@ -79,7 +124,8 @@ class NqrbIdentityApiTests {
             )
         }
 
-        val result = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault).load(signedIn)
+        val api = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault)
+        val result = api.load(signedIn)
 
         assertIs<NqrbAccountProfileResult.Available>(result)
         assertEquals("rotated-access", vault.value?.accessToken)
@@ -117,11 +163,13 @@ class NqrbIdentityApiTests {
             }
         }
 
-        val result = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault).load(signedIn)
+        val api = NqrbIdentityApi(HttpClient(engine), "https://api.example", vault)
+        val result = api.load(signedIn)
 
         assertIs<NqrbAccountProfileResult.Available>(result)
         assertEquals(2, profileRequests)
         assertEquals("renewed-access", vault.value?.accessToken)
+        assertEquals("renewed-access", assertIs<NqrbSessionAvailability.Online>(api.availability.value).session.accessToken)
     }
 
     @Test

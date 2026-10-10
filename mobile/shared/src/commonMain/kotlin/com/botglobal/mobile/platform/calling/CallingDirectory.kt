@@ -1,5 +1,6 @@
 package com.botglobal.mobile.platform.calling
 
+import com.botglobal.mobile.platform.presence.PresenceEvidence
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,6 +13,9 @@ data class CallableParticipant(
     val membershipId: String,
     val displayName: String,
     val availability: CallingParticipantAvailability = CallingParticipantAvailability.Offline,
+    val presenceEvidence: PresenceEvidence? = null,
+    val presenceObservedAtEpochMillis: Long? = null,
+    val presenceFullyCovered: Boolean? = null,
 )
 
 enum class CallingParticipantAvailability { Online, Reachable, Offline }

@@ -91,12 +91,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         configureIncomingCallPresentation(intent)
         enableEdgeToEdge()
         val nqrbApplication = application as NqrbApplication
         val sessionVault = nqrbApplication.sessionVault
         val appearanceStore = AndroidPreferenceStore(this, "nqrb_appearance")
         val reviewStore = AndroidPreferenceStore(this, "nqrb_review")
+        val chatPreferenceStore = AndroidPreferenceStore(this, "nqrb_chat")
         val savedAppearance = AppearancePreference.entries.firstOrNull {
             it.name == appearanceStore.string(AppearancePreferenceKey)
         } ?: AppearancePreference.Light
@@ -116,12 +118,19 @@ class MainActivity : ComponentActivity() {
                 AndroidPreferenceStore(this, NqrbOngoingCallService.RingtonePreferences),
             ),
             callActivity = nqrbApplication.callActivity,
+            chat = nqrbApplication.chat,
+            chatVoiceRecorder = nqrbApplication.chatVoiceRecorder,
+            chatVoicePlayer = nqrbApplication.chatVoicePlayer,
             notificationInbox = nqrbApplication.notificationInbox,
             push = nqrbApplication.firebaseMessagingRuntime,
             accountDeletion = nqrbApplication.accountDeletionApi,
             accountProfile = nqrbApplication.identityApi,
             localAccountDataCleaner = nqrbApplication.localAccountDataCleaner,
             permissions = permissionController,
+            openMicrophoneSettings = {
+                startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:$packageName")))
+            },
             reviews = ReviewCoordinator(
                 preferenceStore = reviewStore,
                 storageKey = "play_review_policy",
@@ -130,6 +139,7 @@ class MainActivity : ComponentActivity() {
                 nowMillis = System::currentTimeMillis,
             ),
             updatePolicy = nqrbApplication.identityApi,
+            chatPreferences = chatPreferenceStore,
             currentVersion = BuildConfig.VERSION_NAME,
             platform = "android",
         )

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using BotGlobal.Calling.Application;
+using BotGlobal.Contracts.Communication;
 
 namespace BotGlobal.Calling.Realtime;
 
@@ -17,6 +18,7 @@ public sealed class CallingHub(
     INqrbCallEligibilityService nqrbEligibility,
     IIncomingCallNotificationDispatcher notifications,
     ICallActivityService activity,
+    CallingPresenceAdapter callingPresence,
     TimeProvider timeProvider,
     ILogger<CallingHub> logger) : Hub
 {
@@ -40,7 +42,7 @@ public sealed class CallingHub(
 
     public async Task<StartedCallResult> StartOutgoingCall(StartOutgoingCallRequest request)
     {
-        var identity = RequireRegisteredIdentity();
+        var (identity, credential) = await RequireRegisteredConnectionAsync();
         if (string.Equals(identity.ApplicationKey, BotGlobalApplications.Nqrb, StringComparison.Ordinal))
         {
             var eligibility = await nqrbEligibility.EvaluateAsync(
@@ -49,32 +51,102 @@ public sealed class CallingHub(
                 Context.ConnectionAborted);
             if (!eligibility.CanCall)
                 throw new HubException("call_peer_unavailable");
+            await RevalidateRegisteredConnectionAsync(identity, credential);
         }
         var callee = await participants.FindAsync(identity.ApplicationKey, request.CalleeMembershipId, Context.ConnectionAborted);
+        await RevalidateRegisteredConnectionAsync(identity, credential);
         if (callee is null || !callee.IsActive) throw new HubException("call_peer_unavailable");
+        if (string.Equals(identity.ApplicationKey, BotGlobalApplications.Nqrb, StringComparison.Ordinal))
+        {
+            var presence = await callingPresence.EvaluateAsync(
+                credential,
+                identity,
+                callee,
+                Context.ConnectionAborted);
+            if (presence.AuthoritativelyUnavailable)
+                throw new HubException("call_peer_unavailable");
+            await RevalidateRegisteredConnectionAsync(identity, credential);
+            var recheck = await nqrbEligibility.EvaluateAsync(
+                identity.MembershipId,
+                request.CalleeMembershipId,
+                Context.ConnectionAborted);
+            if (!recheck.CanCall) throw new HubException("call_peer_unavailable");
+            await RevalidateRegisteredConnectionAsync(identity, credential);
+        }
         CallSessionRegistry.Started started;
         try { started = sessions.Start(Context.ConnectionId, callee, timeProvider.GetUtcNow(), TimeSpan.FromSeconds(45)); }
         catch (InvalidOperationException error) { throw new HubException(error.Message); }
-        try { await activity.StartAsync(started.Session, Context.ConnectionAborted); }
+        try
+        {
+            await RevalidateRegisteredConnectionAsync(identity, credential);
+            await activity.StartAsync(started.Session, Context.ConnectionAborted);
+            await RevalidateRegisteredConnectionAsync(identity, credential);
+        }
+        catch (HubException)
+        {
+            sessions.End(Context.ConnectionId, started.Session.CallId);
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            sessions.End(Context.ConnectionId, started.Session.CallId);
+            throw;
+        }
         catch
         {
             sessions.End(Context.ConnectionId, started.Session.CallId);
             throw new HubException("call_history_unavailable");
         }
-        foreach (var connection in started.CalleeConnections)
-            await Clients.Client(connection.ConnectionId).SendAsync("CallOffered",
-            new CallOfferedEvent(started.Session.CallId, started.Session.ApplicationKey,
-                started.Caller.MembershipId, started.Caller.DisplayName));
-        await notifications.DispatchAsync(new IncomingCallNotification(
-            started.Session.ApplicationKey, started.Session.CalleeSubjectId, started.Session.CallId,
-            IncomingCallNotificationKind.Offered, started.Session.CallerDisplayName, started.Session.ExpiresAtUtc),
-            Context.ConnectionAborted);
-        return new StartedCallResult(started.Session.CallId, started.Session.CalleeMembershipId, started.Session.CalleeDisplayName);
+        try
+        {
+            foreach (var connection in started.CalleeConnections)
+            {
+                await RevalidateRegisteredConnectionAsync(identity, credential);
+                await Clients.Client(connection.ConnectionId).SendAsync("CallOffered",
+                new CallOfferedEvent(started.Session.CallId, started.Session.ApplicationKey,
+                    started.Caller.MembershipId, started.Caller.DisplayName));
+            }
+            await RevalidateRegisteredConnectionAsync(identity, credential);
+            await notifications.DispatchAsync(new IncomingCallNotification(
+                started.Session.ApplicationKey, started.Session.CalleeSubjectId, started.Session.CallId,
+                IncomingCallNotificationKind.Offered, started.Session.CallerDisplayName, started.Session.ExpiresAtUtc),
+                Context.ConnectionAborted);
+            await RevalidateRegisteredConnectionAsync(identity, credential);
+        }
+        catch
+        {
+            sessions.End(Context.ConnectionId, started.Session.CallId);
+            throw;
+        }
+        return new StartedCallResult(started.Session.CallId, started.Session.CalleeMembershipId,
+            started.Session.CalleeDisplayName, started.Session.Delivery());
     }
 
-    public IncomingCallResult GetIncomingCall(IncomingCallLookupRequest request)
+    public async Task ConfirmIncomingReceipt(ConfirmIncomingReceiptRequest request)
     {
-        RequireRegisteredIdentity();
+        var (identity, credential) = await RequireRegisteredConnectionAsync();
+        await RevalidateRegisteredConnectionAsync(identity, credential);
+        CallSessionRegistry.Transition transition;
+        try { transition = sessions.ConfirmIncomingReceipt(Context.ConnectionId, request.CallId, timeProvider.GetUtcNow()); }
+        catch (InvalidOperationException error) { throw new HubException(error.Message); }
+        if (!transition.Changed) return;
+        var status = transition.Session.Delivery();
+        foreach (var connection in transition.PeerConnections)
+            await Clients.Client(connection.ConnectionId).SendAsync("CallDeliveryChanged", status, Context.ConnectionAborted);
+    }
+
+    public async Task<CallDeliveryStatus> GetCallDeliveryStatus(IncomingCallLookupRequest request)
+    {
+        var (identity, credential) = await RequireRegisteredConnectionAsync();
+        await RevalidateRegisteredConnectionAsync(identity, credential);
+        try { return sessions.DeliveryStatus(Context.ConnectionId, request.CallId, timeProvider.GetUtcNow()); }
+        catch (InvalidOperationException error) { throw new HubException(error.Message); }
+    }
+
+    public async Task<IncomingCallResult> GetIncomingCall(IncomingCallLookupRequest request)
+    {
+        var (identity, credential) = await RequireRegisteredConnectionAsync();
+        await RevalidateRegisteredConnectionAsync(identity, credential);
         try
         {
             var incoming = sessions.RequireIncoming(Context.ConnectionId, request.CallId, timeProvider.GetUtcNow());
@@ -86,14 +158,19 @@ public sealed class CallingHub(
 
     public async Task AnswerIncomingCall(AnswerCallRequest request)
     {
-        RequireRegisteredIdentity();
+        var (identity, credential) = await RequireRegisteredConnectionAsync();
+        await RevalidateRegisteredConnectionAsync(identity, credential);
         CallSessionRegistry.Transition transition;
         try { transition = sessions.Answer(Context.ConnectionId, request.CallId, timeProvider.GetUtcNow()); }
         catch (InvalidOperationException error) { throw new HubException(error.Message); }
         await activity.AnswerAsync(transition.Session, timeProvider.GetUtcNow(), Context.ConnectionAborted);
+        await RevalidateRegisteredConnectionAsync(identity, credential);
         if (!transition.Changed) return;
         foreach (var connection in transition.PeerConnections)
+        {
             await Clients.Client(connection.ConnectionId).SendAsync("CallAnswered", new CallStateEvent(request.CallId, "answered"));
+            await Clients.Client(connection.ConnectionId).SendAsync("CallDeliveryChanged", transition.Session.Delivery(), Context.ConnectionAborted);
+        }
         foreach (var connection in sessions.ConnectedParticipants(transition.Session.CalleeMembershipId, transition.Session.ApplicationKey)
                      .Where(connection => connection.ConnectionId != Context.ConnectionId))
             await Clients.Client(connection.ConnectionId).SendAsync("CallEnded", new CallEndedEvent(request.CallId, "answered_elsewhere"));
@@ -102,11 +179,13 @@ public sealed class CallingHub(
 
     public async Task RejectIncomingCall(RejectCallRequest request)
     {
-        RequireRegisteredIdentity();
+        var (identity, credential) = await RequireRegisteredConnectionAsync();
+        await RevalidateRegisteredConnectionAsync(identity, credential);
         CallSessionRegistry.Transition transition;
         try { transition = sessions.Reject(Context.ConnectionId, request.CallId, timeProvider.GetUtcNow()); }
         catch (InvalidOperationException error) { throw new HubException(error.Message); }
         await activity.FinishAsync(transition.Session, timeProvider.GetUtcNow(), Context.ConnectionAborted);
+        await RevalidateRegisteredConnectionAsync(identity, credential);
         if (transition.Session.IsGuestCall)
             guestInvites.Complete(transition.Session.GuestInviteId);
         if (!transition.Changed) return;
@@ -137,11 +216,12 @@ public sealed class CallingHub(
 
     public async Task<JoinCallResult> JoinCall(JoinCallRequest request)
     {
-        RequireGuestBindingIfScoped(request.CallId);
+        await RequireCurrentParticipantConnectionAsync(request.CallId);
         CallSessionRegistry.Joined joined;
         try { joined = sessions.Join(Context.ConnectionId, request.CallId, request.Generation); }
         catch (InvalidOperationException error) { throw new HubException(error.Message); }
         await activity.JoinedAsync(joined.Session, joined.Current.MembershipId, timeProvider.GetUtcNow(), Context.ConnectionAborted);
+        await RequireCurrentParticipantConnectionAsync(request.CallId);
         if (joined.Peer is not null)
         {
             await Clients.Client(joined.Peer.ConnectionId).SendAsync("CallPeerJoined", PeerEvent(joined.Current, joined.Peer));
@@ -155,7 +235,7 @@ public sealed class CallingHub(
     public async Task<CallingIceConfiguration> GetCallIceConfiguration(Guid callId)
     {
         var identity = RequireIdentity();
-        RequireGuestBindingIfScoped(callId);
+        await RequireCurrentParticipantConnectionAsync(callId);
         RequireIceCredentialParticipant(callId);
         try
         {
@@ -163,6 +243,7 @@ public sealed class CallingHub(
             var configuration = session.IsGuestCall
                 ? ice.CreateStunOnly(identity.MembershipId)
                 : await ice.CreateAsync(identity.MembershipId, Context.ConnectionAborted);
+            await RequireCurrentParticipantConnectionAsync(callId);
             RequireIceCredentialParticipant(callId);
             return configuration;
         }
@@ -178,7 +259,7 @@ public sealed class CallingHub(
 
     public async Task CallIceCandidate(CallIceCandidateRequest request)
     {
-        RequireGuestBindingIfScoped(request.CallId);
+        await RequireCurrentParticipantConnectionAsync(request.CallId);
         var (sender, peer) = RequirePeer(request.CallId, request.Generation);
         if (peer is null) return;
         await Clients.Client(peer.ConnectionId).SendAsync("CallIceCandidate",
@@ -189,7 +270,7 @@ public sealed class CallingHub(
 
     public async Task CallMuteState(CallMuteRequest request)
     {
-        RequireGuestBindingIfScoped(request.CallId);
+        await RequireCurrentParticipantConnectionAsync(request.CallId);
         var (sender, peer) = RequirePeer(request.CallId, request.Generation);
         if (peer is null) return;
         await Clients.Client(peer.ConnectionId).SendAsync("CallMuteState",
@@ -199,7 +280,7 @@ public sealed class CallingHub(
 
     public async Task EndCall(EndCallRequest request)
     {
-        RequireGuestBindingIfScoped(request.CallId);
+        await RequireCurrentParticipantConnectionAsync(request.CallId);
         CallSessionRegistry.Transition transition;
         try { transition = sessions.End(Context.ConnectionId, request.CallId, request.Reason); }
         catch (InvalidOperationException error) { throw new HubException(error.Message); }
@@ -219,7 +300,7 @@ public sealed class CallingHub(
 
     private async Task ForwardDescription(string eventName, CallDescriptionRequest request)
     {
-        RequireGuestBindingIfScoped(request.CallId);
+        await RequireCurrentParticipantConnectionAsync(request.CallId);
         var (sender, peer) = RequirePeer(request.CallId, request.Generation);
         if (peer is null) return;
         await Clients.Client(peer.ConnectionId).SendAsync(eventName,
@@ -268,6 +349,36 @@ public sealed class CallingHub(
         return identity;
     }
 
+    private async Task<(ApplicationIdentityDescriptor Identity, PresenceConnectionCredential Credential)> RequireRegisteredConnectionAsync()
+    {
+        var identity = RequireRegisteredIdentity();
+        Context.Items.TryGetValue(PresenceConnectionCredential.HttpContextItemKey, out var hubValue);
+        var credential = hubValue as PresenceConnectionCredential;
+        if (credential is null && Context.GetHttpContext() is { } httpContext &&
+            httpContext.Items.TryGetValue(PresenceConnectionCredential.HttpContextItemKey, out var httpValue))
+            credential = httpValue as PresenceConnectionCredential;
+        if (credential is null) throw new HubException("call_connection_credential_required");
+        var current = await callingPresence.ValidateConnectionAsync(credential, Context.ConnectionAborted);
+        if (current is null || current.IsGuest || current.Authority.MembershipId != identity.MembershipId ||
+            !string.Equals(current.Authority.ApplicationKey, identity.ApplicationKey, StringComparison.Ordinal))
+            throw new HubException("call_connection_credential_stale");
+        return (identity, credential);
+    }
+
+    private async Task RevalidateRegisteredConnectionAsync(
+        ApplicationIdentityDescriptor expected,
+        PresenceConnectionCredential credential)
+    {
+        var current = await callingPresence.ValidateConnectionAsync(credential, Context.ConnectionAborted);
+        if (current is null || current.IsGuest || current.Authority.SessionId != credential.SessionId ||
+            current.Authority.MembershipId != expected.MembershipId ||
+            current.Authority.MembershipId != credential.MembershipId ||
+            !string.Equals(current.Authority.ApplicationKey, expected.ApplicationKey, StringComparison.Ordinal) ||
+            !string.Equals(current.Authority.ApplicationKey, credential.ApplicationKey, StringComparison.Ordinal) ||
+            !string.Equals(current.Authority.CredentialRevision, credential.CredentialRevision, StringComparison.Ordinal))
+            throw new HubException("call_connection_credential_stale");
+    }
+
     private void RequireGuestBindingIfScoped(Guid callId)
     {
         if (!IsScopedGuestCallIdentity()) return;
@@ -278,6 +389,17 @@ public sealed class CallingHub(
             boundCallId != callId ||
             !guestInvites.IsGuestAuthorized(inviteId, membershipId, callId))
             throw new HubException("guest_call_scope_required");
+    }
+
+    private async Task RequireCurrentParticipantConnectionAsync(Guid callId)
+    {
+        if (IsScopedGuestCallIdentity())
+        {
+            RequireGuestBindingIfScoped(callId);
+            return;
+        }
+        var (identity, credential) = await RequireRegisteredConnectionAsync();
+        await RevalidateRegisteredConnectionAsync(identity, credential);
     }
 
     private bool IsScopedGuestCallIdentity() =>

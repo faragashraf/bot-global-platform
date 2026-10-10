@@ -19,9 +19,14 @@ internal interface NqrbGeneralPushNotificationSink {
     suspend fun show(messageId: String?, title: String, body: String)
 }
 
+internal fun interface NqrbChatPushSynchronizer {
+    suspend fun synchronize(conversationId: String?)
+}
+
 internal class NqrbPushMessageHandler(
     private val session: NqrbIncomingCallPushSession,
     private val generalNotifications: NqrbGeneralPushNotificationSink = IgnoreGeneralPushNotifications,
+    private val chat: NqrbChatPushSynchronizer = IgnoreChatPushSynchronizer,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
     private val pause: suspend (Long) -> Unit = ::delay,
     private val logger: (String, Throwable?) -> Unit = { message, error ->
@@ -33,7 +38,8 @@ internal class NqrbPushMessageHandler(
     constructor(
         runtime: NqrbCallRuntime,
         generalNotifications: NqrbGeneralPushNotificationSink,
-    ) : this(NqrbCallSessionPushAdapter(runtime.session), generalNotifications)
+        chat: NqrbChatPushSynchronizer = IgnoreChatPushSynchronizer,
+    ) : this(NqrbCallSessionPushAdapter(runtime.session), generalNotifications, chat)
 
     override suspend fun onMessage(message: PushMessage) {
         val type = message.data["type"]
@@ -42,12 +48,13 @@ internal class NqrbPushMessageHandler(
             handleCallPush(type, callId, message)
             return
         }
+        if (type == "chat_message") chat.synchronize(message.data["conversationId"])
 
         val title = firstNonBlank(message.data, "title", "titleAr", "titleEn")
         val body = firstNonBlank(message.data, "body", "bodyAr", "bodyEn")
         if (title != null || body != null) {
             generalNotifications.show(
-                message.messageId,
+                if (type == "chat_message") message.data["notificationId"] ?: message.data["messageId"] else message.messageId,
                 title ?: "Nqrb",
                 body ?: "",
             )
@@ -119,6 +126,10 @@ internal class NqrbPushMessageHandler(
 
 private object IgnoreGeneralPushNotifications : NqrbGeneralPushNotificationSink {
     override suspend fun show(messageId: String?, title: String, body: String) = Unit
+}
+
+private object IgnoreChatPushSynchronizer : NqrbChatPushSynchronizer {
+    override suspend fun synchronize(conversationId: String?) = Unit
 }
 
 private class NqrbCallSessionPushAdapter(

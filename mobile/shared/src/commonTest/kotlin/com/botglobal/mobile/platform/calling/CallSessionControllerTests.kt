@@ -5,6 +5,9 @@ import com.botglobal.mobile.platform.voice.VoiceRoomSnapshot
 import com.botglobal.mobile.platform.voice.VoiceRoomState
 import com.botglobal.mobile.platform.voice.VoiceMediaStats
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runCurrent
@@ -29,6 +32,91 @@ class CallSessionControllerTests {
         runCurrent()
         assertEquals(CallState.Active, fixture.session.state.value.state)
         assertEquals(listOf(true, false), fixture.platform.ringbackEvents)
+    }
+
+    @Test
+    fun nqrb_ringback_waits_for_authenticated_presentation_receipt() = runTest {
+        val operationOrder = mutableListOf<String>()
+        val signaling = FakeSignaling(operationOrder)
+        val voice = FakeVoice(operationOrder)
+        val platform = FakePlatform(operationOrder)
+        val session = CallSessionController(
+            backgroundScope, signaling, voice, platform, requirePresentationForRingback = true,
+        )
+        val started = assertIs<StartCallResult.Started>(session.start(request()))
+
+        voice.emit(VoiceRoomState.WaitingForPeer)
+        runCurrent()
+        assertEquals(CallState.Connecting, session.state.value.state)
+        assertEquals(emptyList(), platform.ringbackEvents)
+
+        signaling.mutableEvents.emit(CallSignalingEvent.DeliveryUpdated(
+            CallDeliveryStatus(started.callId, CallDeliveryState.Presented, revision = 2),
+        ))
+        runCurrent()
+
+        assertEquals(CallState.Ringing, session.state.value.state)
+        assertEquals(listOf(true), platform.ringbackEvents)
+    }
+
+
+    @Test
+    fun nqrb_waiting_peer_state_does_not_become_ringing_before_presentation_receipt() = runTest {
+        val operationOrder = mutableListOf<String>()
+        val signaling = FakeSignaling(operationOrder)
+        val voice = FakeVoice(operationOrder)
+        val platform = FakePlatform(operationOrder)
+        val session = CallSessionController(
+            backgroundScope, signaling, voice, platform, requirePresentationForRingback = true,
+        )
+        val started = assertIs<StartCallResult.Started>(session.start(request()))
+
+        voice.emit(VoiceRoomState.WaitingForPeer)
+        runCurrent()
+
+        assertEquals(CallState.Connecting, session.state.value.state)
+        assertEquals(emptyList(), platform.ringbackEvents)
+
+        signaling.mutableEvents.emit(CallSignalingEvent.DeliveryUpdated(
+            CallDeliveryStatus(started.callId, CallDeliveryState.Presented, revision = 2),
+        ))
+        runCurrent()
+
+        assertEquals(CallState.Ringing, session.state.value.state)
+        assertEquals(listOf(true), platform.ringbackEvents)
+    }
+
+    @Test
+    fun optional_delivery_query_failure_does_not_end_a_legacy_call() = runTest {
+        val fixture = fixture(backgroundScope)
+        fixture.signaling.deliveryFailure = UnsupportedOperationException("method unavailable")
+
+        assertIs<StartCallResult.Started>(fixture.session.start(request()))
+
+        assertEquals(CallState.Connecting, fixture.session.state.value.state)
+        assertEquals(0, fixture.signaling.ends)
+        assertEquals(1, fixture.voice.joinCount)
+    }
+
+    @Test
+    fun reconnect_applies_a_terminal_delivery_revision_and_releases_media() = runTest {
+        val fixture = fixture(backgroundScope)
+        val started = assertIs<StartCallResult.Started>(fixture.session.start(request()))
+        fixture.session.signalingInterrupted()
+        fixture.signaling.delivery = CallDeliveryStatus(
+            started.callId,
+            CallDeliveryState.Terminal,
+            revision = 4,
+            terminal = true,
+            terminalReason = "expired",
+        )
+
+        fixture.session.signalingRecovered()
+
+        assertEquals(CallState.Expired, fixture.session.state.value.state)
+        assertEquals(CallTerminationReason.Expired, fixture.session.state.value.terminationReason)
+        assertEquals(1, fixture.voice.leaves)
+        assertEquals(1, fixture.platform.endCount)
     }
 
     @Test
@@ -160,6 +248,23 @@ class CallSessionControllerTests {
         assertTrue(fixture.session.state.value.networkUsage.isFinal)
         assertEquals(1, fixture.voice.leaves)
         assertEquals(1, fixture.platform.endCount)
+    }
+
+    @Test
+    fun a_new_call_waits_for_owned_failed_media_cleanup() = runTest {
+        val fixture = fixture(backgroundScope)
+        fixture.session.start(request())
+        fixture.voice.leaveGate = CompletableDeferred()
+        fixture.voice.emit(VoiceRoomState.Failed)
+        runCurrent()
+
+        val next = async { fixture.session.start(request("member-b")) }
+        runCurrent()
+        assertTrue(!next.isCompleted)
+
+        fixture.voice.leaveGate!!.complete(Unit)
+        assertIs<StartCallResult.Started>(next.await())
+        assertEquals("member-b", fixture.session.state.value.participant?.membershipId)
     }
 
     @Test
@@ -434,6 +539,38 @@ class CallSessionControllerTests {
         assertEquals(1, fixture.signaling.ends)
     }
 
+    @Test
+    fun cancellation_during_start_cleans_up_the_returned_server_call_and_rethrows() = runTest {
+        val fixture = fixture(backgroundScope)
+        fixture.signaling.startGate = CompletableDeferred()
+        val job = launch { fixture.session.start(request()) }
+        runCurrent()
+
+        job.cancel()
+        fixture.signaling.startGate!!.complete(StartedCall(CallId("late-call"), request().callee))
+        job.join()
+
+        assertTrue(job.isCancelled)
+        assertEquals(1, fixture.signaling.ends)
+        assertEquals(CallState.Cancelled, fixture.session.state.value.state)
+        assertEquals("call_start_cancelled", fixture.session.state.value.error)
+    }
+
+    @Test
+    fun account_change_fences_a_late_start_reply_and_never_adopts_the_old_call() = runTest {
+        val fixture = fixture(backgroundScope)
+        fixture.signaling.startGate = CompletableDeferred()
+        val result = async { fixture.session.start(request()) }
+        runCurrent()
+
+        fixture.session.clearForAccountChange()
+        fixture.signaling.startGate!!.complete(StartedCall(CallId("old-account-call"), request().callee))
+
+        assertEquals(StartCallResult.Failed("call_start_cancelled"), result.await())
+        assertEquals(CallState.Idle, fixture.session.state.value.state)
+        assertEquals(1, fixture.signaling.ends)
+    }
+
     private fun fixture(
         scope: kotlinx.coroutines.CoroutineScope,
         nowEpochMillis: () -> Long = { 42L },
@@ -471,15 +608,22 @@ class CallSessionControllerTests {
         var ends = 0
         var answers = 0
         var rejects = 0
+        var delivery: CallDeliveryStatus? = null
+        var deliveryFailure: Throwable? = null
+        var startGate: CompletableDeferred<StartedCall>? = null
         override suspend fun startOutgoing(request: OutgoingCallRequest): StartedCall {
             starts++
-            return StartedCall(CallId("call-$starts"), request.callee)
+            return startGate?.await() ?: StartedCall(CallId("call-$starts"), request.callee)
         }
         override suspend fun answer(callId: CallId) {
             answers++
             operationOrder += "answer"
         }
         override suspend fun reject(callId: CallId) { rejects++ }
+        override suspend fun deliveryStatus(callId: CallId): CallDeliveryStatus? {
+            deliveryFailure?.let { throw it }
+            return delivery
+        }
         override suspend fun end(callId: CallId, reason: CallTerminationReason) { ends++ }
     }
 
@@ -490,12 +634,13 @@ class CallSessionControllerTests {
         var leaves = 0
         var interruptions = 0
         var recoveries = 0
+        var leaveGate: CompletableDeferred<Unit>? = null
         val mutes = mutableListOf<Boolean>()
         override suspend fun join(roomId: String) {
             joinCount++
             operationOrder += "join"
         }
-        override suspend fun leave() { leaves++ }
+        override suspend fun leave() { leaves++; leaveGate?.await(); leaveGate = null }
         override suspend fun setMuted(muted: Boolean) { mutes += muted }
         override suspend fun signalingInterrupted() { interruptions++ }
         override suspend fun signalingRecovered() { recoveries++ }

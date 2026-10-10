@@ -11,20 +11,16 @@ public sealed class CommunicationDesignTimeDbContextFactory
         var optionsBuilder =
             new DbContextOptionsBuilder<CommunicationDbContext>();
 
-        // Migration generation does not require connecting to this database.
-        // Runtime configuration will use ConnectionStrings:Communication.
+        // Offline model generation only: no credentials, configuration discovery or connection.
+        // Legacy migrations/model fragments still require a separate PostgreSQL review.
+        // Chat activation uses the reviewed standalone SQL, never the full legacy chain.
         const string designTimeConnection =
-            "Server=127.0.0.1,1433;"
-            + "Database=BotGlobalCommunication_DesignTime;"
-            + "User Id=design_time;"
-            + "Password=DesignTimeOnly_NotUsed;"
-            + "Encrypt=False;"
-            + "TrustServerCertificate=True";
+            "Host=127.0.0.1;Database=chat_design_time;Username=design_time";
 
-        optionsBuilder.UseSqlServer(
+        optionsBuilder.UseNpgsql(
             designTimeConnection,
-            sqlServer =>
-                sqlServer.MigrationsHistoryTable(
+            postgres =>
+                postgres.MigrationsHistoryTable(
                     "__EFMigrationsHistory",
                     "communication"));
 

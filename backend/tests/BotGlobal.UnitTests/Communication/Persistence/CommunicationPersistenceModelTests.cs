@@ -60,6 +60,11 @@ public sealed class CommunicationPersistenceModelTests
             new[]
             {
                 "CallSessions",
+                "ChatConversations",
+                "ChatDispatches",
+                "ChatMessages",
+                "ChatReceipts",
+                "ChatVoiceTransfers",
                 "ConversationParticipants",
                 "Conversations",
                 "MessageReceipts",
