@@ -790,18 +790,40 @@ public static class CallingModule
             participants.Select(participant =>
             {
                 presenceByMembership.TryGetValue(participant.MembershipId, out var presence);
+                var isReachable = reachable.Contains(participant.MembershipId);
                 return new CallableParticipantResult(
                     participant.MembershipId,
                     participant.DisplayName,
-                    (sessions?.IsOnline(participant.MembershipId, applicationKey) == true
-                        ? CallingParticipantAvailability.Online
-                        : reachable.Contains(participant.MembershipId)
-                            ? CallingParticipantAvailability.Reachable
-                            : CallingParticipantAvailability.Offline).ToString(),
+                    ResolveAvailability(participant, applicationKey, sessions, presence, isReachable).ToString(),
                     presence?.State.ToString(),
                     presence?.ObservedAtUtc,
                     presence?.FullyCovered);
             }));
+
+        static CallingParticipantAvailability ResolveAvailability(
+            CallingParticipantDescriptor participant,
+            string applicationKey,
+            CallSessionRegistry? sessions,
+            PresenceDecision? presence,
+            bool isReachable)
+        {
+            if (string.Equals(applicationKey, BotGlobalApplications.Nqrb, StringComparison.Ordinal) &&
+                presence is not null)
+            {
+                if (presence.State == PresenceEvidenceState.Connected)
+                    return CallingParticipantAvailability.Online;
+                if (presence.State == PresenceEvidenceState.Disconnected && presence.FullyCovered)
+                    return isReachable
+                        ? CallingParticipantAvailability.Reachable
+                        : CallingParticipantAvailability.Offline;
+            }
+
+            return sessions?.IsOnline(participant.MembershipId, applicationKey) == true
+                ? CallingParticipantAvailability.Online
+                : isReachable
+                    ? CallingParticipantAvailability.Reachable
+                    : CallingParticipantAvailability.Offline;
+        }
     }
 }
 

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -96,6 +97,51 @@ class CallSessionControllerTests {
         assertEquals(CallState.Connecting, fixture.session.state.value.state)
         assertEquals(0, fixture.signaling.ends)
         assertEquals(1, fixture.voice.joinCount)
+    }
+
+    @Test
+    fun nqrb_outgoing_call_ends_quickly_when_no_device_receipt_arrives() = runTest {
+        val operationOrder = mutableListOf<String>()
+        val signaling = FakeSignaling(operationOrder)
+        val voice = FakeVoice(operationOrder)
+        val platform = FakePlatform(operationOrder)
+        val session = CallSessionController(
+            backgroundScope, signaling, voice, platform, requirePresentationForRingback = true,
+        )
+
+        assertIs<StartCallResult.Started>(session.start(request()))
+        advanceTimeBy(5_000)
+        runCurrent()
+
+        assertEquals(CallState.Ended, session.state.value.state)
+        assertEquals(CallTerminationReason.Missed, session.state.value.terminationReason)
+        assertEquals(1, signaling.ends)
+        assertEquals(1, voice.leaves)
+        assertEquals(1, platform.endCount)
+    }
+
+    @Test
+    fun nqrb_presentation_receipt_cancels_unreached_timeout() = runTest {
+        val operationOrder = mutableListOf<String>()
+        val signaling = FakeSignaling(operationOrder)
+        val voice = FakeVoice(operationOrder)
+        val platform = FakePlatform(operationOrder)
+        val session = CallSessionController(
+            backgroundScope, signaling, voice, platform, requirePresentationForRingback = true,
+        )
+        runCurrent()
+        val started = assertIs<StartCallResult.Started>(session.start(request()))
+
+        signaling.mutableEvents.emit(CallSignalingEvent.DeliveryUpdated(
+            CallDeliveryStatus(started.callId, CallDeliveryState.Presented, revision = 2),
+        ))
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+
+        assertEquals(CallState.Connecting, session.state.value.state)
+        assertEquals(0, signaling.ends)
+        assertEquals(0, platform.endCount)
     }
 
     @Test

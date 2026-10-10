@@ -7,6 +7,7 @@ using BotGlobal.Calling.Realtime;
 using BotGlobal.Calling.Application;
 using BotGlobal.Calling.Infrastructure;
 using BotGlobal.Contracts.Calling;
+using BotGlobal.Contracts.Communication;
 using BotGlobal.Contracts.Mobile;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -128,6 +129,54 @@ public sealed class CallableParticipantEndpointTests
         Assert.Equal("Reachable", availability[reachableMembershipId]);
         Assert.Equal("Offline", availability[offlineMembershipId]);
     }
+
+    [Fact]
+    public async Task Nqrb_presence_decides_online_reachable_and_offline_directory_states()
+    {
+        var currentMembershipId = Guid.NewGuid();
+        var onlineMembershipId = Guid.NewGuid();
+        var reachableMembershipId = Guid.NewGuid();
+        var offlineMembershipId = Guid.NewGuid();
+        var directory = new RecordingDirectory(
+        [
+            Participant(onlineMembershipId, "Online"),
+            Participant(reachableMembershipId, "Reachable"),
+            Participant(offlineMembershipId, "Offline")
+        ]);
+        var contacts = new RecordingNqrbContacts(
+        [
+            Participant(onlineMembershipId, "Online"),
+            Participant(reachableMembershipId, "Reachable"),
+            Participant(offlineMembershipId, "Offline")
+        ]);
+        var sessions = new CallSessionRegistry();
+        sessions.Connected("stale-offline-calling-socket", Identity(offlineMembershipId, "nqrb"));
+        await using var app = await CreateAppAsync(
+            directory,
+            sessions,
+            new FixedReachabilityResolver(reachableMembershipId),
+            contacts: contacts,
+            presence: new FixedPresenceReader(new Dictionary<Guid, PresenceDecision>
+            {
+                [onlineMembershipId] = new(PresenceEvidenceState.Connected, DateTimeOffset.UtcNow, true, 1),
+                [reachableMembershipId] = new(PresenceEvidenceState.Disconnected, DateTimeOffset.UtcNow, true, 1),
+                [offlineMembershipId] = new(PresenceEvidenceState.Disconnected, DateTimeOffset.UtcNow, true, 1),
+            }));
+        var client = app.GetTestClient();
+        Authenticate(client, currentMembershipId);
+
+        var response = await client.GetAsync("/api/mobile/calling/participants?savedOnly=true");
+
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var availability = json.RootElement.EnumerateArray().ToDictionary(
+            item => item.GetProperty("membershipId").GetGuid(),
+            item => item.GetProperty("availability").GetString());
+        Assert.Equal("Online", availability[onlineMembershipId]);
+        Assert.Equal("Reachable", availability[reachableMembershipId]);
+        Assert.Equal("Offline", availability[offlineMembershipId]);
+    }
+
 
     [Fact]
     public async Task Nqrb_participants_return_saved_contacts_instead_of_global_directory()
@@ -387,7 +436,8 @@ public sealed class CallableParticipantEndpointTests
         CallSessionRegistry? sessions = null,
         ICallingReachabilityResolver? reachability = null,
         ICallActivityService? activity = null,
-        INqrbContactBookService? contacts = null)
+        INqrbContactBookService? contacts = null,
+        IPresenceDecisionReader? presence = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -397,6 +447,7 @@ public sealed class CallableParticipantEndpointTests
         if (sessions is not null) builder.Services.AddSingleton(sessions);
         if (reachability is not null) builder.Services.AddSingleton(reachability);
         if (activity is not null) builder.Services.AddSingleton(activity);
+        if (presence is not null) builder.Services.AddSingleton(presence);
         builder.Services
             .AddAuthentication(ApplicationIdentityDefaults.Scheme)
             .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(
@@ -642,11 +693,27 @@ public sealed class CallableParticipantEndpointTests
                         "true",
                         StringComparison.OrdinalIgnoreCase) ? "true" : "false")
             };
+            var membershipId = Guid.Parse(Request.Headers["X-Test-Membership"].ToString());
+            Context.Items[PresenceConnectionCredential.HttpContextItemKey] =
+                new PresenceConnectionCredential(
+                    Guid.NewGuid(),
+                    membershipId,
+                    Request.Headers["X-Test-Application"].ToString(),
+                    "test-revision",
+                    (_, _) => ValueTask.FromResult(true));
             var principal = new ClaimsPrincipal(
                 new ClaimsIdentity(claims, Scheme.Name));
             return Task.FromResult(
                 AuthenticateResult.Success(
                     new AuthenticationTicket(principal, Scheme.Name)));
         }
+    }
+
+    private sealed class FixedPresenceReader(IReadOnlyDictionary<Guid, PresenceDecision> decisions) : IPresenceDecisionReader
+    {
+        public bool IsEnabled(string applicationKey) => true;
+
+        public Task<PresenceDecision> ObserveAsync(PresenceCounterpartRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(decisions.GetValueOrDefault(request.CounterpartMembershipId) ?? PresenceDecision.Unknown("synthetic"));
     }
 }

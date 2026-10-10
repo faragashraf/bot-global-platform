@@ -125,11 +125,17 @@ class NqrbCallPresentationTests {
             presenceObservedAtEpochMillis = null,
             presenceFullyCovered = null,
         )
+        val staleOnlineWithFreshDisconnect = onlineFromDirectory.copy(
+            presenceEvidence = PresenceEvidence.Disconnected,
+            presenceObservedAtEpochMillis = 100_000,
+            presenceFullyCovered = true,
+        )
 
         assertEquals(english.availabilityUnverified, nqrbDirectoryAvailability(english, cached, nowEpochMillis = 100_000))
         assertNull(nqrbDirectoryAvailabilityOrNull(english, cached, nowEpochMillis = 100_000))
         assertEquals(english.onlineNow, nqrbDirectoryAvailability(english, onlineFromDirectory, nowEpochMillis = 100_000))
         assertEquals(english.onlineNow, nqrbDirectoryAvailabilityOrNull(english, onlineFromDirectory, nowEpochMillis = 100_000))
+        assertEquals(english.currentlyUnavailable, nqrbDirectoryAvailability(english, staleOnlineWithFreshDisconnect, nowEpochMillis = 100_000))
         assertEquals(english.currentlyUnavailable, nqrbDirectoryAvailability(english, verified, nowEpochMillis = 100_000))
         assertEquals(english.availabilityUnverified, nqrbDirectoryAvailability(english, verified, nowEpochMillis = 150_000))
         assertNull(nqrbDirectoryAvailabilityOrNull(english, verified, nowEpochMillis = 150_000))

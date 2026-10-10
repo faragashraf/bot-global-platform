@@ -195,6 +195,7 @@ class CallSessionController(
     private var transitionGeneration = 0L
     private var voiceGeneration: Long? = null
     private var failedCleanupJob: Job? = null
+    private var unreachedCallTimeoutJob: Job? = null
     private var receiptInFlight: CallId? = null
     private var confirmedPresentation: CallId? = null
     val state: StateFlow<CallSessionSnapshot> = mutableState.asStateFlow()
@@ -325,6 +326,7 @@ class CallSessionController(
                 withContext(NonCancellable) { cleanupDetachedStart(started.callId, CallTerminationReason.Cancelled) }
                 return StartCallResult.Failed("call_start_cancelled")
             }
+            if (requirePresentationForRingback) scheduleUnreachedCallTimeout(started.callId, attempt)
             // Delivery status is an additive protocol. An older server or a
             // transient query failure must not tear down an otherwise valid call.
             runCatching { signaling.deliveryStatus(started.callId) }.getOrNull()?.let { mergeDelivery(it) }
@@ -550,6 +552,7 @@ class CallSessionController(
             val current = mutableState.value
             if (current.state !in ActiveStates) return
             transitionGeneration += 1
+            cancelUnreachedCallTimeout()
             mutableState.value = current.copy(state = CallState.Ending)
             TerminalPlan(current, current.callId, transitionGeneration)
         }
@@ -619,6 +622,7 @@ class CallSessionController(
             networkUsage = usage.update(voice),
         )
         if (becameActive) {
+            cancelUnreachedCallTimeout()
             logger("call state=active")
             durationJob?.cancel()
             val activeGeneration = transitionGeneration
@@ -767,6 +771,7 @@ class CallSessionController(
     suspend fun clearForAccountChange() {
         val (current, cleanup) = operation.withLock {
             transitionGeneration += 1
+            cancelUnreachedCallTimeout()
             val snapshot = mutableState.value
             durationJob?.cancel()
             durationJob = null
@@ -787,6 +792,7 @@ class CallSessionController(
     suspend fun dismissTerminal(): Unit = operation.withLock {
         if (mutableState.value.state in ActiveStates) return
         transitionGeneration += 1
+        cancelUnreachedCallTimeout()
         mutableState.value = CallSessionSnapshot()
     }
 
@@ -794,6 +800,10 @@ class CallSessionController(
         val cleanupReason = operation.withLock {
             val current = mutableState.value
             if (current.callId != status.callId || status.revision <= (current.delivery?.revision ?: -1)) return
+            if (status.state in setOf(CallDeliveryState.Presented, CallDeliveryState.Answered) ||
+                status.wasPresented || status.terminal) {
+                cancelUnreachedCallTimeout()
+            }
             if (!status.terminal) {
                 val nextState = if (
                     current.direction == CallDirection.Outgoing &&
@@ -833,6 +843,29 @@ class CallSessionController(
         runCatching { platform.end(cleanupReason) }
     }
 
+    private fun scheduleUnreachedCallTimeout(callId: CallId, generation: Long) {
+        cancelUnreachedCallTimeout()
+        unreachedCallTimeoutJob = scope.launch {
+            delay(UnreachedCallTimeoutMillis)
+            val shouldEnd = operation.withLock {
+                val current = mutableState.value
+                transitionGeneration == generation &&
+                    current.callId == callId &&
+                    current.direction == CallDirection.Outgoing &&
+                    current.state in setOf(CallState.Connecting, CallState.Ringing) &&
+                    current.activeSinceEpochMillis == null &&
+                    current.delivery?.wasPresented != true &&
+                    current.delivery?.state !in setOf(CallDeliveryState.Presented, CallDeliveryState.Answered)
+            }
+            if (shouldEnd) end(CallTerminationReason.Missed)
+        }
+    }
+
+    private fun cancelUnreachedCallTimeout() {
+        unreachedCallTimeoutJob?.cancel()
+        unreachedCallTimeoutJob = null
+    }
+
     private fun terminalProjection(value: String?): Pair<CallState, CallTerminationReason> = when (value?.lowercase()) {
         "expired" -> CallState.Expired to CallTerminationReason.Expired
         "missed" -> CallState.Missed to CallTerminationReason.Missed
@@ -854,6 +887,7 @@ class CallSessionController(
             val current = mutableState.value
             if (current.callId != callId || current.state !in ActiveStates) return
             transitionGeneration += 1
+            cancelUnreachedCallTimeout()
             mutableState.value = current.copy(state = CallState.Ending)
             TerminalPlan(current, callId, transitionGeneration)
         }
@@ -891,5 +925,6 @@ class CallSessionController(
             CallState.Reconnecting,
             CallState.Ending,
         )
+        private const val UnreachedCallTimeoutMillis = 5_000L
     }
 }
