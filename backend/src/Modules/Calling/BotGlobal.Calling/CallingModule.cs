@@ -108,18 +108,12 @@ public static class CallingModule
             .AddScheme<AuthenticationSchemeOptions, NqrbGuestCallAuthenticationHandler>(
                 NqrbGuestCallAuthenticationDefaults.Scheme,
                 _ => { });
-        if (!BotGlobalDatabaseOptions.IsCanaryEnsureCreatedEnabled(configuration))
-        {
-            services.AddHostedService<CallActivityRecoveryHostedService>();
-        }
+        services.AddHostedService<CallActivityRecoveryHostedService>();
 
         services.AddSignalR(options => options.EnableDetailedErrors = false);
         services.AddSingleton<CallSessionRegistry>();
         services.TryAddSingleton(TimeProvider.System);
-        if (!BotGlobalDatabaseOptions.IsCanaryEnsureCreatedEnabled(configuration))
-        {
-            services.AddHostedService<CallExpiryBackgroundService>();
-        }
+        services.AddHostedService<CallExpiryBackgroundService>();
 
         services.AddOptions<CallingIceOptions>()
             .Bind(configuration.GetSection(CallingIceOptions.SectionName))
