@@ -57,7 +57,7 @@ internal class AndroidNqrbGeneralNotificationPresenter(
         )
 
         return notificationBuilder()
-            .setSmallIcon(R.drawable.ic_nqrb_launcher)
+            .setSmallIcon(R.drawable.ic_nqrb_notification)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(Notification.BigTextStyle().bigText(body))

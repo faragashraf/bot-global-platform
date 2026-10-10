@@ -3,6 +3,7 @@ package com.botglobal.mobile.platform.chat
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlin.time.Instant
 
 @Serializable
 data class ChatAccountScope(val applicationId: String, val subjectId: String) {
@@ -49,9 +50,25 @@ data class ChatMessage(
     val replyToKind: String? = null,
     val replyToText: String? = null,
     val replyToVoiceDurationMilliseconds: Int? = null,
+    val editedAtUtc: String? = null,
+    val deletedAtUtc: String? = null,
     val deliveryState: String = "Pending",
     val createdAtUtc: String,
 )
+
+const val ChatMessageMutationWindowMillis: Long = 60L * 60L * 1000L
+
+fun ChatMessage.canBeEditedBy(subjectId: String?, nowEpochMillis: Long): Boolean =
+    kind == "text" && deletedAtUtc == null && canBeMutatedBy(subjectId, nowEpochMillis)
+
+fun ChatMessage.canBeDeletedBy(subjectId: String?, nowEpochMillis: Long): Boolean =
+    deletedAtUtc == null && canBeMutatedBy(subjectId, nowEpochMillis)
+
+private fun ChatMessage.canBeMutatedBy(subjectId: String?, nowEpochMillis: Long): Boolean {
+    if (subjectId == null || senderSubjectId != subjectId) return false
+    val created = runCatching { Instant.parse(createdAtUtc).toEpochMilliseconds() }.getOrNull() ?: return false
+    return nowEpochMillis <= created + ChatMessageMutationWindowMillis
+}
 
 @Serializable
 data class ChatPage<T>(val items: List<T>, val hasMore: Boolean, val nextCursor: Long? = null,

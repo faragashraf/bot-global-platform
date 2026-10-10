@@ -13,6 +13,7 @@ public static class ChatLimits
     public const int FileKey = 160;
     public const long VoiceBytes = 10 * 1024 * 1024;
     public static readonly TimeSpan VoiceDuration = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan MessageMutationWindow = TimeSpan.FromHours(1);
 }
 
 public enum ChatMessageKind { Text = 1, Voice = 2 }
@@ -83,6 +84,12 @@ public sealed class ChatConversation
         return NextSequence;
     }
 
+    public void MarkUpdated(DateTimeOffset now)
+    {
+        Version = checked(Version + 1);
+        UpdatedAtUtc = now;
+    }
+
     public static string CreatePairKey(string firstSubjectId, string secondSubjectId)
     {
         var first = NormalizeSubject(firstSubjectId);
@@ -145,6 +152,8 @@ public sealed class ChatMessage
     public ChatMessageKind? ReplyToKind { get; private set; }
     public string? ReplyToText { get; private set; }
     public int? ReplyToVoiceDurationMilliseconds { get; private set; }
+    public DateTimeOffset? EditedAtUtc { get; private set; }
+    public DateTimeOffset? DeletedAtUtc { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public static string NormalizeClientId(string value)
@@ -173,6 +182,29 @@ public sealed class ChatMessage
     public static string FingerprintVoice(string sha256, long length, int durationMilliseconds) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
             $"voice\n{sha256}\n{length}\n{durationMilliseconds}"))).ToLowerInvariant();
+
+    public bool CanMutate(string subjectId, DateTimeOffset now) =>
+        DeletedAtUtc is null &&
+        string.Equals(SenderSubjectId, ChatConversation.NormalizeSubject(subjectId), StringComparison.Ordinal) &&
+        now <= CreatedAtUtc + ChatLimits.MessageMutationWindow;
+
+    public bool TryEditText(string subjectId, string text, DateTimeOffset now)
+    {
+        var normalized = text?.Trim() ?? string.Empty;
+        if (Kind != ChatMessageKind.Text || normalized.Length is 0 or > ChatLimits.Text || !CanMutate(subjectId, now)) return false;
+        Text = normalized;
+        PayloadFingerprint = FingerprintText(normalized, ReplyToMessageId);
+        EditedAtUtc = now;
+        return true;
+    }
+
+    public bool TryDelete(string subjectId, DateTimeOffset now)
+    {
+        if (!CanMutate(subjectId, now)) return false;
+        Text = null;
+        DeletedAtUtc = now;
+        return true;
+    }
 }
 
 public sealed class ChatVoiceTransfer

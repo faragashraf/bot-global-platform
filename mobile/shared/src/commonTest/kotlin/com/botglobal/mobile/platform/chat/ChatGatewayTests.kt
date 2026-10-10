@@ -85,6 +85,36 @@ class ChatGatewayTests {
         client.close()
     }
 
+    @Test fun rawClientSerializesEditAndDeleteMessageRequests() = runTest {
+        val paths = mutableListOf<String>()
+        val bodies = mutableListOf<String>()
+        val methods = mutableListOf<HttpMethod>()
+        val client = HttpClient(MockEngine { request ->
+            methods += request.method
+            paths += request.url.encodedPath
+            if (request.method == HttpMethod.Put) bodies += requestBody(request)
+            respond(
+                """{"messageId":"message-1","conversationId":"conversation-1","sequence":2,"senderSubjectId":"nqrb:registered:self","clientMessageId":"client-1","kind":"text","text":"edited","editedAtUtc":"2099-01-02T03:05:05Z","deliveryState":"Delivered","createdAtUtc":"2099-01-02T03:04:05Z"}""",
+                HttpStatusCode.OK,
+                jsonHeaders(),
+            )
+        }) {
+            install(ContentNegotiation) { json() }
+        }
+        val gateway = KtorChatGateway(client, "https://synthetic.invalid", credential("synthetic-edit"))
+
+        assertIs<ChatGatewayResult.Success<ChatMessage>>(gateway.editText("conversation-1", "message-1", "edited"))
+        assertIs<ChatGatewayResult.Success<ChatMessage>>(gateway.deleteMessage("conversation-1", "message-1"))
+
+        assertEquals(listOf(HttpMethod.Put, HttpMethod.Delete), methods)
+        assertEquals(listOf(
+            "/api/mobile/communications/chat/conversations/conversation-1/messages/message-1/text",
+            "/api/mobile/communications/chat/conversations/conversation-1/messages/message-1",
+        ), paths)
+        assertEquals(listOf("""{"text":"edited"}"""), bodies)
+        client.close()
+    }
+
     @Test fun rawClientDecodesPagedConversationListContract() = runTest {
         val client = HttpClient(MockEngine { request ->
             assertEquals(HttpMethod.Get, request.method)

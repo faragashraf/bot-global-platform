@@ -32,6 +32,8 @@ internal sealed class ChatMessageConfiguration : IEntityTypeConfiguration<ChatMe
         b.Property(x => x.SenderSubjectId).Opaque(ChatLimits.Subject); b.Property(x => x.ClientMessageId).Opaque(ChatLimits.ClientMessageId); b.Property(x => x.PayloadFingerprint).HasMaxLength(ChatLimits.Hash).IsUnicode(false); b.Property(x => x.Text).HasMaxLength(ChatLimits.Text);
         b.Property(x => x.ReplyToSenderSubjectId).HasMaxLength(ChatLimits.Subject).UseCollation(ChatDatabase.BinaryCollation).IsUnicode();
         b.Property(x => x.ReplyToText).HasMaxLength(240);
+        b.Property(x => x.EditedAtUtc);
+        b.Property(x => x.DeletedAtUtc);
         b.HasIndex(x => new { x.ApplicationId, x.SenderSubjectId, x.ClientMessageId }).IsUnique();
         b.HasIndex(x => new { x.ApplicationId, x.ConversationId, x.Sequence }).IsUnique();
         b.HasOne<ChatConversation>().WithMany().HasForeignKey(x => new { x.ApplicationId, x.ConversationId }).HasPrincipalKey(x => new { x.ApplicationId, x.Id }).OnDelete(DeleteBehavior.Restrict);

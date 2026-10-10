@@ -797,6 +797,24 @@ class NqrbAppState(
         }
     }
 
+    fun editChatText(message: ChatMessage, text: String, onUpdated: () -> Unit = {}) {
+        val account = chat.state.value.account ?: return
+        if (!mutableChatSubmitting.compareAndSet(false, true)) return
+        callActionScope.launch {
+            try {
+                val updated = runCatching { chat.editText(message, text, account) }.getOrDefault(false)
+                if (updated) onUpdated()
+            } finally { mutableChatSubmitting.value = false }
+        }
+    }
+
+    fun deleteChatMessage(message: ChatMessage) {
+        val account = chat.state.value.account ?: return
+        callActionScope.launch {
+            runCatching { chat.deleteMessage(message, account) }
+        }
+    }
+
     fun markChatRead(conversationId: String, sequence: Long) {
         visibleChatRead = conversationId to sequence
         val account = chat.state.value.account ?: return

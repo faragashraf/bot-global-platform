@@ -136,6 +136,48 @@ internal sealed class ChatEngine(
         }
     }
 
+    public async Task<ChatMutationResult> EditTextAsync(Guid conversationId, Guid messageId, string text, CancellationToken cancellationToken)
+    {
+        var normalized = text?.Trim() ?? string.Empty;
+        if (conversationId == Guid.Empty || messageId == Guid.Empty || normalized.Length is 0 or > ChatLimits.Text)
+            return new ChatMutationResult(null, Conflict: true);
+        var context = await RequireContextAsync(cancellationToken);
+        if (context is null) return new ChatMutationResult(null, Forbidden: true);
+        var actor = context.Value.Actor;
+        var conversation = await OwnedConversationAsync(actor, conversationId, false, cancellationToken);
+        if (conversation is null) return new ChatMutationResult(null, Forbidden: true);
+        var message = await db.ChatMessages.SingleOrDefaultAsync(x =>
+            x.ApplicationId == actor.Application.ApplicationId && x.ConversationId == conversationId && x.Id == messageId,
+            cancellationToken);
+        var now = clock.GetUtcNow();
+        if (message is null || !message.TryEditText(actor.SubjectId, normalized, now))
+            return new ChatMutationResult(null, Conflict: true);
+        conversation.MarkUpdated(now);
+        await db.SaveChangesAsync(cancellationToken);
+        await NotifyMessageMutationAsync(actor, conversation, message, "edit", now, cancellationToken);
+        return new ChatMutationResult((await ToMessageViewsAsync([message], cancellationToken))[0]);
+    }
+
+    public async Task<ChatMutationResult> DeleteMessageAsync(Guid conversationId, Guid messageId, CancellationToken cancellationToken)
+    {
+        if (conversationId == Guid.Empty || messageId == Guid.Empty) return new ChatMutationResult(null, Conflict: true);
+        var context = await RequireContextAsync(cancellationToken);
+        if (context is null) return new ChatMutationResult(null, Forbidden: true);
+        var actor = context.Value.Actor;
+        var conversation = await OwnedConversationAsync(actor, conversationId, false, cancellationToken);
+        if (conversation is null) return new ChatMutationResult(null, Forbidden: true);
+        var message = await db.ChatMessages.SingleOrDefaultAsync(x =>
+            x.ApplicationId == actor.Application.ApplicationId && x.ConversationId == conversationId && x.Id == messageId,
+            cancellationToken);
+        var now = clock.GetUtcNow();
+        if (message is null || !message.TryDelete(actor.SubjectId, now))
+            return new ChatMutationResult(null, Conflict: true);
+        conversation.MarkUpdated(now);
+        await db.SaveChangesAsync(cancellationToken);
+        await NotifyMessageMutationAsync(actor, conversation, message, "delete", now, cancellationToken);
+        return new ChatMutationResult((await ToMessageViewsAsync([message], cancellationToken))[0]);
+    }
+
     private async Task<ChatSendResult> SendAsync(Guid conversationId, string clientMessageId, string fingerprint,
         ChatMessageKind kind, string? text, (Guid Id, ChatVoiceUpload Upload, int Duration)? voice,
         Guid? replyToMessageId, CancellationToken cancellationToken)
@@ -216,6 +258,9 @@ internal sealed class ChatEngine(
         var transfer = await db.ChatVoiceTransfers.AsNoTracking().SingleOrDefaultAsync(x =>
             x.ApplicationId == actor.Application.ApplicationId && x.Id == transferId && x.RecipientSubjectId == actor.SubjectId, cancellationToken);
         if (transfer is null || !transfer.IsDownloadable(clock.GetUtcNow())) return null;
+        if (transfer.MessageId.HasValue && await db.ChatMessages.AsNoTracking().AnyAsync(x =>
+                x.ApplicationId == actor.Application.ApplicationId && x.Id == transfer.MessageId.Value && x.DeletedAtUtc != null,
+                cancellationToken)) return null;
         var sender = await context.Value.Directory.FindBySubjectAsync(actor.Application, transfer.SenderSubjectId, cancellationToken);
         var recipient = await context.Value.Directory.FindBySubjectAsync(actor.Application, transfer.RecipientSubjectId, cancellationToken);
         if (sender is null || recipient is null || await policy.IsBidirectionallyBlockedAsync(actor.Application, sender, recipient, cancellationToken)) return null;
@@ -280,6 +325,15 @@ internal sealed class ChatEngine(
         await connections.SendAsync(hint, conversation.Counterpart(actor.SubjectId), services, hub, cancellationToken);
     }
 
+    private async Task NotifyMessageMutationAsync(ChatActor actor, ChatConversation conversation, ChatMessage message, string kind,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (connections is null || hub is null || services is null) return;
+        var hint = new ChatMessageHint(actor.Application.ApplicationId, conversation.Id, message.Id, message.Sequence, kind, now);
+        await connections.SendAsync(hint, conversation.Counterpart(actor.SubjectId), services, hub, cancellationToken);
+        await connections.SendAsync(hint, actor.SubjectId, services, hub, cancellationToken);
+    }
+
     private async Task TryDeleteAsync(ChatVoiceTransfer transfer, CancellationToken cancellationToken)
     {
         try
@@ -337,11 +391,13 @@ internal sealed class ChatEngine(
         return rows.Select(x =>
         {
             var transfer = x.VoiceTransferId.HasValue ? transfers.GetValueOrDefault(x.VoiceTransferId.Value) : null;
+            var deleted = x.DeletedAtUtc is not null;
             return new ChatMessageView(x.Id, x.ConversationId, x.Sequence, x.SenderSubjectId, x.ClientMessageId,
-                x.Kind == ChatMessageKind.Text ? "text" : "voice", x.Text, x.VoiceTransferId, transfer?.Sha256,
-                transfer?.Length, transfer?.DurationMilliseconds, transfer?.State.ToString(),
+                x.Kind == ChatMessageKind.Text ? "text" : "voice", deleted ? null : x.Text, deleted ? null : x.VoiceTransferId,
+                deleted ? null : transfer?.Sha256, deleted ? null : transfer?.Length, deleted ? null : transfer?.DurationMilliseconds,
+                deleted ? null : transfer?.State.ToString(),
                 x.ReplyToMessageId, x.ReplyToSenderSubjectId, x.ReplyToKind?.ToString().ToLowerInvariant(),
-                x.ReplyToText, x.ReplyToVoiceDurationMilliseconds,
+                x.ReplyToText, x.ReplyToVoiceDurationMilliseconds, x.EditedAtUtc, x.DeletedAtUtc,
                 dispatches.GetValueOrDefault(x.Id, ChatDispatchState.Pending).ToString(), x.CreatedAtUtc);
         }).ToArray();
     }

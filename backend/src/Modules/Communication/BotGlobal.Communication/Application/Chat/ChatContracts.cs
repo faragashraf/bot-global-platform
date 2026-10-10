@@ -30,11 +30,14 @@ public sealed record ChatMessageView(
     string? ReplyToKind,
     string? ReplyToText,
     int? ReplyToVoiceDurationMilliseconds,
+    DateTimeOffset? EditedAtUtc,
+    DateTimeOffset? DeletedAtUtc,
     string DeliveryState,
     DateTimeOffset CreatedAtUtc);
 
 public sealed record ChatPage<T>(IReadOnlyList<T> Items, bool HasMore, long? NextCursor = null, string? NextConversationCursor = null);
 public sealed record ChatSendResult(ChatMessageView? Message, bool Conflict = false, bool Forbidden = false);
+public sealed record ChatMutationResult(ChatMessageView? Message, bool Conflict = false, bool Forbidden = false);
 public sealed record ChatVoiceUpload(string FileKey, string Sha256, long Length, int DurationMilliseconds = 0);
 
 public interface IChatEngine
@@ -44,6 +47,8 @@ public interface IChatEngine
     Task<ChatPage<ChatMessageView>?> ListMessagesAsync(Guid conversationId, long afterSequence, int take, CancellationToken cancellationToken);
     Task<ChatSendResult> SendTextAsync(Guid conversationId, string clientMessageId, string text, Guid? replyToMessageId, CancellationToken cancellationToken);
     Task<ChatSendResult> SendVoiceAsync(Guid conversationId, string clientMessageId, Stream content, string contentType, int durationMilliseconds, CancellationToken cancellationToken);
+    Task<ChatMutationResult> EditTextAsync(Guid conversationId, Guid messageId, string text, CancellationToken cancellationToken);
+    Task<ChatMutationResult> DeleteMessageAsync(Guid conversationId, Guid messageId, CancellationToken cancellationToken);
     Task<(ChatVoiceTransfer Transfer, Stream Content)?> DownloadVoiceAsync(Guid transferId, CancellationToken cancellationToken);
     Task<bool> AcknowledgeVoiceAsync(Guid transferId, Guid installationId, string sha256, long length, CancellationToken cancellationToken);
     Task<long?> AdvanceReadReceiptAsync(Guid conversationId, long sequence, CancellationToken cancellationToken);

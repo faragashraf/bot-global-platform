@@ -265,6 +265,48 @@ class ChatController(
         flush(requestGeneration)
     }
 
+    suspend fun editText(message: ChatMessage, text: String, expectedAccount: ChatAccountScope? = null): Boolean {
+        val normalized = text.trim()
+        if (normalized.isEmpty() || normalized.length > 4000 || message.kind != "text") return false
+        val (scope, requestGeneration) = active() ?: return false
+        if (expectedAccount != null && expectedAccount != scope) return false
+        val known = lock.withLock {
+            isCurrent(scope, requestGeneration) &&
+                durable.messages[message.conversationId].orEmpty().any { it.messageId == message.messageId && it.senderSubjectId == scope.subjectId }
+        }
+        if (!known) return false
+        return when (val result = request(scope, requestGeneration) { editText(message.conversationId, message.messageId, normalized) }) {
+            is ChatGatewayResult.Success -> lock.withLock {
+                if (!isCurrent(scope, requestGeneration)) return@withLock false
+                durable = durable.copy(messages = durable.messages + (message.conversationId to
+                    mergeMessages(durable.messages[message.conversationId].orEmpty(), listOf(result.value)))).anchorTimeline(scope)
+                persistAndPublish(scope)
+                true
+            }
+            else -> { markFailure(scope, requestGeneration); false }
+        }
+    }
+
+    suspend fun deleteMessage(message: ChatMessage, expectedAccount: ChatAccountScope? = null): Boolean {
+        val (scope, requestGeneration) = active() ?: return false
+        if (expectedAccount != null && expectedAccount != scope) return false
+        val known = lock.withLock {
+            isCurrent(scope, requestGeneration) &&
+                durable.messages[message.conversationId].orEmpty().any { it.messageId == message.messageId && it.senderSubjectId == scope.subjectId }
+        }
+        if (!known) return false
+        return when (val result = request(scope, requestGeneration) { deleteMessage(message.conversationId, message.messageId) }) {
+            is ChatGatewayResult.Success -> lock.withLock {
+                if (!isCurrent(scope, requestGeneration)) return@withLock false
+                durable = durable.copy(messages = durable.messages + (message.conversationId to
+                    mergeMessages(durable.messages[message.conversationId].orEmpty(), listOf(result.value)))).anchorTimeline(scope)
+                persistAndPublish(scope)
+                true
+            }
+            else -> { markFailure(scope, requestGeneration); false }
+        }
+    }
+
     suspend fun sync(conversationId: String? = null, expectedGeneration: Long? = null) {
         if (!onlineEnabled) return
         val (scope, requestGeneration) = active() ?: return

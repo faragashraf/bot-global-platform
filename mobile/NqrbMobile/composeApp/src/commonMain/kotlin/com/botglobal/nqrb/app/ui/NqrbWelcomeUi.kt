@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -111,13 +112,7 @@ internal fun NqrbWelcomeUi(
                     tint = colors.accent,
                 )
                 Spacer(Modifier.height(NqrbSpacing.Md))
-                Text(
-                    text = strings.welcomeProductName,
-                    style = MaterialTheme.typography.displaySmall,
-                    color = colors.textPrimary,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                )
+                BrandNameLockup(strings)
                 if (title != null) {
                     Spacer(Modifier.height(NqrbSpacing.Xl))
                     Text(
@@ -158,6 +153,38 @@ internal fun NqrbWelcomeUi(
                 )
             }
             Spacer(Modifier.height(adaptiveSpace))
+        }
+    }
+}
+
+@Composable
+private fun BrandNameLockup(strings: NqrbStrings) {
+    val colors = LocalNqrbColors.current
+    BoxWithConstraints(Modifier.fillMaxWidth().semantics {
+        contentDescription = "${strings.productNameArabic} ${strings.productName}"
+    }) {
+        val stacked = maxWidth < 380.dp
+        val title: @Composable (String, Boolean) -> Unit = { value, primary ->
+            Text(
+                text = value,
+                style = if (primary) MaterialTheme.typography.displaySmall else MaterialTheme.typography.headlineSmall,
+                color = if (primary) colors.textPrimary else colors.textSecondary,
+                fontWeight = if (primary) FontWeight.Bold else FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+            )
+        }
+        if (stacked) {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                title(strings.productNameArabic, true)
+                title(strings.productName, false)
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                title(strings.productNameArabic, true)
+                Spacer(Modifier.widthIn(min = NqrbSpacing.Md))
+                title(strings.productName, false)
+            }
         }
     }
 }

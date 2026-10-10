@@ -656,6 +656,8 @@ class ChatCorrectionTests {
             val result = message((history.maxOfOrNull { it.sequence } ?: 0) + 1, a.subjectId, clientMessageId).copy(conversationId = conversationId, kind = "voice", text = null, voiceTransferId = "transfer", voiceSha256 = ChatAacFixture.hash, voiceLength = ChatAacFixture.length, voiceDurationMilliseconds = 2024)
             history += result; return if (ambiguousVoice) ChatGatewayResult.RetryableFailure else ChatGatewayResult.Success(result)
         }
+        override suspend fun editText(conversationId: String, messageId: String, text: String) = ChatGatewayResult.RetryableFailure
+        override suspend fun deleteMessage(conversationId: String, messageId: String) = ChatGatewayResult.RetryableFailure
         override suspend fun downloadVoice(transferId: String, expectedLength: Long): ChatGatewayResult<ByteArray> {
             downloadCalls++; downloadWait?.await(); return ChatGatewayResult.Success(byteArrayOf(1, 2, 3))
         }

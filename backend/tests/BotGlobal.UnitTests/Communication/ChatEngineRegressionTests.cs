@@ -92,6 +92,32 @@ public sealed class ChatEngineRegressionTests
     }
 
     [Fact]
+    public async Task SenderCanEditAndDeleteMessagesForOneHourOnly()
+    {
+        await using var f = await Fixture.CreateAsync();
+        var conversation = (await f.Engine.CreateOrGetDirectAsync("staff:beta", default))!;
+        var text = (await f.Engine.SendTextAsync(conversation.ConversationId, "editable", "before", default)).Message!;
+        var voice = (await f.Engine.SendVoiceAsync(conversation.ConversationId, "voice-delete", new MemoryStream([1, 2, 3]), "audio/mp4", 1000, default)).Message!;
+
+        f.Clock.Now += TimeSpan.FromMinutes(30);
+        var edited = await f.Engine.EditTextAsync(conversation.ConversationId, text.MessageId, "after", default);
+        Assert.Equal("after", edited.Message!.Text);
+        Assert.NotNull(edited.Message.EditedAtUtc);
+
+        var deletedVoice = await f.Engine.DeleteMessageAsync(conversation.ConversationId, voice.MessageId, default);
+        Assert.NotNull(deletedVoice.Message!.DeletedAtUtc);
+        Assert.Null(deletedVoice.Message.VoiceTransferId);
+
+        f.Clock.Now += TimeSpan.FromMinutes(31);
+        var tooLate = await f.Engine.EditTextAsync(conversation.ConversationId, text.MessageId, "late", default);
+        Assert.True(tooLate.Conflict);
+
+        f.Actor.Current = f.Actor.Current! with { SubjectId = "staff:beta" };
+        var otherPartyDelete = await f.Engine.DeleteMessageAsync(conversation.ConversationId, text.MessageId, default);
+        Assert.True(otherPartyDelete.Conflict);
+    }
+
+    [Fact]
     public async Task ConcurrentInitialReceiptInsertsKeepTheHighestSequence()
     {
         await using var f = await Fixture.CreateAsync();

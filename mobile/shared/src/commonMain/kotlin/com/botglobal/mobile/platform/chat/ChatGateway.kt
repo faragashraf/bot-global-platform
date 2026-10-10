@@ -4,6 +4,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.accept
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -39,6 +40,8 @@ interface ChatGateway {
     suspend fun messages(conversationId: String, afterSequence: Long): ChatGatewayResult<ChatPage<ChatMessage>>
     suspend fun sendText(message: PendingChatText): ChatGatewayResult<ChatMessage>
     suspend fun sendVoice(conversationId: String, clientMessageId: String, draft: ChatVoiceDraft, bytes: ByteArray): ChatGatewayResult<ChatMessage>
+    suspend fun editText(conversationId: String, messageId: String, text: String): ChatGatewayResult<ChatMessage>
+    suspend fun deleteMessage(conversationId: String, messageId: String): ChatGatewayResult<ChatMessage>
     suspend fun downloadVoice(transferId: String, expectedLength: Long): ChatGatewayResult<ByteArray>
     suspend fun acknowledgeVoice(ack: PendingChatVoiceAck): ChatGatewayResult<Unit>
     suspend fun read(conversationId: String, sequence: Long): ChatGatewayResult<Long>
@@ -51,6 +54,8 @@ object UnavailableChatGateway : ChatGateway {
     override suspend fun messages(conversationId: String, afterSequence: Long) = ChatGatewayResult.RetryableFailure
     override suspend fun sendText(message: PendingChatText) = ChatGatewayResult.RetryableFailure
     override suspend fun sendVoice(conversationId: String, clientMessageId: String, draft: ChatVoiceDraft, bytes: ByteArray) = ChatGatewayResult.RetryableFailure
+    override suspend fun editText(conversationId: String, messageId: String, text: String) = ChatGatewayResult.RetryableFailure
+    override suspend fun deleteMessage(conversationId: String, messageId: String) = ChatGatewayResult.RetryableFailure
     override suspend fun downloadVoice(transferId: String, expectedLength: Long) = ChatGatewayResult.RetryableFailure
     override suspend fun acknowledgeVoice(ack: PendingChatVoiceAck) = ChatGatewayResult.RetryableFailure
     override suspend fun read(conversationId: String, sequence: Long) = ChatGatewayResult.RetryableFailure
@@ -120,6 +125,14 @@ class KtorChatGateway private constructor(
             header("X-Voice-Duration-Ms", draft.durationMilliseconds); setBody(bytes)
         }
     }
+    override suspend fun editText(conversationId: String, messageId: String, text: String) = request<ChatMessage> {
+        client.put("$base/conversations/$conversationId/messages/$messageId/text") {
+            authenticate(this); contentType(ContentType.Application.Json); setBody(EditTextRequest(text))
+        }
+    }
+    override suspend fun deleteMessage(conversationId: String, messageId: String) = request<ChatMessage> {
+        client.delete("$base/conversations/$conversationId/messages/$messageId") { authenticate(this); accept(ContentType.Application.Json) }
+    }
     override suspend fun downloadVoice(transferId: String, expectedLength: Long): ChatGatewayResult<ByteArray> {
         if (expectedLength !in 1..MaxVoiceBytes.toLong()) return ChatGatewayResult.Conflict
         return request<ByteArray> { client.get("$base/voice/$transferId") { authenticate(this); accept(ContentType("audio", "mp4")) } }
@@ -158,6 +171,7 @@ class KtorChatGateway private constructor(
 
     @Serializable private data class DirectRequest(val reference: String)
     @Serializable private data class TextRequest(val clientMessageId: String, val text: String, val replyToMessageId: String? = null)
+    @Serializable private data class EditTextRequest(val text: String)
     @Serializable private data class AckRequest(val installationId: String, val sha256: String, val length: Long)
     @Serializable private data class ReadRequest(val sequence: Long)
     @Serializable private data class ReadResponse(val lastReadSequence: Long)

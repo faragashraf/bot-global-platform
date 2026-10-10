@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 class ChatControllerTests {
     @Test
@@ -76,6 +77,43 @@ class ChatControllerTests {
     }
 
     @Test
+    fun editAndDeleteCanonicalMessagesMergeServerTombstones() = runTest {
+        val scope = ChatAccountScope("application-a", "subject-a")
+        val original = message("client-1").copy(text = "before")
+        val store = MemoryStore().apply {
+            states[scope] = ChatDurableState(
+                conversations = listOf(conversation()),
+                messages = mapOf(ConversationId to listOf(original)),
+            )
+        }
+        val gateway = FakeGateway(scope)
+        val controller = controller(gateway, store)
+        controller.bindAuthenticated()
+
+        assertTrue(controller.editText(original, "after", scope))
+        assertEquals("after", controller.state.value.messages.getValue(ConversationId).single().text)
+        assertEquals("message-client-1", gateway.editedMessages.single().first)
+
+        assertTrue(controller.deleteMessage(original, scope))
+        val deleted = controller.state.value.messages.getValue(ConversationId).single()
+        assertEquals("2026-10-07T00:10:00Z", deleted.deletedAtUtc)
+        assertEquals("message-client-1", gateway.deletedMessages.single())
+    }
+
+    @Test
+    fun canonicalMessageMutationWindowIsOneHourForOwnerOnly() {
+        val own = message("client-1").copy(createdAtUtc = "2026-10-07T00:00:00Z")
+
+        val within = Instant.parse("2026-10-07T00:59:59Z").toEpochMilliseconds()
+        val outside = Instant.parse("2026-10-07T01:00:01Z").toEpochMilliseconds()
+
+        assertTrue(own.canBeEditedBy("subject-a", within))
+        assertTrue(own.canBeDeletedBy("subject-a", within))
+        assertEquals(false, own.canBeEditedBy("subject-b", within))
+        assertEquals(false, own.canBeDeletedBy("subject-a", outside))
+    }
+
+    @Test
     fun corruptDownloadIsNeverIndexedOrAcknowledged() = runTest {
         val scope = ChatAccountScope("application-a", "recipient")
         val gateway = FakeGateway(scope).apply { downloadBytes = byteArrayOf(1, 2, 3) }
@@ -134,6 +172,8 @@ class ChatControllerTests {
         val textStarted = CompletableDeferred<Unit>()
         val sentClientIds = mutableListOf<String>()
         val sentTexts = mutableListOf<PendingChatText>()
+        val editedMessages = mutableListOf<Pair<String, String>>()
+        val deletedMessages = mutableListOf<String>()
         var downloadBytes = ByteArray(0)
         var ackCount = 0
         override suspend fun context() = ChatGatewayResult.Success(scope)
@@ -151,6 +191,14 @@ class ChatControllerTests {
             }
         }
         override suspend fun sendVoice(conversationId: String, clientMessageId: String, draft: ChatVoiceDraft, bytes: ByteArray) = ChatGatewayResult.RetryableFailure
+        override suspend fun editText(conversationId: String, messageId: String, text: String): ChatGatewayResult<ChatMessage> {
+            editedMessages += messageId to text
+            return ChatGatewayResult.Success(message("client-1").copy(messageId = messageId, text = text, editedAtUtc = "2026-10-07T00:05:00Z"))
+        }
+        override suspend fun deleteMessage(conversationId: String, messageId: String): ChatGatewayResult<ChatMessage> {
+            deletedMessages += messageId
+            return ChatGatewayResult.Success(message("client-1").copy(messageId = messageId, text = null, deletedAtUtc = "2026-10-07T00:10:00Z"))
+        }
         override suspend fun downloadVoice(transferId: String, expectedLength: Long) = ChatGatewayResult.Success(downloadBytes)
         override suspend fun acknowledgeVoice(ack: PendingChatVoiceAck): ChatGatewayResult<Unit> { ackCount++; return ChatGatewayResult.Success(Unit) }
         override suspend fun read(conversationId: String, sequence: Long) = ChatGatewayResult.Success(sequence)

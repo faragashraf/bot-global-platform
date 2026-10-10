@@ -40,6 +40,8 @@ enum class NqrbGlyph {
     Close,
     Chat,
     Reply,
+    Edit,
+    Delete,
     Send,
     Play,
     Pause,
@@ -124,6 +126,25 @@ fun NqrbIcon(
                     close()
                 }
                 drawPath(path, tint, style = stroke)
+            }
+            NqrbGlyph.Edit -> {
+                drawLine(tint, Offset(size.width * .28f, size.height * .72f), Offset(size.width * .72f, size.height * .28f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .62f, size.height * .2f), Offset(size.width * .8f, size.height * .38f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .22f, size.height * .78f), Offset(size.width * .42f, size.height * .72f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .22f, size.height * .78f), Offset(size.width * .28f, size.height * .58f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            }
+            NqrbGlyph.Delete -> {
+                drawLine(tint, Offset(size.width * .25f, size.height * .32f), Offset(size.width * .75f, size.height * .32f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .39f, size.height * .22f), Offset(size.width * .61f, size.height * .22f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawRoundRect(
+                    tint,
+                    topLeft = Offset(size.width * .3f, size.height * .36f),
+                    size = Size(size.width * .4f, size.height * .42f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * .05f),
+                    style = stroke,
+                )
+                drawLine(tint, Offset(size.width * .43f, size.height * .45f), Offset(size.width * .43f, size.height * .68f), strokeWidth = stroke.width, cap = StrokeCap.Round)
+                drawLine(tint, Offset(size.width * .57f, size.height * .45f), Offset(size.width * .57f, size.height * .68f), strokeWidth = stroke.width, cap = StrokeCap.Round)
             }
             NqrbGlyph.Play -> {
                 val path = Path().apply {

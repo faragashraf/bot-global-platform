@@ -54,6 +54,8 @@ import androidx.compose.ui.unit.dp
 import com.botglobal.mobile.platform.chat.ChatLoadState
 import com.botglobal.mobile.platform.chat.ChatMessage
 import com.botglobal.mobile.platform.chat.ChatSnapshot
+import com.botglobal.mobile.platform.chat.canBeDeletedBy
+import com.botglobal.mobile.platform.chat.canBeEditedBy
 import com.botglobal.mobile.platform.chat.timeline
 import com.botglobal.mobile.platform.chat.ChatVoiceDraft
 import com.botglobal.nqrb.app.state.NqrbAppState
@@ -92,6 +94,7 @@ import com.botglobal.mobile.platform.chat.ChatTextFailure
 import com.botglobal.mobile.platform.chat.ChatVoiceFailure
 import com.botglobal.mobile.platform.chat.ChatVoiceLoadState
 import kotlin.math.abs
+import kotlin.time.Clock
 
 internal data class NqrbChatStrings(
     val chats: String,
@@ -140,6 +143,7 @@ internal data class NqrbChatStrings(
     val recordAgain get() = localized("سجّل من جديد", "Record again")
     val remove get() = localized("إزالة", "Remove")
     val edit get() = localized("تعديل", "Edit")
+    val delete get() = localized("حذف الرسالة", "Delete message")
     val copy get() = localized("نسخ", "Copy")
     val reply get() = localized("رد", "Reply")
     val actions get() = localized("إجراءات الرسالة", "Message actions")
@@ -147,7 +151,9 @@ internal data class NqrbChatStrings(
     val resendHint get() = localized("محاولة إرسال الرسالة المعلقة الآن", "Try sending the queued message now")
     val copyHint get() = localized("نسخ محتوى الرسالة", "Copy the message content")
     val replyHint get() = localized("الرد على هذه الرسالة", "Reply to this message")
-    val editHint get() = localized("تعديل النص ثم إرساله مرة أخرى", "Edit the text and send it again")
+    val editHint get() = localized("متاح خلال ساعة من إرسال الرسالة", "Available for one hour after sending")
+    val editQueuedHint get() = localized("تعديل النص ثم إرساله مرة أخرى", "Edit the text and send it again")
+    val deleteHint get() = localized("حذف الرسالة للطرفين خلال ساعة من إرسالها", "Delete the message for both sides within one hour")
     val removeHint get() = localized("حذف النسخة المعلقة من هذا الجهاز", "Remove the queued local copy")
     val checkDeliveryHint get() = localized("مطابقة الرسالة مع الخادم قبل الحذف", "Match the message with the server before removing it")
     val recordAgainHint get() = localized("حذف التسجيل الحالي وبدء تسجيل جديد", "Delete this recording and start again")
@@ -164,6 +170,9 @@ internal data class NqrbChatStrings(
     val limit get() = localized("الحد الأقصى ٥ دقائق", "5 minute maximum")
     val localOnly get() = localized("المحفوظ على هذا الجهاز · أعد الاتصال للمزامنة", "Saved on this device · reconnect to sync")
     val replyingTo get() = localized("رد على", "Replying to")
+    val editingMessage get() = localized("تعديل رسالة", "Editing message")
+    val edited get() = localized("تم التعديل", "Edited")
+    val deletedMessage get() = localized("تم حذف هذه الرسالة", "This message was deleted")
     val you get() = localized("أنت", "You")
     val contact get() = localized("الطرف الآخر", "Contact")
     val openingConversation get() = localized("جارٍ فتح المحادثة الخاصة…", "Opening private conversation…")
@@ -455,12 +464,14 @@ internal fun NqrbChatThreadScreen(
     var draftConversationId by remember { mutableStateOf<String?>(null) }
     var text by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<PendingChatText?>(null) }
+    var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var replyingTo by remember { mutableStateOf<ChatMessage?>(null) }
     LaunchedEffect(conversationId) {
         if (conversationId != null && draftConversationId != conversationId) {
             draftConversationId = conversationId
             text = ""
             editing = null
+            editingMessage = null
             replyingTo = null
         }
     }
@@ -493,11 +504,16 @@ internal fun NqrbChatThreadScreen(
                     items(rows, key = { it.key }) { row ->
                         when {
                             row.date != null -> Text(row.date, Modifier.fillMaxWidth().padding(vertical = NqrbSpacing.Sm), style = MaterialTheme.typography.labelMedium, color = colors.textSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                            row.message != null -> ChatMessageBubble(row.message, snapshot, strings, appState, playback, row.time, row.voice) {
-                                editing = null; replyingTo = row.message; composerFocus.requestFocus()
-                            }
+                            row.message != null -> ChatMessageBubble(row.message, snapshot, strings, appState, playback, row.time, row.voice,
+                                onEdit = {
+                                    editing = null; editingMessage = row.message; replyingTo = null; text = row.message.text.orEmpty(); composerFocus.requestFocus()
+                                },
+                                onReply = {
+                                    editing = null; editingMessage = null; replyingTo = row.message; composerFocus.requestFocus()
+                                },
+                            )
                             row.text != null -> PendingTextBubble(row.text, row.time, strings, appState, snapshot.account?.subjectId) {
-                                editing = row.text; replyingTo = null; text = row.text.text; composerFocus.requestFocus()
+                                editing = row.text; editingMessage = null; replyingTo = null; text = row.text.text; composerFocus.requestFocus()
                             }
                             row.voice != null -> PendingVoiceBubble(row.voice, snapshot, strings, appState, playback)
                         }
@@ -509,9 +525,10 @@ internal fun NqrbChatThreadScreen(
             modifier = Modifier.align(Alignment.CenterHorizontally).heightIn(min = 48.dp).semantics { liveRegion = LiveRegionMode.Polite }) {
             Text("${strings.newMessages} · ${strings.digits(unseen.toString())}")
         }
-        if (editing != null) Row(Modifier.fillMaxWidth().padding(horizontal = NqrbSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
-            Text(strings.localized("تعديل الرسالة المحفوظة", "Editing saved message"), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
-            TextButton(onClick = { editing = null; replyingTo = null; text = "" }, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.cancel) }
+        if (editing != null || editingMessage != null) Row(Modifier.fillMaxWidth().padding(horizontal = NqrbSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (editingMessage == null) strings.localized("تعديل الرسالة المحفوظة", "Editing saved message") else strings.editingMessage,
+                Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+            TextButton(onClick = { editing = null; editingMessage = null; replyingTo = null; text = "" }, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.cancel) }
         }
         when (recordingState) {
             NqrbChatRecordingState.Recording -> Column(
@@ -564,10 +581,14 @@ internal fun NqrbChatThreadScreen(
                         onClick = {
                             val submitted = text
                             val failed = editing
+                            val canonical = editingMessage
                             val reply = replyingTo?.takeIf { it.conversationId == conversationId }
-                            val queued = { if (text == submitted) { text = ""; editing = null; replyingTo = null } }
-                            if (failed == null) appState.sendChatText(submitted, reply, queued)
-                            else appState.editFailedChatText(failed.clientMessageId, submitted, queued)
+                            val queued = { if (text == submitted) { text = ""; editing = null; editingMessage = null; replyingTo = null } }
+                            when {
+                                failed != null -> appState.editFailedChatText(failed.clientMessageId, submitted, queued)
+                                canonical != null -> appState.editChatText(canonical, submitted, queued)
+                                else -> appState.sendChatText(submitted, reply, queued)
+                            }
                         },
                         modifier = Modifier.size(48.dp).background(if (sendEnabled) colors.accent else colors.accentSoft, CircleShape),
                     ) { NqrbIcon(NqrbGlyph.Send, strings.send,
@@ -809,7 +830,7 @@ private fun PendingTextBubble(pending: PendingChatText, time: String, strings: N
     val clipboard = LocalClipboardManager.current
     var actionsOpen by remember(pending.clientMessageId) { mutableStateOf(false) }
     val actions = buildList {
-        if (pending.failure == ChatTextFailure.Forbidden) add(ChatMessageAction(strings.edit, NqrbGlyph.Chat, strings.editHint, run = onEdit))
+        if (pending.failure == ChatTextFailure.Forbidden) add(ChatMessageAction(strings.edit, NqrbGlyph.Edit, strings.editQueuedHint, run = onEdit))
         add(ChatMessageAction(strings.copy, NqrbGlyph.Link, strings.copyHint) { clipboard.setText(AnnotatedString(pending.text)) })
         when (pending.failure) {
             null -> add(ChatMessageAction(strings.resend, NqrbGlyph.Send, strings.resendHint, run = appState::retryChatDelivery))
@@ -833,9 +854,13 @@ private fun PendingTextBubble(pending: PendingChatText, time: String, strings: N
 
 @Composable
 private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, strings: NqrbChatStrings, appState: NqrbAppState,
-    playback: ChatPlayback, time: String, pendingVoice: PendingChatVoice? = null, onReply: () -> Unit) {
+    playback: ChatPlayback, time: String, pendingVoice: PendingChatVoice? = null, onEdit: () -> Unit = {}, onReply: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val mine = message.senderSubjectId == snapshot.account?.subjectId
+    val now = Clock.System.now().toEpochMilliseconds()
+    val canEdit = message.canBeEditedBy(snapshot.account?.subjectId, now)
+    val canDelete = message.canBeDeletedBy(snapshot.account?.subjectId, now)
+    val deleted = message.deletedAtUtc != null
     val terminal = message.voiceState?.contains("Deleted") == true || message.voiceState?.contains("Expired") == true
     val local = message.voiceTransferId?.let(snapshot.localVoiceKeys::get)
     val counterpartRead = snapshot.conversations.firstOrNull { it.conversationId == message.conversationId }
@@ -845,7 +870,10 @@ private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, stri
     if (message.kind == "voice") {
         var actionsOpen by remember(message.messageId) { mutableStateOf(false) }
         val actions = buildList {
-            add(ChatMessageAction(strings.reply, NqrbGlyph.Reply, strings.replyHint, run = onReply))
+            if (!deleted) add(ChatMessageAction(strings.reply, NqrbGlyph.Reply, strings.replyHint, run = onReply))
+            if (canDelete) add(ChatMessageAction(strings.delete, NqrbGlyph.Delete, strings.deleteHint, destructive = true) {
+                appState.deleteChatMessage(message)
+            })
             if (pendingVoice != null && pendingVoice.failure != ChatVoiceFailure.MissingOrCorrupt)
                 add(ChatMessageAction(strings.retry, NqrbGlyph.Send, strings.resendHint, run = appState::retryChatDelivery))
             if (pendingVoice?.failure != null)
@@ -854,14 +882,15 @@ private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, stri
                 })
         }
         Column(Modifier.fillMaxWidth(), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
-            SwipeToReplyBox(mine = mine, label = strings.reply, onReply = onReply) {
-                VoiceCapsule(pendingVoice?.draftToken ?: local ?: message.voiceTransferId.orEmpty(), message.voiceDurationMilliseconds ?: 0, playback, strings,
-                    unavailable = if (pendingVoice != null) pendingVoice.failure == ChatVoiceFailure.MissingOrCorrupt else local == null && (terminal || mine), mine = mine,
-                    loading = message.voiceTransferId?.let(snapshot.voiceLoads::get)?.takeIf { pendingVoice == null && (local == null || it == ChatVoiceLoadState.Loading) },
-                    onPlay = { if (pendingVoice != null) appState.playPendingChatVoice(pendingVoice) else appState.playChatVoice(message) },
-                    onStop = appState::stopChatPlayback,
-                    reply = reply,
-                    onLongPress = { actionsOpen = true })
+            SwipeToReplyBox(mine = mine, label = strings.reply, enabled = !deleted, onReply = onReply) {
+                if (deleted) ChatTextBubble(strings.deletedMessage, mine, metadata, deleted = true, onLongPress = { actionsOpen = true })
+                else VoiceCapsule(pendingVoice?.draftToken ?: local ?: message.voiceTransferId.orEmpty(), message.voiceDurationMilliseconds ?: 0, playback, strings,
+                        unavailable = if (pendingVoice != null) pendingVoice.failure == ChatVoiceFailure.MissingOrCorrupt else local == null && (terminal || mine), mine = mine,
+                        loading = message.voiceTransferId?.let(snapshot.voiceLoads::get)?.takeIf { pendingVoice == null && (local == null || it == ChatVoiceLoadState.Loading) },
+                        onPlay = { if (pendingVoice != null) appState.playPendingChatVoice(pendingVoice) else appState.playChatVoice(message) },
+                        onStop = appState::stopChatPlayback,
+                        reply = reply,
+                        onLongPress = { actionsOpen = true })
             }
             MessageMetadataFooter(metadata)
             if (pendingVoice != null) {
@@ -873,21 +902,34 @@ private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, stri
         if (actionsOpen) ChatMessageActionDialog(strings.actions, strings.cancel, actions) { actionsOpen = false }
     } else {
         var actionsOpen by remember(message.messageId) { mutableStateOf(false) }
-        val actions = listOf(
-            ChatMessageAction(strings.reply, NqrbGlyph.Reply, strings.replyHint, run = onReply),
-            ChatMessageAction(strings.copy, NqrbGlyph.Link, strings.copyHint) {
+        val actions = buildList {
+            if (!deleted) add(ChatMessageAction(strings.reply, NqrbGlyph.Reply, strings.replyHint, run = onReply))
+            if (canEdit) add(ChatMessageAction(strings.edit, NqrbGlyph.Edit, strings.editHint, run = onEdit))
+            if (!deleted) add(ChatMessageAction(strings.copy, NqrbGlyph.Link, strings.copyHint) {
                 clipboard.setText(AnnotatedString(message.text.orEmpty()))
-            },
-        )
-        SwipeToReplyBox(mine = mine, label = strings.reply, onReply = onReply) {
-            ChatTextBubble(message.text.orEmpty(), mine, metadata, reply = reply, onLongPress = { actionsOpen = true })
+            })
+            if (canDelete) add(ChatMessageAction(strings.delete, NqrbGlyph.Delete, strings.deleteHint, destructive = true) {
+                appState.deleteChatMessage(message)
+            })
+        }
+        SwipeToReplyBox(mine = mine, label = strings.reply, enabled = !deleted, onReply = onReply) {
+            ChatTextBubble(
+                if (deleted) strings.deletedMessage else message.text.orEmpty(),
+                mine,
+                metadata,
+                reply = if (deleted) null else reply,
+                edited = message.editedAtUtc != null && !deleted,
+                editedLabel = strings.edited,
+                deleted = deleted,
+                onLongPress = { actionsOpen = true },
+            )
         }
         if (actionsOpen) ChatMessageActionDialog(strings.actions, strings.cancel, actions) { actionsOpen = false }
     }
 }
 
 @Composable
-private fun SwipeToReplyBox(mine: Boolean, label: String, onReply: () -> Unit, content: @Composable () -> Unit) {
+private fun SwipeToReplyBox(mine: Boolean, label: String, enabled: Boolean = true, onReply: () -> Unit, content: @Composable () -> Unit) {
     val colors = LocalNqrbColors.current
     val layoutDirection = LocalLayoutDirection.current
     val isRtl = layoutDirection == LayoutDirection.Rtl
@@ -896,7 +938,7 @@ private fun SwipeToReplyBox(mine: Boolean, label: String, onReply: () -> Unit, c
     val maxRevealPx = with(density) { ReplySwipeReveal.toPx() }
     var swipeOffsetPx by remember { mutableStateOf(0f) }
     val revealProgress = (abs(swipeOffsetPx) / maxRevealPx).coerceIn(0f, 1f)
-    val swipeModifier = Modifier.pointerInput(isRtl, onReply) {
+    val swipeModifier = if (!enabled) Modifier else Modifier.pointerInput(isRtl, onReply) {
         detectHorizontalDragGestures(
             onDragStart = { swipeOffsetPx = 0f },
             onHorizontalDrag = { change, dragAmount ->
@@ -915,7 +957,7 @@ private fun SwipeToReplyBox(mine: Boolean, label: String, onReply: () -> Unit, c
         )
     }
     Box(Modifier.fillMaxWidth()) {
-        Row(
+        if (enabled) Row(
             Modifier.align(if (isRtl) Alignment.CenterEnd else Alignment.CenterStart)
                 .graphicsLayer { alpha = revealProgress }
                 .padding(horizontal = NqrbSpacing.Lg),
@@ -944,7 +986,7 @@ private fun SwipeToReplyBox(mine: Boolean, label: String, onReply: () -> Unit, c
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatTextBubble(text: String, mine: Boolean, metadata: ChatMessageMetadata, reply: ChatReplyPreview? = null,
-    onLongPress: (() -> Unit)? = null) {
+    edited: Boolean = false, editedLabel: String = "", deleted: Boolean = false, onLongPress: (() -> Unit)? = null) {
     val colors = LocalNqrbColors.current
     BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart) {
         val bubbleModifier = Modifier.widthIn(max = maxWidth * .84f).then(
@@ -953,7 +995,9 @@ private fun ChatTextBubble(text: String, mine: Boolean, metadata: ChatMessageMet
         Surface(bubbleModifier, color = if (mine) colors.accentSoft else colors.surface, shape = RoundedCornerShape(14.dp)) {
             Column(Modifier.padding(horizontal = NqrbSpacing.Md, vertical = NqrbSpacing.Sm).semantics(mergeDescendants = true) {}) {
                 reply?.let { InlineReplyPreview(it, Modifier.padding(bottom = NqrbSpacing.Xs)) }
-                Text(text, color = colors.textPrimary)
+                Text(text, color = if (deleted) colors.textSecondary else colors.textPrimary)
+                if (edited && editedLabel.isNotBlank())
+                    Text(editedLabel, style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
                 MessageMetadataFooter(metadata, Modifier.align(Alignment.End))
             }
         }

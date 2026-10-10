@@ -10,6 +10,7 @@ namespace BotGlobal.Communication.Endpoints;
 
 public sealed record CreateDirectChatRequest(string Reference);
 public sealed record SendChatTextRequest(string ClientMessageId, string Text, Guid? ReplyToMessageId = null);
+public sealed record EditChatTextRequest(string Text);
 public sealed record ChatVoiceAckRequest(Guid InstallationId, string Sha256, long Length);
 public sealed record ChatReadReceiptRequest(long Sequence);
 
@@ -56,6 +57,16 @@ public static class ChatEndpoints
             ToSendResult(await engine.SendTextAsync(conversationId, request.ClientMessageId, request.Text, request.ReplyToMessageId, token)))
             .WithName("SendChatTextMessage");
 
+        group.MapPut("/conversations/{conversationId:guid}/messages/{messageId:guid}/text", async (Guid conversationId,
+            Guid messageId, EditChatTextRequest request, [FromServices] IChatEngine engine, CancellationToken token) =>
+            ToMutationResult(await engine.EditTextAsync(conversationId, messageId, request.Text, token)))
+            .WithName("EditChatTextMessage");
+
+        group.MapDelete("/conversations/{conversationId:guid}/messages/{messageId:guid}", async (Guid conversationId,
+            Guid messageId, [FromServices] IChatEngine engine, CancellationToken token) =>
+            ToMutationResult(await engine.DeleteMessageAsync(conversationId, messageId, token)))
+            .WithName("DeleteChatMessage");
+
         group.MapPost("/conversations/{conversationId:guid}/messages/voice", async (Guid conversationId,
             HttpRequest request, [FromServices] IChatEngine engine, CancellationToken token) =>
         {
@@ -100,5 +111,12 @@ public static class ChatEndpoints
         { Message: not null } => Results.Ok(result.Message),
         { Forbidden: true } => Results.StatusCode(StatusCodes.Status403Forbidden),
         _ => Results.Conflict(new { code = "chat_client_message_conflict" }),
+    };
+
+    private static IResult ToMutationResult(ChatMutationResult result) => result switch
+    {
+        { Message: not null } => Results.Ok(result.Message),
+        { Forbidden: true } => Results.StatusCode(StatusCodes.Status403Forbidden),
+        _ => Results.Conflict(new { code = "chat_message_mutation_conflict" }),
     };
 }
