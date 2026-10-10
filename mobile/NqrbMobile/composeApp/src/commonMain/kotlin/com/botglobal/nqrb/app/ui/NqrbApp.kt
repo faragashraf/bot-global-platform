@@ -67,6 +67,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
@@ -2353,20 +2354,54 @@ private fun ProductHeader(strings: NqrbStrings, onSettings: () -> Unit) {
 
 @Composable
 internal fun BrandMark(modifier: Modifier, tint: Color) {
+    val colors = LocalNqrbColors.current
     Canvas(modifier) {
-        val strokeWidth = 2.2.dp.toPx()
-        drawCircle(tint, size.minDimension * .12f, Offset(size.width * .25f, size.height * .5f))
-        drawCircle(tint, size.minDimension * .12f, Offset(size.width * .75f, size.height * .5f))
-        drawArc(
-            tint,
-            startAngle = 210f,
-            sweepAngle = 120f,
-            useCenter = false,
-            topLeft = Offset(size.width * .35f, size.height * .29f),
-            size = androidx.compose.ui.geometry.Size(size.width * .3f, size.height * .42f),
-            style = Stroke(strokeWidth, cap = StrokeCap.Round),
-        )
-        drawLine(tint, Offset(size.width * .4f, size.height * .5f), Offset(size.width * .6f, size.height * .5f), strokeWidth, StrokeCap.Round)
+        fun x(value: Float) = size.width * value / 108f
+        fun y(value: Float) = size.height * value / 108f
+        fun point(px: Float, py: Float) = Offset(x(px), y(py))
+        val strokeWidth = size.minDimension * 3.4f / 108f
+        val bridgeWidth = size.minDimension * 5.2f / 108f
+        val dotRadius = size.minDimension * 5.2f / 108f
+        val left = point(12f, 62.6f)
+        val right = point(96f, 62.6f)
+        val bridge = Path().apply {
+            moveTo(left.x, y(68.6f))
+            cubicTo(x(30f), y(84f), x(78f), y(84f), right.x, y(68.6f))
+        }
+        drawPath(bridge, colors.positive, style = Stroke(bridgeWidth, cap = StrokeCap.Round))
+        drawCircle(tint, dotRadius, left)
+        drawCircle(tint.copy(alpha = .82f), dotRadius, right)
+        fun letterLine(startX: Float, startY: Float, endX: Float, endY: Float) {
+            drawLine(colors.textPrimary, point(startX, startY), point(endX, endY), strokeWidth, StrokeCap.Round)
+        }
+        letterLine(24f, 44f, 24f, 61f)
+        letterLine(24f, 44f, 34f, 61f)
+        letterLine(34f, 44f, 34f, 61f)
+        drawCircle(colors.textPrimary, size.minDimension * 6f / 108f, point(47f, 55f), style = Stroke(strokeWidth))
+        letterLine(51.5f, 59f, 56f, 64.5f)
+        letterLine(60f, 61f, 60f, 49f)
+        val rShoulder = Path().apply {
+            moveTo(x(60f), y(52f))
+            cubicTo(x(62.5f), y(49f), x(66.5f), y(48.5f), x(69f), y(50.5f))
+        }
+        drawPath(rShoulder, colors.textPrimary, style = Stroke(strokeWidth, cap = StrokeCap.Round))
+        letterLine(72.5f, 44f, 72.5f, 61f)
+        val upperB = Path().apply {
+            moveTo(x(72.5f), y(44f))
+            lineTo(x(78.2f), y(44f))
+            cubicTo(x(81.9f), y(44f), x(83.5f), y(46.2f), x(83.5f), y(49f))
+            cubicTo(x(83.5f), y(51.7f), x(81.5f), y(53.4f), x(78.2f), y(53.4f))
+            lineTo(x(72.5f), y(53.4f))
+        }
+        val lowerB = Path().apply {
+            moveTo(x(72.5f), y(53.4f))
+            lineTo(x(78.8f), y(53.4f))
+            cubicTo(x(82.8f), y(53.4f), x(84f), y(55.6f), x(84f), y(58.4f))
+            cubicTo(x(84f), y(61.2f), x(82.5f), y(63.2f), x(78.8f), y(63.2f))
+            lineTo(x(72.5f), y(63.2f))
+        }
+        drawPath(upperB, colors.textPrimary, style = Stroke(strokeWidth, cap = StrokeCap.Round))
+        drawPath(lowerB, colors.textPrimary, style = Stroke(strokeWidth, cap = StrokeCap.Round))
     }
 }
 
