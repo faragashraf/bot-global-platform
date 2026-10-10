@@ -74,12 +74,10 @@ class AndroidFirebasePresenceProvider(
             active?.takeIf { it.generation == generation }
                 ?.also { it.maintenance?.cancel(); it.maintenance = null; it.suspended = true }
         } ?: return
-        // Backgrounding is not evidence that the phone is unreachable. Remove the
-        // server capability so readers obtain Unknown, and establish a fresh lease
-        // only after the app resumes.
-        current.connection.close(generation)
-        withTimeoutOrNull(2_000) { backend.invalidate(current.account, current.lease.leaseId) }
-        mutableEvents.tryEmit(PresenceGatewayEvent.Unknown(generation, "background_ambiguous"))
+        // Foreground presence is the user-facing "online now" signal. When the app
+        // leaves the foreground, keep the lease readable and publish a fresh
+        // disconnected record so peers do not keep rendering stale online evidence.
+        current.connection.suspend(generation)
     }
 
     override suspend fun resume(lease: PresenceLease, generation: Long): PresenceLease {
@@ -87,7 +85,15 @@ class AndroidFirebasePresenceProvider(
             active?.takeIf { it.generation == generation }
                 ?.takeIf { it.suspended }
         } ?: return lease
-        val replacement = backend.bootstrap(current.account)
+        val previousLease = current.lease
+        val previousConnection = current.connection
+        val replacement = try {
+            backend.renew(current.account, previousLease.leaseId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            backend.bootstrap(current.account)
+        }
         val nextConnection = try {
             driverFactory.connect(replacement, generation) { event -> publish(generation, event) }
         } catch (cancelled: CancellationException) {
@@ -112,6 +118,8 @@ class AndroidFirebasePresenceProvider(
             withTimeoutOrNull(2_000) { backend.invalidate(current.account, replacement.leaseId) }
             return lease
         }
+        withTimeoutOrNull(2_000) { previousConnection.close(generation) }
+        withTimeoutOrNull(2_000) { backend.invalidate(current.account, previousLease.leaseId) }
         return replacement
     }
 
@@ -363,6 +371,7 @@ private class FirebaseSdkPresenceConnection(
         registrationJob = null
         listener?.let(connected::removeEventListener)
         listener = null
+        withTimeoutOrNull(2_000) { reference.setValue(record("disconnected")).await() }
         database.purgeOutstandingWrites()
         database.goOffline()
     }

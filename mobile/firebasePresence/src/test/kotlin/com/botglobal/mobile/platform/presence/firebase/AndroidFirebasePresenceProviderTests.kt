@@ -69,19 +69,18 @@ class AndroidFirebasePresenceProviderTests {
     }
 
     @Test
-    fun background_suspend_reports_ambiguity_instead_of_phone_offline() = runTest {
+    fun background_suspend_keeps_the_lease_readable_and_marks_the_connection_disconnected() = runTest {
         val factory = FakeFactory()
         val backend = FakeBackend()
         val provider = AndroidFirebasePresenceProvider(configuration(), backend, factory, backgroundScope)
         val lease = provider.activate(account("member"), generation = 3)
-        val event = async { provider.events.first() }
         runCurrent()
 
         provider.suspend(lease, generation = 3)
 
-        assertEquals(PresenceGatewayEvent.Unknown(3, "background_ambiguous"), event.await())
-        assertTrue(factory.connections.single().closed)
-        assertEquals(listOf("lease-member"), backend.invalidated)
+        assertTrue(factory.connections.single().suspended)
+        assertFalse(factory.connections.single().closed)
+        assertEquals(emptyList(), backend.invalidated)
     }
 
     @Test
@@ -94,7 +93,7 @@ class AndroidFirebasePresenceProviderTests {
 
         val replacement = provider.resume(first, generation = 4)
 
-        assertEquals("lease-member-2", replacement.leaseId)
+        assertEquals("lease-member-renewed", replacement.leaseId)
         assertEquals(2, factory.connections.size)
         assertTrue(factory.connections.first().closed)
         assertFalse(factory.connections.last().closed)
@@ -146,9 +145,10 @@ class AndroidFirebasePresenceProviderTests {
 
     private class FakeConnection : FirebasePresenceConnection {
         var closed = false
+        var suspended = false
         override suspend fun heartbeat(generation: Long) = Unit
         override suspend fun resume(generation: Long) = Unit
-        override suspend fun suspend(generation: Long) = Unit
+        override suspend fun suspend(generation: Long) { suspended = true }
         override suspend fun close(generation: Long) { closed = true }
     }
 
