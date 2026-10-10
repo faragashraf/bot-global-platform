@@ -842,18 +842,13 @@ private fun PeopleScreen(
                     nameUnreadLabel = chatStrings.unreadCount(chat.unreadCountForCounterpart(contact.membershipId)),
                     secondaryLabel = contact.nickname?.let { strings.nicknameOriginal.replace("%s", contact.displayName) },
                     statusLabel = if (isBlocked) strings.blockedLabel else
-                        participant?.let { nqrbDirectoryAvailability(strings, it) } ?: strings.availabilityUnverified,
+                        participant?.let { nqrbDirectoryAvailabilityOrNull(strings, it) },
                     actionLabel = strings.removeContact,
                     actionEnabled = contactBook.mutationState != NqrbContactMutationState.Removing,
                     onAction = { appState.removeNqrbContact(contact.membershipId) },
                     callLabel = strings.call,
                     callEnabled = !isBlocked && participant != null,
                     onCall = { participant?.let(appState::requestOutgoingCall) },
-                    messageLabel = nqrbChatStrings(languageTag).chats,
-                    messageEnabled = !isBlocked,
-                    messageUnreadCount = chat.unreadCountForCounterpart(contact.membershipId),
-                    messageUnreadLabel = chatStrings.unreadCount(chat.unreadCountForCounterpart(contact.membershipId)),
-                    onMessage = { appState.openChatWith(contact.membershipId) },
                     nameActionLabel = chatStrings.openChatWith(contact.nickname ?: contact.displayName),
                     nameActionEnabled = !isBlocked,
                     onNameClick = { appState.openChatWith(contact.membershipId) },
@@ -1251,11 +1246,6 @@ private fun NqrbServerContactCard(
     callLabel: String? = null,
     callEnabled: Boolean = false,
     onCall: () -> Unit = {},
-    messageLabel: String? = null,
-    messageEnabled: Boolean = false,
-    messageUnreadCount: Int = 0,
-    messageUnreadLabel: String = "",
-    onMessage: () -> Unit = {},
     overflowLabel: String? = null,
     editNicknameLabel: String? = null,
     onEditNickname: () -> Unit = {},
@@ -1309,22 +1299,6 @@ private fun NqrbServerContactCard(
                 }
             }
             if (callLabel != null) {
-                if (messageLabel != null) {
-                    Box {
-                        IconButton(
-                            modifier = Modifier.size(48.dp),
-                            enabled = messageEnabled,
-                            onClick = onMessage,
-                        ) {
-                            NqrbIcon(NqrbGlyph.Chat, messageLabel, colors.accent, Modifier.size(22.dp))
-                        }
-                        NqrbUnreadBadge(
-                            messageUnreadCount,
-                            messageUnreadLabel,
-                            Modifier.align(Alignment.TopEnd).absoluteOffset(x = 5.dp, y = 0.dp),
-                        )
-                    }
-                }
                 NqrbCallIconButton(
                     label = callLabel,
                     enabled = callEnabled,
@@ -2040,7 +2014,7 @@ private fun CallingDirectorySection(
                     displayName = privateContactDisplayName(contactBook, participant.membershipId, participant.displayName),
                     unreadCount = chat.unreadCountForCounterpart(participant.membershipId),
                     unreadLabel = chatStrings.unreadCount(chat.unreadCountForCounterpart(participant.membershipId)),
-                    status = nqrbDirectoryAvailability(strings, participant),
+                    status = nqrbDirectoryAvailabilityOrNull(strings, participant),
                     callLabel = strings.call,
                     canCall = true,
                     onCall = { appState.requestOutgoingCall(participant) },
@@ -2071,7 +2045,7 @@ private fun CallableParticipantCard(
     displayName: String,
     unreadCount: Int = 0,
     unreadLabel: String = "",
-    status: String,
+    status: String?,
     callLabel: String,
     canCall: Boolean,
     onCall: () -> Unit,
@@ -2110,17 +2084,19 @@ private fun CallableParticipantCard(
                         )
                         NqrbUnreadBadge(unreadCount, unreadLabel)
                     }
-                    Text(
-                        status,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (participant.availability == CallingParticipantAvailability.Online) {
-                            colors.positive
-                        } else {
-                            colors.textSecondary
-                        },
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    status?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (participant.availability == CallingParticipantAvailability.Online) {
+                                colors.positive
+                            } else {
+                                colors.textSecondary
+                            },
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
                 NqrbCallIconButton(
                     label = callLabel,

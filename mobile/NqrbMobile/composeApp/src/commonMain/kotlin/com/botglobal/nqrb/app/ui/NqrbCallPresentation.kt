@@ -41,7 +41,11 @@ fun nqrbCallPresentation(strings: NqrbStrings, call: CallSessionSnapshot): NqrbC
         call.state == CallState.Failed && call.error == "call_peer_unavailable" -> strings.callUnavailable
         call.state == CallState.Failed -> strings.callFailed
         call.state in setOf(CallState.Rejected, CallState.Cancelled, CallState.Ended) -> strings.callEnded
-        else -> strings.availabilityUnverified
+        else -> if (call.state in setOf(CallState.Missed, CallState.Expired, CallState.Failed)) {
+            strings.callEnded
+        } else {
+            strings.connecting
+        }
     }
     return NqrbCallPresentation(
         status = status,
@@ -60,7 +64,13 @@ fun nqrbDirectoryAvailability(
     strings: NqrbStrings,
     participant: CallableParticipant,
     nowEpochMillis: Long = kotlin.time.Clock.System.now().toEpochMilliseconds(),
-): String {
+): String = nqrbDirectoryAvailabilityOrNull(strings, participant, nowEpochMillis) ?: strings.availabilityUnverified
+
+fun nqrbDirectoryAvailabilityOrNull(
+    strings: NqrbStrings,
+    participant: CallableParticipant,
+    nowEpochMillis: Long = kotlin.time.Clock.System.now().toEpochMilliseconds(),
+): String? {
     val observedAt = participant.presenceObservedAtEpochMillis
     val fresh = observedAt != null && observedAt >= nowEpochMillis - 40_000 && observedAt <= nowEpochMillis + 5_000
     return when {
@@ -68,6 +78,6 @@ fun nqrbDirectoryAvailability(
     fresh && participant.presenceEvidence == PresenceEvidence.Disconnected && participant.presenceFullyCovered == true ->
         strings.currentlyUnavailable
     participant.availability == CallingParticipantAvailability.Reachable -> strings.availableForCalls
-    else -> strings.availabilityUnverified
+    else -> null
     }
 }

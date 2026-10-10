@@ -14,6 +14,7 @@ import com.botglobal.mobile.platform.presence.PresenceEvidence
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class NqrbCallPresentationTests {
@@ -108,8 +109,10 @@ class NqrbCallPresentationTests {
         )
 
         assertEquals(english.availabilityUnverified, nqrbDirectoryAvailability(english, cached, nowEpochMillis = 100_000))
+        assertNull(nqrbDirectoryAvailabilityOrNull(english, cached, nowEpochMillis = 100_000))
         assertEquals(english.currentlyUnavailable, nqrbDirectoryAvailability(english, verified, nowEpochMillis = 100_000))
         assertEquals(english.availabilityUnverified, nqrbDirectoryAvailability(english, verified, nowEpochMillis = 150_000))
+        assertNull(nqrbDirectoryAvailabilityOrNull(english, verified, nowEpochMillis = 150_000))
         assertTrue(nqrbCallPresentation(english, presentSnapshot(CallState.Ended)).terminal)
     }
 
