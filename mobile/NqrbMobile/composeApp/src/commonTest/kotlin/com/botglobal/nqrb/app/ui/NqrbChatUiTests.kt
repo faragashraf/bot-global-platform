@@ -1,0 +1,70 @@
+package com.botglobal.nqrb.app.ui
+
+import com.botglobal.mobile.platform.chat.ChatMessage
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class NqrbChatUiTests {
+    @Test
+    fun canonicalOutgoingTextShowsDeliveredUntilCounterpartReads() {
+        val strings = nqrbChatStrings("en")
+        val message = textMessage(sequence = 7)
+
+        val delivered = chatMessageMetadata(
+            mine = true,
+            time = "2:31 PM",
+            message = message,
+            counterpartReadSequence = 6,
+            strings = strings,
+        )
+        val read = chatMessageMetadata(
+            mine = true,
+            time = "2:31 PM",
+            message = message,
+            counterpartReadSequence = 7,
+            strings = strings,
+        )
+
+        assertEquals(ChatMessageStatus.Delivered, delivered.status)
+        assertEquals("Delivered", delivered.statusLabel)
+        assertEquals(ChatMessageStatus.Read, read.status)
+        assertEquals("Read", read.statusLabel)
+    }
+
+    @Test
+    fun retryPendingOutgoingTextKeepsRetryStatus() {
+        val metadata = chatMessageMetadata(
+            mine = true,
+            time = "2:31 PM",
+            message = textMessage(sequence = 7).copy(deliveryState = "RetryPending"),
+            counterpartReadSequence = 0,
+            strings = nqrbChatStrings("en"),
+        )
+
+        assertEquals(ChatMessageStatus.RetryPending, metadata.status)
+        assertEquals("Waiting to retry", metadata.statusLabel)
+    }
+
+    @Test
+    fun latestIncomingSequenceIgnoresOutgoingMessages() {
+        val rows = listOf(
+            ChatThreadRow("mine", message = textMessage(sequence = 8).copy(senderSubjectId = "me")),
+            ChatThreadRow("incoming-old", message = textMessage(sequence = 9).copy(senderSubjectId = "peer")),
+            ChatThreadRow("incoming-new", message = textMessage(sequence = 10).copy(senderSubjectId = "peer")),
+        )
+
+        assertEquals(10, latestIncomingSequence(rows, "me"))
+    }
+
+    private fun textMessage(sequence: Long) = ChatMessage(
+        messageId = "message-$sequence",
+        conversationId = "conversation",
+        sequence = sequence,
+        senderSubjectId = "sender",
+        clientMessageId = "client-$sequence",
+        kind = "text",
+        text = "hello",
+        deliveryState = "Delivered",
+        createdAtUtc = "2026-10-10T11:31:00Z",
+    )
+}

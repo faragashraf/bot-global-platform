@@ -41,6 +41,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -359,6 +360,9 @@ internal fun NqrbChatThreadScreen(
     val rows = remember(snapshot.account, snapshot.messages, snapshot.pendingTexts, snapshot.pendingVoices, conversationId, languageTag, callTime) {
         chatThreadRows(snapshot, conversationId, languageTag, callTime)
     }
+    val latestIncomingSequence = remember(rows, snapshot.account?.subjectId) {
+        latestIncomingSequence(rows, snapshot.account?.subjectId)
+    }
     val byKey = remember(rows) { rows.associateBy { it.key } }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -391,6 +395,8 @@ internal fun NqrbChatThreadScreen(
             val added = rows.filter { it.key !in previousKeys && it.date == null }
             if (initial || following || added.any { it.mine }) {
                 listState.scrollToItem(rows.lastIndex)
+                if ((initial || following) && conversationId != null && latestIncomingSequence > 0)
+                    appState.markChatRead(conversationId, latestIncomingSequence)
                 following = true; unseen = 0; initial = false
             } else unseen += added.size
             previousKeys = rows.map { it.key }.toSet()
@@ -562,13 +568,32 @@ internal fun chatThreadRows(snapshot: ChatSnapshot, conversationId: String?, lan
 internal data class ChatThreadRow(val key: String, val message: ChatMessage? = null, val text: PendingChatText? = null,
     val voice: PendingChatVoice? = null, val date: String? = null, val mine: Boolean = false, val time: String = "")
 
-private enum class ChatMessageStatus { Pending, Sent, Delivered, Read, RetryPending, Failed }
+internal fun latestIncomingSequence(rows: List<ChatThreadRow>, subjectId: String?): Long =
+    rows.mapNotNull { it.message }.filter { it.senderSubjectId != subjectId }.maxOfOrNull { it.sequence } ?: 0
 
-private data class ChatMessageMetadata(
+internal enum class ChatMessageStatus { Pending, Delivered, Read, RetryPending, Failed }
+
+internal data class ChatMessageMetadata(
     val time: String = "",
     val status: ChatMessageStatus? = null,
     val statusLabel: String? = null,
 )
+
+private val WhatsAppReadReceiptBlue = Color(0xFF34B7F1)
+private val VoiceWaveformPattern = floatArrayOf(.34f, .58f, .82f, .48f, .72f, .4f, .64f)
+
+internal fun chatMessageMetadata(
+    mine: Boolean,
+    time: String,
+    message: ChatMessage,
+    counterpartReadSequence: Long,
+    strings: NqrbChatStrings,
+): ChatMessageMetadata = when {
+    !mine -> ChatMessageMetadata(time = time)
+    message.sequence <= counterpartReadSequence -> ChatMessageMetadata(time, ChatMessageStatus.Read, strings.read)
+    message.deliveryState == "RetryPending" -> ChatMessageMetadata(time, ChatMessageStatus.RetryPending, strings.retrying)
+    else -> ChatMessageMetadata(time, ChatMessageStatus.Delivered, strings.delivered)
+}
 
 @Composable
 private fun ChatStatePane(title: String, body: String, modifier: Modifier = Modifier) {
@@ -684,14 +709,7 @@ private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, stri
     val local = message.voiceTransferId?.let(snapshot.localVoiceKeys::get)
     val counterpartRead = snapshot.conversations.firstOrNull { it.conversationId == message.conversationId }
         ?.counterpartLastReadSequence ?: 0
-    val metadata = when {
-        !mine -> ChatMessageMetadata(time = time)
-        message.sequence <= counterpartRead -> ChatMessageMetadata(time, ChatMessageStatus.Read, strings.read)
-        message.kind == "voice" && message.voiceState?.startsWith("Acknowledged") == true ->
-            ChatMessageMetadata(time, ChatMessageStatus.Delivered, strings.delivered)
-        message.deliveryState == "RetryPending" -> ChatMessageMetadata(time, ChatMessageStatus.RetryPending, strings.retrying)
-        else -> ChatMessageMetadata(time, ChatMessageStatus.Sent, strings.sent)
-    }
+    val metadata = chatMessageMetadata(mine, time, message, counterpartRead, strings)
     if (message.kind == "voice") {
         val colors = LocalNqrbColors.current
         Column(Modifier.fillMaxWidth(), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
@@ -731,17 +749,16 @@ private fun MessageMetadataFooter(metadata: ChatMessageMetadata, modifier: Modif
     if (metadata.time.isBlank() && metadata.status == null) return
     val colors = LocalNqrbColors.current
     val glyph = when (metadata.status) {
-        ChatMessageStatus.Sent -> NqrbGlyph.Check
         ChatMessageStatus.Delivered, ChatMessageStatus.Read -> NqrbGlyph.DoubleCheck
         ChatMessageStatus.Pending, ChatMessageStatus.RetryPending, ChatMessageStatus.Failed -> NqrbGlyph.Clock
         null -> null
     }
     val tint = when (metadata.status) {
-        ChatMessageStatus.Read -> colors.accent
+        ChatMessageStatus.Read -> WhatsAppReadReceiptBlue
         ChatMessageStatus.RetryPending, ChatMessageStatus.Failed -> colors.destructive
         else -> colors.textSecondary
     }
-    val showLabel = metadata.status in setOf(ChatMessageStatus.Pending, ChatMessageStatus.RetryPending, ChatMessageStatus.Failed)
+    val showLabel = metadata.status in setOf(ChatMessageStatus.RetryPending, ChatMessageStatus.Failed)
     val spokenStatus = metadata.statusLabel
     Row(
         modifier.semantics(mergeDescendants = true) {
@@ -787,24 +804,61 @@ private fun VoiceCapsule(key: String, duration: Int, playback: ChatPlayback, str
             Column(Modifier.padding(NqrbSpacing.Sm).semantics(mergeDescendants = true) {
                 stateDescription = stateLabel
             }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
                     IconButton(onClick = onPlay, enabled = !unavailable && active.phase != ChatPlaybackPhase.Preparing && loading !in setOf(ChatVoiceLoadState.Loading, ChatVoiceLoadState.Unavailable),
-                        modifier = playModifier.size(48.dp).semantics { contentDescription = if (playing) strings.pause else if (loading == ChatVoiceLoadState.RetryableFailure) strings.retry else strings.play }) {
-                        NqrbIcon(if (playing) NqrbGlyph.Pause else NqrbGlyph.Play, null, colors.accent, Modifier.size(24.dp))
+                        modifier = playModifier.size(44.dp).background(colors.elevatedSurface, CircleShape)
+                            .semantics { contentDescription = if (playing) strings.pause else if (loading == ChatVoiceLoadState.RetryableFailure) strings.retry else strings.play }) {
+                        NqrbIcon(if (playing) NqrbGlyph.Pause else NqrbGlyph.Play, null, colors.accent, Modifier.size(23.dp))
                     }
-                    Column(Modifier.weight(1f)) {
-                        Text(stateLabel, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.labelMedium, color = colors.textPrimary)
-                        Text("${strings.duration(active.elapsedMilliseconds)} / ${strings.duration(duration)}",
-                            Modifier.semantics { contentDescription = strings.accessibleDuration(active.elapsedMilliseconds) + " / " + strings.accessibleDuration(duration) },
-                            style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (loading == ChatVoiceLoadState.RetryableFailure || loading == ChatVoiceLoadState.Unavailable || unavailable || active.phase == ChatPlaybackPhase.Failed) {
+                            Text(stateLabel, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.labelMedium,
+                                color = if (loading == ChatVoiceLoadState.RetryableFailure || active.phase == ChatPlaybackPhase.Failed) colors.destructive else colors.textPrimary,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        VoiceWaveform(
+                            progress = if (duration > 0) (active.elapsedMilliseconds.toFloat() / duration).coerceIn(0f, 1f) else 0f,
+                            active = playing || active.phase in setOf(ChatPlaybackPhase.Paused, ChatPlaybackPhase.Completed),
+                            enabled = !unavailable && loading != ChatVoiceLoadState.Unavailable,
+                        )
+                        Text(
+                            strings.duration(if (active.elapsedMilliseconds > 0) active.elapsedMilliseconds else duration),
+                            Modifier.semantics { contentDescription = strings.accessibleDuration(if (active.elapsedMilliseconds > 0) active.elapsedMilliseconds else duration) },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textSecondary,
+                        )
                     }
                     if (loading == ChatVoiceLoadState.Loading || active.phase in setOf(ChatPlaybackPhase.Playing, ChatPlaybackPhase.Paused, ChatPlaybackPhase.Preparing))
                         IconButton(onClick = onStop, modifier = Modifier.size(48.dp).semantics { contentDescription = strings.playbackStop }) {
                             NqrbIcon(NqrbGlyph.Close, null, colors.accent, Modifier.size(24.dp))
                         }
                 }
-                LinearProgressIndicator(progress = { if (duration > 0) (active.elapsedMilliseconds.toFloat() / duration).coerceIn(0f, 1f) else 0f }, modifier = Modifier.fillMaxWidth().height(3.dp))
             }
+        }
+    }
+}
+
+@Composable
+private fun VoiceWaveform(progress: Float, active: Boolean, enabled: Boolean) {
+    val colors = LocalNqrbColors.current
+    val played = if (active) colors.accent else colors.textSecondary
+    val remaining = if (enabled) colors.textSecondary.copy(alpha = .42f) else colors.disabledContent.copy(alpha = .45f)
+    val bars = 28
+    Canvas(Modifier.fillMaxWidth().height(28.dp)) {
+        val gap = size.width / bars
+        val playedBars = (bars * progress.coerceIn(0f, 1f)).toInt()
+        repeat(bars) { index ->
+            val heightRatio = VoiceWaveformPattern[index % VoiceWaveformPattern.size]
+            val x = gap * index + gap / 2f
+            val barHeight = size.height * heightRatio
+            val top = (size.height - barHeight) / 2f
+            drawLine(
+                color = if (index < playedBars) played else remaining,
+                start = Offset(x, top),
+                end = Offset(x, top + barHeight),
+                strokeWidth = 2.4.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
         }
     }
 }

@@ -4,9 +4,11 @@ using BotGlobal.Communication.Infrastructure.Persistence;
 using BotGlobal.Contracts.Communication;
 using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Notifications;
+using BotGlobal.Communication.Hubs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.SignalR;
 
 namespace BotGlobal.Communication.Application.Chat;
 
@@ -18,7 +20,10 @@ internal sealed class ChatEngine(
     IChatVoiceStorage voiceStorage,
     IMobileRecipientResolver recipients,
     IOptions<ChatVoiceOptions> voiceOptions,
-    TimeProvider clock) : IChatEngine
+    TimeProvider clock,
+    ChatConnectionRegistry? connections = null,
+    IHubContext<ChatHub>? hub = null,
+    IServiceProvider? services = null) : IChatEngine
 {
     public async Task<ChatConversationView?> CreateOrGetDirectAsync(string reference, CancellationToken cancellationToken)
     {
@@ -238,13 +243,30 @@ internal sealed class ChatEngine(
             await receipts.Where(x => x.LastReadSequence < sequence).ExecuteUpdateAsync(setters => setters
                 .SetProperty(x => x.LastReadSequence, sequence).SetProperty(x => x.UpdatedAtUtc, now), cancellationToken);
             var existing = await receipts.AsNoTracking().Select(x => (long?)x.LastReadSequence).SingleOrDefaultAsync(cancellationToken);
-            if (existing.HasValue) return existing.Value;
+            if (existing.HasValue)
+            {
+                await NotifyReadReceiptAsync(actor, conversation, existing.Value, now, cancellationToken);
+                return existing.Value;
+            }
             var added = new ChatReceipt(actor.Application.ApplicationId, conversationId, actor.SubjectId, sequence, now);
             db.ChatReceipts.Add(added);
-            try { await db.SaveChangesAsync(cancellationToken); return sequence; }
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+                await NotifyReadReceiptAsync(actor, conversation, sequence, now, cancellationToken);
+                return sequence;
+            }
             catch (DbUpdateException) when (attempt < 2) { db.Entry(added).State = EntityState.Detached; }
         }
         return null;
+    }
+
+    private async Task NotifyReadReceiptAsync(ChatActor actor, ChatConversation conversation, long sequence, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (sequence <= 0 || connections is null || hub is null || services is null) return;
+        var hint = new ChatMessageHint(actor.Application.ApplicationId, conversation.Id, Guid.Empty, sequence, "read", now);
+        await connections.SendAsync(hint, conversation.Counterpart(actor.SubjectId), services, hub, cancellationToken);
     }
 
     private async Task TryDeleteAsync(ChatVoiceTransfer transfer, CancellationToken cancellationToken)
