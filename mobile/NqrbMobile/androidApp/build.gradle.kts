@@ -28,8 +28,8 @@ val uploadKeyAlias = releaseSetting("nqrbUploadKeyAlias", "NQRB_UPLOAD_KEY_ALIAS
 val uploadKeyPassword = releaseSetting("nqrbUploadKeyPassword", "NQRB_UPLOAD_KEY_PASSWORD", "keyPassword")
 val uploadSigningValues = listOf(uploadStoreFile, uploadStorePassword, uploadKeyAlias, uploadKeyPassword)
 val uploadSigningConfigured = uploadSigningValues.all { it != null }
-val nqrbVersionCode = providers.gradleProperty("nqrbVersionCode").map(String::toInt).getOrElse(12)
-val nqrbVersionName = providers.gradleProperty("nqrbVersionName").getOrElse("0.2.7")
+val nqrbVersionCode = providers.gradleProperty("nqrbVersionCode").map(String::toInt).getOrElse(13)
+val nqrbVersionName = providers.gradleProperty("nqrbVersionName").getOrElse("0.2.8")
 val nqrbPresenceEnabled = providers.gradleProperty("nqrbPresenceEnabled").map(String::toBoolean).getOrElse(false)
 val nqrbPresenceProjectId = providers.gradleProperty("nqrbPresenceProjectId").getOrElse("")
 val nqrbPresenceDatabaseNamespace = providers.gradleProperty("nqrbPresenceDatabaseNamespace").getOrElse("")
