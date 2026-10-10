@@ -40,6 +40,7 @@ import com.botglobal.mobile.platform.chat.ChatActiveCallGuard
 import com.botglobal.mobile.platform.chat.ChatController
 import com.botglobal.mobile.platform.chat.ChatCredential
 import com.botglobal.mobile.platform.chat.ChatCredentialProvider
+import com.botglobal.mobile.platform.chat.ChatGatewayDiagnostics
 import com.botglobal.mobile.platform.chat.ChatMicrophonePermission
 import com.botglobal.mobile.platform.chat.KtorChatGateway
 import com.botglobal.mobile.platform.calling.CallState
@@ -167,6 +168,7 @@ class NqrbApplication : Application(), FirebaseMessagingRuntimeOwner {
                     ChatCredential("Bearer ${session.accessToken}")
                 }
             },
+            ChatGatewayDiagnostics { Log.w("NqrbChat", it) },
         )
         chat = ChatController(
             gateway = chatGateway,

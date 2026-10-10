@@ -395,6 +395,19 @@ class ChatCorrectionTests {
         assertEquals(2L, restarted.state.value.conversations.first { it.conversationId == c }.counterpartLastReadSequence)
     }
 
+    @Test fun closedConversationListSyncAdvancesPeerReadReceiptWithoutNewMessages() = runTest {
+        val local = ChatConversation(c, "peer", null, "Peer", 7, 0, 0, "2026-10-07T00:00:00Z")
+        val remote = local.copy(counterpartLastReadSequence = 7)
+        val api = Api().apply { rows = listOf(remote) }
+        val disk = Store().apply { states[a] = ChatDurableState(conversations = listOf(local)) }
+        val controller = ChatController(api, disk)
+
+        controller.bind(a)
+
+        assertEquals(7L, controller.state.value.conversations.single().counterpartLastReadSequence)
+        assertEquals(7L, disk.states.getValue(a).conversations.single().counterpartLastReadSequence)
+    }
+
     @Test fun concurrentVoiceDownloadPublishesLoadingBeforeIoAndSharesOneTransfer() = runTest {
         val gate = CompletableDeferred<Unit>(); val api = Api().apply { downloadWait = gate }
         val controller = ChatController(api, Store(), Voices(), installationId = { "installation" }); controller.bind(a)

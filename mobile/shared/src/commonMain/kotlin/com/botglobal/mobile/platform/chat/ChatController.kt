@@ -594,6 +594,8 @@ class ChatController(
             val known = rows[row.conversationId]
             rows[row.conversationId] = if (known == null) row else row.copy(
                 lastSequence = maxOf(known.lastSequence, row.lastSequence),
+                lastReadSequence = maxOf(known.lastReadSequence, row.lastReadSequence),
+                counterpartLastReadSequence = maxOf(known.counterpartLastReadSequence, row.counterpartLastReadSequence),
                 updatedAtUtc = maxOf(known.updatedAtUtc, row.updatedAtUtc))
         }
         return rows.values.sortedWith(compareByDescending<ChatConversation> { it.updatedAtUtc }.thenByDescending { it.conversationId })

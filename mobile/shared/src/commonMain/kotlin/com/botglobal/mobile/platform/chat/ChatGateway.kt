@@ -25,6 +25,10 @@ sealed interface ChatGatewayResult<out T> {
     data object RetryableFailure : ChatGatewayResult<Nothing>
 }
 
+fun interface ChatGatewayDiagnostics {
+    fun log(message: String)
+}
+
 interface ChatGateway {
     /** A request session must never consult a subsequently switched account's credentials. */
     suspend fun snapshot(): ChatGateway = this
@@ -56,13 +60,20 @@ class KtorChatGateway private constructor(
     private val transport: JsonTransport,
     apiBaseUrl: String,
     private val credentials: ChatCredentialProvider,
+    private val diagnostics: ChatGatewayDiagnostics,
 ) : ChatGateway {
-    constructor(client: HttpClient, apiBaseUrl: String, credentials: ChatCredentialProvider) : this(
+    constructor(
+        client: HttpClient,
+        apiBaseUrl: String,
+        credentials: ChatCredentialProvider,
+        diagnostics: ChatGatewayDiagnostics = ChatGatewayDiagnostics {},
+    ) : this(
         JsonTransport(client.config {
             installOrReplace(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         }),
         apiBaseUrl,
         credentials,
+        diagnostics,
     )
 
     private class JsonTransport(val client: HttpClient)
@@ -72,7 +83,7 @@ class KtorChatGateway private constructor(
     override suspend fun snapshot(): ChatGateway {
         val captured = credentials.current()
         // Never substitute a new account/token into an old generation. Rotation denies it immediately.
-        return KtorChatGateway(transport, apiRoot, ChatCredentialProvider { captured?.takeIf { credentials.current() == it } })
+        return KtorChatGateway(transport, apiRoot, ChatCredentialProvider { captured?.takeIf { credentials.current() == it } }, diagnostics)
     }
 
     override suspend fun context() = request<ContextResponse> {
@@ -98,6 +109,9 @@ class KtorChatGateway private constructor(
         badRequest = { code ->
             if (code == "chat_voice_decoder_unavailable") ChatGatewayResult.RetryableFailure
             else ChatGatewayResult.Conflict
+        },
+        failure = { status, code ->
+            diagnostics.log("chat voice upload rejected status=$status code=${code ?: "none"} length=${bytes.size} durationMs=${draft.durationMilliseconds}")
         },
     ) {
         require(bytes.size <= MaxVoiceBytes)
@@ -126,10 +140,17 @@ class KtorChatGateway private constructor(
     }
     private suspend inline fun <reified T> request(
         badRequest: (String?) -> ChatGatewayResult<T> = { ChatGatewayResult.RetryableFailure },
+        failure: (status: Int, code: String?) -> Unit = { _, _ -> },
         crossinline call: suspend () -> io.ktor.client.statement.HttpResponse,
     ): ChatGatewayResult<T> = try {
         val response = call()
-        when (response.status.value) { in 200..299 -> ChatGatewayResult.Success(response.body()); 400 -> badRequest(response.errorCode()); 401 -> ChatGatewayResult.AuthenticationRequired; 403, 404 -> ChatGatewayResult.Forbidden; 409 -> ChatGatewayResult.Conflict; else -> ChatGatewayResult.RetryableFailure }
+        val status = response.status.value
+        if (status in 200..299) ChatGatewayResult.Success(response.body())
+        else {
+            val code = response.errorCode()
+            failure(status, code)
+            when (status) { 400 -> badRequest(code); 401 -> ChatGatewayResult.AuthenticationRequired; 403, 404 -> ChatGatewayResult.Forbidden; 409 -> ChatGatewayResult.Conflict; else -> ChatGatewayResult.RetryableFailure }
+        }
     } catch (cancelled: CancellationException) { throw cancelled } catch (_: MissingCredential) { ChatGatewayResult.AuthenticationRequired } catch (_: Exception) { ChatGatewayResult.RetryableFailure }
     private suspend fun requestUnit(call: suspend () -> io.ktor.client.statement.HttpResponse): ChatGatewayResult<Unit> = try {
         when (call().status.value) { in 200..299 -> ChatGatewayResult.Success(Unit); 401 -> ChatGatewayResult.AuthenticationRequired; 403, 404 -> ChatGatewayResult.Forbidden; 409 -> ChatGatewayResult.Conflict; else -> ChatGatewayResult.RetryableFailure }
