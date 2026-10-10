@@ -585,6 +585,22 @@ class ChatCorrectionTests {
         assertEquals(2, snapshot.copy(pendingVoices = listOf(voice.copy(sha256 = null)), messages = mapOf(c to listOf(canonical))).timeline(c).size)
     }
 
+    @Test fun textReplyCoalescesWhenServerOmitsReplyMetadata() {
+        val pending = PendingChatText(c, "same", "answer", 1,
+            replyToMessageId = "message-root",
+            replyToSenderSubjectId = b.subjectId,
+            replyToKind = "text",
+            replyToText = "original",
+        )
+        val canonical = message(2, a.subjectId, "same").copy(text = "answer")
+        val rows = ChatSnapshot(account = a, pendingTexts = listOf(pending), messages = mapOf(c to listOf(canonical))).timeline(c)
+
+        assertEquals(1, rows.size)
+        assertEquals("message-root", rows.single().message?.replyToMessageId)
+        assertEquals("original", rows.single().message?.replyToText)
+        assertEquals("same", rows.single().pending?.clientMessageId)
+    }
+
     @Test fun legacyUnknownChronologyUsesGapZeroAndDuplicateCanonicalIdentityDoesNotConsumePending() {
         val legacy = ChatDurableState(textOutbox = listOf(PendingChatText(c, "legacy", "saved")),
             messages = mapOf(c to listOf(message(1)))).normalizePendingOrder()

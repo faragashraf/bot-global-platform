@@ -867,6 +867,20 @@ class NqrbAppState(
         }
     }
 
+    fun finishAndSendChatRecording() {
+        if (mutableChatRecordingState.value != NqrbChatRecordingState.Recording) return
+        mutableChatRecordingState.value = NqrbChatRecordingState.Finalizing
+        callActionScope.launch {
+            val draft = chatVoiceRecorder.stop()
+            if (mutableChatRecordingState.value != NqrbChatRecordingState.Finalizing) {
+                draft?.let { chatVoiceRecorder.discard(it) }; return@launch
+            }
+            mutableChatVoiceDraft.value = draft
+            if (draft == null) mutableChatRecordingState.value = NqrbChatRecordingState.StorageUnavailable
+            else sendChatVoice()
+        }
+    }
+
     fun cancelChatRecording() {
         val draft = mutableChatVoiceDraft.value
         val shouldStopPlayback = draft != null || mutableChatRecordingState.value in setOf(

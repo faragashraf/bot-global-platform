@@ -6,6 +6,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,7 +83,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.graphics.graphicsLayer
 import com.botglobal.mobile.platform.chat.ChatConversation
 import com.botglobal.mobile.platform.chat.ChatTextFailure
@@ -448,9 +452,18 @@ internal fun NqrbChatThreadScreen(
             previousKeys = rows.map { it.key }.toSet()
         }
     }
-    var text by remember(conversationId) { mutableStateOf("") }
-    var editing by remember(conversationId) { mutableStateOf<PendingChatText?>(null) }
-    var replyingTo by remember(conversationId) { mutableStateOf<ChatMessage?>(null) }
+    var draftConversationId by remember { mutableStateOf<String?>(null) }
+    var text by remember { mutableStateOf("") }
+    var editing by remember { mutableStateOf<PendingChatText?>(null) }
+    var replyingTo by remember { mutableStateOf<ChatMessage?>(null) }
+    LaunchedEffect(conversationId) {
+        if (conversationId != null && draftConversationId != conversationId) {
+            draftConversationId = conversationId
+            text = ""
+            editing = null
+            replyingTo = null
+        }
+    }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
     Column(Modifier.widthIn(max = NqrbLayout.ThreadMaxWidth).fillMaxSize().imePadding()) {
         ChatHeader(
@@ -513,7 +526,8 @@ internal fun NqrbChatThreadScreen(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(strings.limit, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
                     TextButton(onClick = appState::cancelChatRecording, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.cancel) }
-                    Button(onClick = appState::finishChatRecording, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.stop) }
+                    TextButton(onClick = appState::finishChatRecording, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.stop) }
+                    Button(onClick = appState::finishAndSendChatRecording, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.sendVoice) }
                 }
             }
             NqrbChatRecordingState.Finalizing, NqrbChatRecordingState.Sending -> Text(
@@ -523,15 +537,11 @@ internal fun NqrbChatThreadScreen(
                 VoicePreview(it, strings, appState, playback, submitting)
             }
             else -> Column(Modifier.fillMaxWidth().padding(NqrbSpacing.Md), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
-                replyingTo?.let {
+                replyingTo?.takeIf { it.conversationId == conversationId }?.let {
                     ComposerReplyPreview(replyPreview(it, it.senderSubjectId == snapshot.account?.subjectId, strings), strings) { replyingTo = null }
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
-                    IconButton(onClick = appState::requestChatVoiceRecording, enabled = !submitting,
-                        modifier = Modifier.size(48.dp).background(colors.elevatedSurface, CircleShape)) {
-                        NqrbIcon(NqrbGlyph.Microphone, strings.record,
-                            if (submitting) colors.disabledContent else colors.accent, Modifier.size(25.dp))
-                    }
+                    VoiceRecordButton(strings, !submitting, appState)
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it.take(4000) },
@@ -554,7 +564,7 @@ internal fun NqrbChatThreadScreen(
                         onClick = {
                             val submitted = text
                             val failed = editing
-                            val reply = replyingTo
+                            val reply = replyingTo?.takeIf { it.conversationId == conversationId }
                             val queued = { if (text == submitted) { text = ""; editing = null; replyingTo = null } }
                             if (failed == null) appState.sendChatText(submitted, reply, queued)
                             else appState.editFailedChatText(failed.clientMessageId, submitted, queued)
@@ -634,6 +644,7 @@ private val NqrbReadReceiptAccent = Color(0xFF5B7CFF)
 private val VoiceWaveformPattern = floatArrayOf(.34f, .58f, .82f, .48f, .72f, .4f, .64f)
 private val ReplySwipeThreshold = 64.dp
 private val ReplySwipeReveal = 88.dp
+private val VoiceRecordLockThreshold = 72.dp
 
 private data class ChatMessageAction(
     val label: String,
@@ -658,6 +669,9 @@ internal fun chatMessageMetadata(
 
 internal fun shouldStartReplyFromSwipe(offsetPx: Float, thresholdPx: Float, isRtl: Boolean): Boolean =
     if (isRtl) offsetPx <= -thresholdPx else offsetPx >= thresholdPx
+
+internal fun shouldLockVoiceRecordingFromDrag(verticalDragPx: Float, thresholdPx: Float): Boolean =
+    verticalDragPx <= -thresholdPx
 
 private fun replyPreview(message: ChatMessage, mine: Boolean, strings: NqrbChatStrings): ChatReplyPreview {
     val body = if (message.kind == "voice") {
@@ -1143,6 +1157,44 @@ private fun VoiceWaveform(progress: Float, active: Boolean, enabled: Boolean) {
                 cap = StrokeCap.Round,
             )
         }
+    }
+}
+
+@Composable
+private fun VoiceRecordButton(strings: NqrbChatStrings, enabled: Boolean, appState: NqrbAppState) {
+    val colors = LocalNqrbColors.current
+    val density = LocalDensity.current
+    val threshold = with(density) { VoiceRecordLockThreshold.toPx() }
+    IconButton(
+        onClick = {},
+        enabled = enabled,
+        modifier = Modifier
+            .size(48.dp)
+            .background(colors.elevatedSurface, CircleShape)
+            .pointerInput(enabled, threshold) {
+                if (!enabled) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    appState.requestChatVoiceRecording()
+                    var verticalDrag = 0f
+                    var locked = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.firstOrNull()
+                        if (change == null) continue
+                        verticalDrag += change.positionChange().y
+                        if (!locked && shouldLockVoiceRecordingFromDrag(verticalDrag, threshold)) locked = true
+                        if (change.changedToUpIgnoreConsumed()) {
+                            if (!locked) appState.finishAndSendChatRecording()
+                            break
+                        }
+                        change.consume()
+                    }
+                }
+            },
+    ) {
+        NqrbIcon(NqrbGlyph.Microphone, strings.record,
+            if (enabled) colors.accent else colors.disabledContent, Modifier.size(25.dp))
     }
 }
 

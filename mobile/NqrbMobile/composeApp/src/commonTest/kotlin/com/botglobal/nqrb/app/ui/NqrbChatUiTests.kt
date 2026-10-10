@@ -69,6 +69,13 @@ class NqrbChatUiTests {
     }
 
     @Test
+    fun upwardVoiceDragLocksRecordingInsteadOfSendingOnRelease() {
+        assertEquals(true, shouldLockVoiceRecordingFromDrag(-80f, 72f))
+        assertEquals(false, shouldLockVoiceRecordingFromDrag(-40f, 72f))
+        assertEquals(false, shouldLockVoiceRecordingFromDrag(80f, 72f))
+    }
+
+    @Test
     fun conversationThreadKeepsServerDisplayName() {
         val strings = nqrbChatStrings("en")
         val conversation = ChatConversation(

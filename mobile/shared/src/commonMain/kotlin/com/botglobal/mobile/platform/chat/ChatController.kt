@@ -470,7 +470,8 @@ class ChatController(
         }
         val confirmed = if (voice) durable.voiceOutbox.firstOrNull { it.clientMessageId == clientId && it.conversationId == message.conversationId }
             ?.let { ChatPendingActivity(voice = it) to message.sequence } else null
-        durable = durable.copy(messages = durable.messages + (message.conversationId to mergeMessages(durable.messages[message.conversationId].orEmpty(), listOf(message)))).anchorTimeline(scope, confirmed)
+        val delivered = if (voice) message else message.withReplyFallbackFrom(durable.textOutbox.firstOrNull { it.clientMessageId == clientId })
+        durable = durable.copy(messages = durable.messages + (delivered.conversationId to mergeMessages(durable.messages[delivered.conversationId].orEmpty(), listOf(delivered)))).anchorTimeline(scope, confirmed)
         durable = durable.copy(
             textOutbox = if (voice) durable.textOutbox else durable.textOutbox.filterNot { it.clientMessageId == clientId },
             voiceOutbox = if (voice) durable.voiceOutbox.filterNot { it.clientMessageId == clientId } else durable.voiceOutbox,
@@ -609,7 +610,11 @@ class ChatController(
         }
         return rows.values.sortedWith(compareByDescending<ChatConversation> { it.updatedAtUtc }.thenByDescending { it.conversationId })
     }
-    private fun mergeMessages(existing: List<ChatMessage>, incoming: List<ChatMessage>) = (existing + incoming).associateBy { it.messageId }.values.sortedBy { it.sequence }
+    private fun mergeMessages(existing: List<ChatMessage>, incoming: List<ChatMessage>): List<ChatMessage> {
+        val rows = existing.associateBy { it.messageId }.toMutableMap()
+        incoming.forEach { row -> rows[row.messageId] = row.withReplyFallbackFrom(rows[row.messageId]) }
+        return rows.values.sortedBy { it.sequence }
+    }
 
     private suspend fun <T> request(scope: ChatAccountScope, ticket: Long, call: suspend ChatGateway.() -> ChatGatewayResult<T>): ChatGatewayResult<T> {
         val binding = lock.withLock { if (isCurrent(scope, ticket)) sessionGateway to sessionJob else null }

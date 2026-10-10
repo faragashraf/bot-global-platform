@@ -157,12 +157,33 @@ data class ChatPendingActivity(val text: PendingChatText? = null, val voice: Pen
         message.senderSubjectId == scope.subjectId && message.conversationId == conversationId &&
             message.clientMessageId == clientMessageId && when {
                 text != null -> message.kind == "text" && message.text == text.text
-                    && message.replyToMessageId.orEmpty() == text.replyToMessageId.orEmpty()
                 voice != null -> message.kind == "voice" && voice.encodedDurationVerified && voice.sha256 != null &&
                     message.voiceSha256 == voice.sha256 && message.voiceLength == voice.length &&
                     message.voiceDurationMilliseconds == voice.durationMilliseconds
                 else -> false
             }
+}
+
+fun ChatMessage.withReplyFallbackFrom(pending: PendingChatText?): ChatMessage {
+    if (kind != "text" || !replyToMessageId.isNullOrBlank() || pending?.replyToMessageId.isNullOrBlank()) return this
+    return copy(
+        replyToMessageId = pending.replyToMessageId,
+        replyToSenderSubjectId = pending.replyToSenderSubjectId,
+        replyToKind = pending.replyToKind,
+        replyToText = pending.replyToText,
+        replyToVoiceDurationMilliseconds = pending.replyToVoiceDurationMilliseconds,
+    )
+}
+
+fun ChatMessage.withReplyFallbackFrom(existing: ChatMessage?): ChatMessage {
+    if (kind != "text" || !replyToMessageId.isNullOrBlank() || existing?.replyToMessageId.isNullOrBlank()) return this
+    return copy(
+        replyToMessageId = existing.replyToMessageId,
+        replyToSenderSubjectId = existing.replyToSenderSubjectId,
+        replyToKind = existing.replyToKind,
+        replyToText = existing.replyToText,
+        replyToVoiceDurationMilliseconds = existing.replyToVoiceDurationMilliseconds,
+    )
 }
 
 fun pendingChatActivity(texts: List<PendingChatText>, voices: List<PendingChatVoice>): List<ChatPendingActivity> =
@@ -232,11 +253,12 @@ fun ChatSnapshot.timeline(conversationId: String): List<ChatTimelineActivity> {
     val ownCounts = canonical.filter { it.senderSubjectId == scope.subjectId }.groupingBy { it.clientMessageId to it.kind }.eachCount()
     val canonicalRows = canonical.map { message ->
         val local = pairs[message.messageId]
+        val displayMessage = message.withReplyFallbackFrom(local?.text)
         val collision = pending.any { it.clientMessageId == message.clientMessageId && !it.matches(scope, message) } ||
             (ownCounts[message.clientMessageId to message.kind] ?: 0) > 1
         val identity = local ?: if (message.kind == "text") ChatPendingActivity(text = PendingChatText(conversationId, message.clientMessageId, message.text.orEmpty()))
             else ChatPendingActivity(voice = PendingChatVoice(conversationId, message.clientMessageId, "", 0, 0))
-        ChatTimelineActivity(if (local != null || (message.senderSubjectId == scope.subjectId && !collision)) ownKey(identity) else "message:${message.messageId}", message, local)
+        ChatTimelineActivity(if (local != null || (message.senderSubjectId == scope.subjectId && !collision)) ownKey(identity) else "message:${message.messageId}", displayMessage, local)
     }
     val slots = mutableMapOf<Int, MutableList<ChatPendingActivity>>()
     var previousSlot = 0
