@@ -37,6 +37,18 @@ class NqrbCallPresentationTests {
                 CallDeliveryStatus(CallId("call"), CallDeliveryState.Presented, revision = 2),
             ).status,
         )
+        assertEquals(
+            english.waitingAfterReceipt,
+            present(
+                CallState.Ringing,
+                CallDeliveryStatus(
+                    CallId("call"), CallDeliveryState.Terminal,
+                    revision = 3,
+                    terminal = true,
+                    wasPresented = true,
+                ),
+            ).status,
+        )
     }
 
     @Test
@@ -107,9 +119,17 @@ class NqrbCallPresentationTests {
             presenceObservedAtEpochMillis = 100_000,
             presenceFullyCovered = true,
         )
+        val onlineFromDirectory = cached.copy(
+            availability = CallingParticipantAvailability.Online,
+            presenceEvidence = PresenceEvidence.Unknown,
+            presenceObservedAtEpochMillis = null,
+            presenceFullyCovered = null,
+        )
 
         assertEquals(english.availabilityUnverified, nqrbDirectoryAvailability(english, cached, nowEpochMillis = 100_000))
         assertNull(nqrbDirectoryAvailabilityOrNull(english, cached, nowEpochMillis = 100_000))
+        assertEquals(english.onlineNow, nqrbDirectoryAvailability(english, onlineFromDirectory, nowEpochMillis = 100_000))
+        assertEquals(english.onlineNow, nqrbDirectoryAvailabilityOrNull(english, onlineFromDirectory, nowEpochMillis = 100_000))
         assertEquals(english.currentlyUnavailable, nqrbDirectoryAvailability(english, verified, nowEpochMillis = 100_000))
         assertEquals(english.availabilityUnverified, nqrbDirectoryAvailability(english, verified, nowEpochMillis = 150_000))
         assertNull(nqrbDirectoryAvailabilityOrNull(english, verified, nowEpochMillis = 150_000))

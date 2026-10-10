@@ -41,13 +41,12 @@ class NqrbPushRegistrationApi(
         return try {
             val session = sessionVault.restore()
                 ?: return PushRegistrationOutcome.AuthenticationRequired
-            var credential = deviceCredentialVault.restore()
-                ?: when (val enrollment = enroll(session.accessToken)) {
-                    is EnrollmentResult.Succeeded -> enrollment.credential
-                    EnrollmentResult.AuthenticationRequired -> return PushRegistrationOutcome.AuthenticationRequired
-                    EnrollmentResult.Rejected -> return PushRegistrationOutcome.Rejected
-                    EnrollmentResult.RetryableFailure -> return PushRegistrationOutcome.RetryableFailure
-                }
+            var credential = when (val enrollment = enroll(session.accessToken)) {
+                is EnrollmentResult.Succeeded -> enrollment.credential
+                EnrollmentResult.AuthenticationRequired -> return PushRegistrationOutcome.AuthenticationRequired
+                EnrollmentResult.Rejected -> return PushRegistrationOutcome.Rejected
+                EnrollmentResult.RetryableFailure -> return PushRegistrationOutcome.RetryableFailure
+            }
 
             var result = registerDestination(credential, destination)
             if (result == PushRegistrationOutcome.AuthenticationRequired) {

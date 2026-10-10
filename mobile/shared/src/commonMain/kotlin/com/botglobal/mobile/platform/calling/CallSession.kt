@@ -159,6 +159,7 @@ sealed interface CallPlatformAction {
 
 interface CallPlatformLifecycle {
     val actions: Flow<CallPlatformAction> get() = emptyFlow()
+    val confirmsIncomingPresentation: Boolean get() = false
     suspend fun presentIncoming(callId: CallId, participant: CallParticipant) {
         start(callId, participant, CallDirection.Incoming)
     }
@@ -707,11 +708,16 @@ class CallSessionController(
         }
         try {
             platform.presentIncoming(event.callId, event.caller)
+            var presented = false
             operation.withLock {
                 if (transitionGeneration == plan.second && mutableState.value.callId == plan.first &&
                     mutableState.value.state in setOf(CallState.Ringing, CallState.Answering, CallState.Connecting)) {
                     presentedIncomingCallId.value = event.callId
+                    presented = true
                 }
+            }
+            if (presented && platform.confirmsIncomingPresentation) {
+                confirmIncomingPresented(event.callId)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled

@@ -23,9 +23,6 @@ class CallReceiptTests {
         signaling.eventsFlow.emit(offer("shown"))
         runCurrent()
 
-        assertEquals(listOf("present:shown"), signaling.order)
-        controller.confirmIncomingPresented(CallId("shown"))
-
         assertEquals(listOf("present:shown", "receipt:shown"), signaling.order)
         assertEquals(CallState.Ringing, controller.state.value.state)
     }
@@ -83,6 +80,7 @@ class CallReceiptTests {
         private val order: MutableList<String>,
         private val failPresentation: Boolean = false,
     ) : CallPlatformLifecycle {
+        override val confirmsIncomingPresentation = true
         override suspend fun presentIncoming(callId: CallId, participant: CallParticipant) {
             order += "present:${callId.value}"
             if (failPresentation) error("synthetic presentation failure")

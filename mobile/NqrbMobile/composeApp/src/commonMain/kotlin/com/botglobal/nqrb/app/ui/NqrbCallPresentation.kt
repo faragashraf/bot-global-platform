@@ -28,7 +28,7 @@ fun nqrbCallPresentation(strings: NqrbStrings, call: CallSessionSnapshot): NqrbC
         call.delivery?.state == CallDeliveryState.Answered && call.state in setOf(CallState.Connecting, CallState.Ringing) ->
             strings.connecting
         call.direction == CallDirection.Outgoing && call.state in setOf(CallState.Connecting, CallState.Ringing) ->
-            if (call.delivery?.state == CallDeliveryState.Presented) {
+            if (wasPresentedOrAnswered) {
                 strings.waitingAfterReceipt
             } else strings.tryingToReach
         call.state == CallState.Ending -> strings.endingCall
@@ -75,6 +75,7 @@ fun nqrbDirectoryAvailabilityOrNull(
     val fresh = observedAt != null && observedAt >= nowEpochMillis - 40_000 && observedAt <= nowEpochMillis + 5_000
     return when {
     fresh && participant.presenceEvidence == PresenceEvidence.Connected -> strings.onlineNow
+    participant.availability == CallingParticipantAvailability.Online -> strings.onlineNow
     fresh && participant.presenceEvidence == PresenceEvidence.Disconnected && participant.presenceFullyCovered == true ->
         strings.currentlyUnavailable
     participant.availability == CallingParticipantAvailability.Reachable -> strings.availableForCalls

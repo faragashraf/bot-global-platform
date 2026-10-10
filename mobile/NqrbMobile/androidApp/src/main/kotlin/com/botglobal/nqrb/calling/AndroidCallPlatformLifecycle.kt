@@ -54,6 +54,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 class AndroidCallPlatformLifecycle(
     private val application: NqrbApplication,
 ) : CallPlatformLifecycle {
+    override val confirmsIncomingPresentation = true
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mutableActions = MutableSharedFlow<CallPlatformAction>(extraBufferCapacity = 8)
     override val actions = mutableActions.asSharedFlow()

@@ -62,7 +62,40 @@ class NqrbPushRegistrationApiTests {
     }
 
     @Test
-    fun revokedDeviceCredentialIsReenrolledOnceAndRegistrationRetries() = runTest {
+    fun storedDeviceCredentialIsReenrolledBeforePushRegistration() = runTest {
+        val requests = mutableListOf<HttpRequestData>()
+        val engine = MockEngine { request ->
+            requests += request
+            when (request.url.encodedPath) {
+                "/api/mobile/devices/enrollment" -> respond(
+                    """{"deviceId":"replacement-device","credential":"replacement-secret"}""",
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType, "application/json"),
+                )
+                "/api/mobile/devices/push-registration" -> respond(
+                    "{}",
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType, "application/json"),
+                )
+                else -> error("Unexpected request path")
+            }
+        }
+        val vault = MemoryCredentialVault(MobileDeviceCredential("old-device", "old-secret"))
+
+        val result = api(HttpClient(engine), vault).register(destination("current-fid"))
+
+        assertEquals(PushRegistrationOutcome.Registered, result)
+        assertEquals(
+            listOf("/api/mobile/devices/enrollment", "/api/mobile/devices/push-registration"),
+            requests.map { it.url.encodedPath },
+        )
+        assertTrue(requests[0].headers[HttpHeaders.Authorization]!!.startsWith("Bearer "))
+        assertTrue(requests[1].headers[HttpHeaders.Authorization]!!.contains("replacement-secret"))
+        assertEquals("replacement-device", vault.value?.deviceId)
+    }
+
+    @Test
+    fun enrolledDeviceCredentialIsReenrolledOnceWhenPushRegistrationIsUnauthorized() = runTest {
         var registrations = 0
         var enrollments = 0
         val engine = MockEngine { request ->
@@ -70,7 +103,7 @@ class NqrbPushRegistrationApiTests {
                 "/api/mobile/devices/enrollment" -> {
                     enrollments++
                     respond(
-                        """{"deviceId":"replacement-device","credential":"replacement-secret"}""",
+                        """{"deviceId":"replacement-device","credential":"replacement-secret-$enrollments"}""",
                         HttpStatusCode.OK,
                         headersOf(HttpHeaders.ContentType, "application/json"),
                     )
@@ -86,14 +119,12 @@ class NqrbPushRegistrationApiTests {
                 else -> error("Unexpected request path")
             }
         }
-        val vault = MemoryCredentialVault(MobileDeviceCredential("old-device", "old-secret"))
 
-        val result = api(HttpClient(engine), vault).register(destination("current-fid"))
+        val result = api(HttpClient(engine), MemoryCredentialVault()).register(destination("current-fid"))
 
         assertEquals(PushRegistrationOutcome.Registered, result)
-        assertEquals(1, enrollments)
+        assertEquals(2, enrollments)
         assertEquals(2, registrations)
-        assertEquals("replacement-device", vault.value?.deviceId)
     }
 
     @Test
