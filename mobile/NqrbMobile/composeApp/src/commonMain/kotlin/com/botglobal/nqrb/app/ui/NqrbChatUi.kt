@@ -83,6 +83,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
+import com.botglobal.mobile.platform.chat.ChatConversation
 import com.botglobal.mobile.platform.chat.ChatTextFailure
 import com.botglobal.mobile.platform.chat.ChatVoiceFailure
 import com.botglobal.mobile.platform.chat.ChatVoiceLoadState
@@ -296,7 +297,7 @@ internal fun NqrbChatListScreen(languageTag: String, snapshot: ChatSnapshot, app
             } else LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
                 items(snapshot.conversationActivity, key = { it.conversation.conversationId }) { activity ->
                     val conversation = activity.conversation
-                    val displayName = conversation.counterpartDisplayName ?: strings.participantUnavailable
+                    val displayName = chatConversationDisplayName(conversation, strings)
                     val unreadCount = activity.unreadCount
                     Surface(
                         Modifier.fillMaxWidth().clickable { appState.openChat(conversation.conversationId) },
@@ -367,6 +368,9 @@ internal fun NqrbUnreadBadge(count: Int, label: String, modifier: Modifier = Mod
 internal fun chatRecencyLabel(time: NqrbCallTime): String =
     if (time.dayLabel == "Today" || time.dayLabel == "اليوم") time.timeLabel else time.dayLabel
 
+internal fun chatConversationDisplayName(conversation: ChatConversation?, strings: NqrbChatStrings): String =
+    conversation?.counterpartDisplayName?.takeIf(String::isNotBlank) ?: strings.participantUnavailable
+
 @Composable
 internal fun NqrbChatThreadScreen(
     languageTag: String,
@@ -384,9 +388,7 @@ internal fun NqrbChatThreadScreen(
     val directory by appState.callingDirectory.state.collectAsState()
     val authentication by appState.identity.state.collectAsState()
     val localOnly by appState.chatLocalOnly.collectAsState()
-    val displayName = conversation?.counterpartReference?.let { reference ->
-        privateContactDisplayName(contactBook, reference, conversation.counterpartDisplayName ?: strings.participantUnavailable)
-    } ?: conversation?.counterpartDisplayName ?: strings.participantUnavailable
+    val displayName = chatConversationDisplayName(conversation, strings)
     val callTarget = remember(
         authentication,
         directory,

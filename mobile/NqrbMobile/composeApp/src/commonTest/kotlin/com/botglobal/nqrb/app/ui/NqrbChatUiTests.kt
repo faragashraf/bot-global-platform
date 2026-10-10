@@ -1,6 +1,7 @@
 package com.botglobal.nqrb.app.ui
 
 import com.botglobal.mobile.platform.chat.ChatMessage
+import com.botglobal.mobile.platform.chat.ChatConversation
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -65,6 +66,23 @@ class NqrbChatUiTests {
         assertEquals(true, shouldStartReplyFromSwipe(-72f, 64f, isRtl = true))
         assertEquals(false, shouldStartReplyFromSwipe(72f, 64f, isRtl = true))
         assertEquals(false, shouldStartReplyFromSwipe(-40f, 64f, isRtl = true))
+    }
+
+    @Test
+    fun conversationThreadKeepsServerDisplayName() {
+        val strings = nqrbChatStrings("en")
+        val conversation = ChatConversation(
+            conversationId = "conversation",
+            counterpartSubjectId = "subject",
+            counterpartReference = "saved-local-contact",
+            counterpartDisplayName = "Ashraf Farag",
+            lastSequence = 1,
+            lastReadSequence = 1,
+            updatedAtUtc = "2026-10-10T16:00:00Z",
+        )
+
+        assertEquals("Ashraf Farag", chatConversationDisplayName(conversation, strings))
+        assertEquals("This person is currently unavailable", chatConversationDisplayName(conversation.copy(counterpartDisplayName = ""), strings))
     }
 
     private fun textMessage(sequence: Long) = ChatMessage(
