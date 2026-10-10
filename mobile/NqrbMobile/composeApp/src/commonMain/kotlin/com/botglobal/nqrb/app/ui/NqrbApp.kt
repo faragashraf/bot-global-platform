@@ -842,7 +842,7 @@ private fun PeopleScreen(
                     nameUnreadLabel = chatStrings.unreadCount(chat.unreadCountForCounterpart(contact.membershipId)),
                     secondaryLabel = contact.nickname?.let { strings.nicknameOriginal.replace("%s", contact.displayName) },
                     statusLabel = if (isBlocked) strings.blockedLabel else
-                        participant?.let { nqrbDirectoryAvailabilityOrNull(strings, it) },
+                        participant?.let { nqrbDirectoryAvailability(strings, it) },
                     actionLabel = strings.removeContact,
                     actionEnabled = contactBook.mutationState != NqrbContactMutationState.Removing,
                     onAction = { appState.removeNqrbContact(contact.membershipId) },
@@ -2014,7 +2014,7 @@ private fun CallingDirectorySection(
                     displayName = privateContactDisplayName(contactBook, participant.membershipId, participant.displayName),
                     unreadCount = chat.unreadCountForCounterpart(participant.membershipId),
                     unreadLabel = chatStrings.unreadCount(chat.unreadCountForCounterpart(participant.membershipId)),
-                    status = nqrbDirectoryAvailabilityOrNull(strings, participant),
+                    status = nqrbDirectoryAvailability(strings, participant),
                     callLabel = strings.call,
                     canCall = true,
                     onCall = { appState.requestOutgoingCall(participant) },

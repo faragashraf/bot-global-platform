@@ -8,6 +8,11 @@ class BotGlobalFirebaseMessagingService : FirebaseMessagingService() {
         runtime()?.onRegistered(fid)
     }
 
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onNewToken(token: String) {
+        runtime()?.onRegistered(token)
+    }
+
     override fun onUnregistered(fid: String) {
         runtime()?.onUnregistered()
     }

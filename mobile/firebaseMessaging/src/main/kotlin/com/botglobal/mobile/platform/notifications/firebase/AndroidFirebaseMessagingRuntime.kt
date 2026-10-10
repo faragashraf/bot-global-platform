@@ -128,6 +128,10 @@ private class AndroidFirebaseRegistrationClient : FirebaseRegistrationClient {
     override suspend fun unregister() {
         FirebaseMessaging.getInstance().unregister().awaitCompletion()
     }
+
+    @Suppress("DEPRECATION")
+    override suspend fun token(): String? =
+        FirebaseMessaging.getInstance().token.awaitCompletion()
 }
 
 private suspend fun <T> Task<T>.awaitCompletion(): T = suspendCancellableCoroutine { continuation ->

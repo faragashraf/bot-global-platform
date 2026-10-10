@@ -46,6 +46,22 @@ class FirebaseRegistrationCoordinatorTests {
     }
 
     @Test
+    fun currentFirebaseTokenIsRegisteredOnActivation() = runTest {
+        val registration = RecordingRegistration()
+        val store = MemoryStore("persisted-fid")
+        val coordinator = FirebaseRegistrationCoordinator(
+            PushRegistrationController(registration),
+            store,
+            RecordingClient(token = "fresh-fcm-token"),
+        )
+
+        coordinator.activate()
+
+        assertEquals(listOf("persisted-fid", "fresh-fcm-token"), registration.identifiers)
+        assertEquals("fresh-fcm-token", store.value)
+    }
+
+    @Test
     fun deactivationUnregistersBackendAndFirebaseAndClearsLocalIdentifier() = runTest {
         val registration = RecordingRegistration()
         val store = MemoryStore("persisted-fid")
@@ -89,11 +105,12 @@ class FirebaseRegistrationCoordinatorTests {
         override fun clear() { value = null }
     }
 
-    private class RecordingClient : FirebaseRegistrationClient {
+    private class RecordingClient(private val token: String? = null) : FirebaseRegistrationClient {
         var registerCalls = 0
         var unregisterCalls = 0
         override suspend fun register() { registerCalls++ }
         override suspend fun unregister() { unregisterCalls++ }
+        override suspend fun token() = token
     }
 
     private class RecordingRegistration(

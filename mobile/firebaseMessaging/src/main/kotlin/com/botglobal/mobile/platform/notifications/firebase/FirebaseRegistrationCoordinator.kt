@@ -15,6 +15,7 @@ internal interface FirebaseDestinationStore {
 internal interface FirebaseRegistrationClient {
     suspend fun register()
     suspend fun unregister()
+    suspend fun token(): String?
 }
 
 internal class FirebaseRegistrationCoordinator(
@@ -28,6 +29,9 @@ internal class FirebaseRegistrationCoordinator(
             ?.takeIf(String::isNotBlank)
             ?.let { controller.destinationAvailable(it.asDestination()) }
         client.register()
+        client.token()
+            ?.takeIf(String::isNotBlank)
+            ?.let { onRegistered(it) }
     }
 
     override suspend fun deactivate(): PushRegistrationOutcome {
