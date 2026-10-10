@@ -382,8 +382,8 @@ internal fun NqrbChatThreadScreen(
     val rows = remember(snapshot.account, snapshot.messages, snapshot.pendingTexts, snapshot.pendingVoices, conversationId, languageTag, callTime) {
         chatThreadRows(snapshot, conversationId, languageTag, callTime)
     }
-    val latestIncomingSequence = remember(rows, snapshot.account?.subjectId) {
-        latestIncomingSequence(rows, snapshot.account?.subjectId)
+    val latestVisibleMessageSequence = remember(rows) {
+        latestMessageSequence(rows)
     }
     val byKey = remember(rows) { rows.associateBy { it.key } }
     val listState = rememberLazyListState()
@@ -402,7 +402,7 @@ internal fun NqrbChatThreadScreen(
     var following by remember(conversationId) { mutableStateOf(true) }
     LaunchedEffect(conversationId, byKey) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.key } }.collect { visible ->
-            val sequence = visible.mapNotNull { byKey[it]?.message }.filter { it.senderSubjectId != snapshot.account?.subjectId }.maxOfOrNull { it.sequence } ?: 0
+            val sequence = visible.mapNotNull { byKey[it]?.message }.maxOfOrNull { it.sequence } ?: 0
             if (conversationId != null && sequence > 0) appState.markChatRead(conversationId, sequence)
         }
     }
@@ -417,8 +417,8 @@ internal fun NqrbChatThreadScreen(
             val added = rows.filter { it.key !in previousKeys && it.date == null }
             if (initial || following || added.any { it.mine }) {
                 listState.scrollToItem(rows.lastIndex)
-                if ((initial || following) && conversationId != null && latestIncomingSequence > 0)
-                    appState.markChatRead(conversationId, latestIncomingSequence)
+                if ((initial || following) && conversationId != null && latestVisibleMessageSequence > 0)
+                    appState.markChatRead(conversationId, latestVisibleMessageSequence)
                 following = true; unseen = 0; initial = false
             } else unseen += added.size
             previousKeys = rows.map { it.key }.toSet()
@@ -590,8 +590,8 @@ internal fun chatThreadRows(snapshot: ChatSnapshot, conversationId: String?, lan
 internal data class ChatThreadRow(val key: String, val message: ChatMessage? = null, val text: PendingChatText? = null,
     val voice: PendingChatVoice? = null, val date: String? = null, val mine: Boolean = false, val time: String = "")
 
-internal fun latestIncomingSequence(rows: List<ChatThreadRow>, subjectId: String?): Long =
-    rows.mapNotNull { it.message }.filter { it.senderSubjectId != subjectId }.maxOfOrNull { it.sequence } ?: 0
+internal fun latestMessageSequence(rows: List<ChatThreadRow>): Long =
+    rows.mapNotNull { it.message }.maxOfOrNull { it.sequence } ?: 0
 
 internal enum class ChatMessageStatus { Pending, Delivered, Read, RetryPending, Failed }
 

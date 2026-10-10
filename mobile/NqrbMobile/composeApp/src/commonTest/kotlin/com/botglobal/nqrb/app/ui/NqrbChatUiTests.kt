@@ -46,14 +46,15 @@ class NqrbChatUiTests {
     }
 
     @Test
-    fun latestIncomingSequenceIgnoresOutgoingMessages() {
+    fun latestMessageSequenceIncludesOutgoingMessagesToClearThreadUnreadState() {
         val rows = listOf(
             ChatThreadRow("mine", message = textMessage(sequence = 8).copy(senderSubjectId = "me")),
             ChatThreadRow("incoming-old", message = textMessage(sequence = 9).copy(senderSubjectId = "peer")),
             ChatThreadRow("incoming-new", message = textMessage(sequence = 10).copy(senderSubjectId = "peer")),
+            ChatThreadRow("mine-new", message = textMessage(sequence = 11).copy(senderSubjectId = "me")),
         )
 
-        assertEquals(10, latestIncomingSequence(rows, "me"))
+        assertEquals(11, latestMessageSequence(rows))
     }
 
     private fun textMessage(sequence: Long) = ChatMessage(

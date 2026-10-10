@@ -5,6 +5,7 @@ using BotGlobal.Communication.Domain.Chat;
 using BotGlobal.Communication.Hubs;
 using BotGlobal.Communication.Infrastructure.Persistence;
 using BotGlobal.Contracts.Communication;
+using BotGlobal.Contracts.Mobile;
 using BotGlobal.Contracts.Notifications;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Data.Sqlite;
@@ -38,7 +39,8 @@ public sealed class ChatDeliveryTests
     {
         await using var f = await Fixture.Create(61);
         await f.Processor().ProcessAsync(default);
-        Assert.Empty(f.Push.Calls);
+        Assert.Equal(122, f.Push.Calls.Count);
+        Assert.All(f.Push.Calls, call => Assert.Equal(f.ApplicationId, call.Application.ApplicationId));
         Assert.All(await f.Db.ChatDispatches.ToListAsync(), row => Assert.Equal(ChatDispatchState.Delivered, row.State));
     }
 
@@ -46,55 +48,71 @@ public sealed class ChatDeliveryTests
     public async Task ConcurrentProcessorCannotSendClaimedDispatch()
     {
         await using var f = await Fixture.Create(1);
-        await f.Processor().ProcessAsync(default);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Push.Before = async () => { entered.TrySetResult(); await release.Task; };
+        var first = f.Processor().ProcessAsync(default); await entered.Task;
         await using var secondDb = new CommunicationDbContext(f.Options);
         await f.Processor(secondDb).ProcessAsync(default);
-        Assert.Empty(f.Push.Calls);
-        Assert.Equal(ChatDispatchState.Delivered, (await secondDb.ChatDispatches.SingleAsync()).State);
+        Assert.Single(f.Push.Calls); release.SetResult(); await first;
+        Assert.Equal(2, f.Push.Calls.Count);
     }
 
     [Fact]
-    public async Task ChatDispatchDoesNotUsePushRouteRetries()
+    public async Task AcceptedDeviceIsNotRetriedWhenAnotherDeviceHasTransientFailure()
     {
         await using var f = await Fixture.Create(1);
         f.Push.NextKind = ApplicationPushDispatchKind.TransientFailure;
         await f.Processor().ProcessAsync(default);
+        var failedToken = f.Push.Calls.First().RegistrationToken;
         f.Clock.Now += TimeSpan.FromMinutes(1);
         await f.Processor().ProcessAsync(default);
-        Assert.Empty(f.Push.Calls);
+        Assert.Equal(3, f.Push.Calls.Count);
+        Assert.Equal(2, f.Push.Calls.Count(x => x.RegistrationToken == failedToken));
         Assert.Equal(ChatDispatchState.Delivered, (await f.Db.ChatDispatches.SingleAsync()).State);
     }
 
     [Fact]
-    public async Task ChatDispatchDeliveryIsStableAcrossRestart()
+    public async Task UnknownSendOutcomeAfterRestartIsNotBlindlyRepeated()
     {
         await using var f = await Fixture.Create(1); f.Push.ThrowAfterSend = true;
         await f.Processor().ProcessAsync(default);
+        var uncertainToken = f.Push.Calls.Single().RegistrationToken;
         f.Clock.Now += TimeSpan.FromMinutes(1);
         await using var restarted = new CommunicationDbContext(f.Options);
         await f.Processor(restarted).ProcessAsync(default);
-        Assert.Empty(f.Push.Calls);
-        Assert.Equal(ChatDispatchState.Delivered, (await restarted.ChatDispatches.SingleAsync()).State);
+        Assert.Single(f.Push.Calls, x => x.RegistrationToken == uncertainToken);
+        Assert.Equal(ChatDispatchState.Terminal, (await restarted.ChatDispatches.SingleAsync()).State);
     }
 
     [Fact]
-    public async Task ProviderOutcomeCannotMakeChatDispatchTerminal()
+    public async Task PermanentProviderOutcomeIsTerminalAndNeverFallsBackToAnotherApplication()
     {
         await using var f = await Fixture.Create(1); f.Push.NextKind = ApplicationPushDispatchKind.PermanentFailure;
         await f.Processor().ProcessAsync(default); f.Clock.Now += TimeSpan.FromDays(1); await f.Processor().ProcessAsync(default);
-        Assert.Empty(f.Push.Calls);
-        Assert.Equal(ChatDispatchState.Delivered, (await f.Db.ChatDispatches.SingleAsync()).State);
+        Assert.Equal(2, f.Push.Calls.Count);
+        Assert.All(f.Push.Calls, call => Assert.Equal(f.ApplicationId, call.Application.ApplicationId));
+        Assert.Equal(ChatDispatchState.Terminal, (await f.Db.ChatDispatches.SingleAsync()).State);
     }
 
     [Fact]
-    public async Task ChatDispatchDoesNotSendSystemNotification()
+    public async Task ChatPushCarriesConversationDestinationAndSenderCopy()
     {
         await using var f = await Fixture.Create(1);
 
         await f.Processor().ProcessAsync(default);
 
-        Assert.Empty(f.Push.Calls);
-        Assert.Equal(ChatDispatchState.Delivered, (await f.Db.ChatDispatches.SingleAsync()).State);
+        Assert.Equal(2, f.Push.Calls.Count);
+        Assert.All(f.Push.Calls, call =>
+        {
+            Assert.Equal(ChatContract.MessageEvent, call.Data["type"]);
+            Assert.Equal(f.ConversationId.ToString("D"), call.Data["conversationId"]);
+            Assert.Equal($"chat:{f.ConversationId:D}", call.Data["destination"]);
+            Assert.Equal("Synthetic", call.Title);
+            Assert.Equal("synthetic", call.Body);
+            Assert.Equal("Synthetic", call.Data["titleEn"]);
+            Assert.Equal("New message", call.Data["bodyEn"]);
+        });
     }
 
     private sealed class Fixture : IAsyncDisposable
@@ -105,9 +123,9 @@ public sealed class ChatDeliveryTests
         public required DbContextOptions<CommunicationDbContext> Options { get; init; }
         public required CommunicationDbContext Db { get; init; }
         public Clock Clock { get; } = new(); public Provider Push { get; } = new();
-        private readonly Hub _hub = new();
+        private readonly Routes _routes = new(); private readonly Hub _hub = new();
         public ChatDispatchProcessor Processor(CommunicationDbContext? db = null) => new(db ?? Db,
-            new ChatPolicyRegistry([new Directory()], [new Policy()], new Applications()),
+            new ChatPolicyRegistry([new Directory()], [new Policy()], new Applications()), _routes, _routes, Push,
             new ChatConnectionRegistry(), _hub, new ServiceCollection().BuildServiceProvider(), Clock);
         public static async Task<Fixture> Create(int count)
         {
@@ -133,6 +151,11 @@ public sealed class ChatDeliveryTests
             Calls.Add(message); await Before(); if (ThrowAfterSend) { ThrowAfterSend = false; throw new IOException("synthetic failure after send"); }
             var kind = NextKind; NextKind = ApplicationPushDispatchKind.Accepted; return new(kind);
         }
+    }
+    private sealed class Routes : IMobileRecipientResolver, IMobilePushDestinationResolver {
+        private readonly Guid[] _devices = [Guid.NewGuid(), Guid.NewGuid()];
+        public Task<IReadOnlyList<MobileRecipientDevice>> ResolveActiveDevicesAsync(NotificationApplicationContext app, string subject, CancellationToken token) => Task.FromResult<IReadOnlyList<MobileRecipientDevice>>(_devices.Select(x => new MobileRecipientDevice(x, "synthetic", "android", null)).ToArray());
+        public Task<MobilePushDestination?> ResolveActiveAsync(NotificationApplicationContext app, Guid device, string provider, CancellationToken token) => Task.FromResult<MobilePushDestination?>(new(device, provider, device.ToString()));
     }
     private sealed class Applications : IPlatformClientDescriptorReader { public Task<PlatformClientDescriptor?> FindAsync(Guid id, CancellationToken token) => Task.FromResult<PlatformClientDescriptor?>(new(id, "test-app", "Test", true)); }
     private sealed class Directory : IChatParticipantDirectory {

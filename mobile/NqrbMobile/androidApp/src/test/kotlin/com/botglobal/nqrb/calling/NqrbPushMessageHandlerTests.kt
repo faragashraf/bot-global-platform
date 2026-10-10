@@ -143,7 +143,7 @@ class NqrbPushMessageHandlerTests {
     }
 
     @Test
-    fun chatPushSyncsConversationWithoutShowingSystemNotification() = runTest {
+    fun chatPushSyncsConversationAndShowsMessageNotificationWithDestination() = runTest {
         val session = RecordingPushSession()
         val notifications = RecordingGeneralNotifications()
         val chat = RecordingChatSynchronizer()
@@ -170,7 +170,10 @@ class NqrbPushMessageHandlerTests {
         )
 
         assertEquals(listOf<String?>(conversationId), chat.synced)
-        assertEquals(emptyList(), notifications.shown)
+        assertEquals(
+            listOf(ShownNotification("notification-1", "رسالة جديدة", "لديك رسالة جديدة.", "chat:$conversationId")),
+            notifications.shown,
+        )
     }
 
     @Test
