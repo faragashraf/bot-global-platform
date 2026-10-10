@@ -479,7 +479,7 @@ class NqrbAppStateTests {
     }
 
     @Test
-    fun returning_to_people_and_home_refreshes_the_authenticated_directory_without_polling() = runTest {
+    fun returning_to_people_and_home_refreshes_the_authenticated_directory() = runTest {
         val directory = RecordingDirectory(emptyList())
         val state = NqrbAppState(
             identity = FederatedIdentityController(
@@ -498,6 +498,30 @@ class NqrbAppStateTests {
         assertEquals(2, directory.loads)
 
         assertTrue(state.selectTopLevel(NqrbDestination.Home))
+        runCurrent()
+        assertEquals(3, directory.loads)
+    }
+
+    @Test
+    fun foreground_home_refreshes_directory_status_without_waiting_for_navigation() = runTest {
+        val directory = RecordingDirectory(listOf(CallableParticipant("remote", "Remote user")))
+        val state = NqrbAppState(
+            identity = FederatedIdentityController(
+                FixedCredentials,
+                FixedIdentityGateway(session(), FederatedSignInResult.Rejected),
+            ),
+            callingDirectory = CallingDirectoryController(directory),
+            callActionScope = backgroundScope,
+        )
+        state.startup()
+        runCurrent()
+        assertEquals(1, directory.loads)
+
+        state.onForeground()
+        runCurrent()
+        assertEquals(2, directory.loads)
+
+        advanceTimeBy(15_000)
         runCurrent()
         assertEquals(3, directory.loads)
     }

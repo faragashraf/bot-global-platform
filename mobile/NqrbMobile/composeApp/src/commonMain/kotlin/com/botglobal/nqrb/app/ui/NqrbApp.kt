@@ -1828,11 +1828,20 @@ private fun HomeScreen(
 internal fun privateCallingDirectory(directory: CallingDirectorySnapshot, contactBook: NqrbContactBookSnapshot): CallingDirectorySnapshot {
     val savedIds = contactBook.contacts.map { it.membershipId }.toSet()
     val blockedIds = contactBook.blockedAccounts.map { it.membershipId }.toSet()
-    return when (contactBook.contactsState) {
-        NqrbContactBookLoadState.Ready -> directory.copy(
-            status = if (directory.status == CallingDirectoryStatus.Ready && directory.participants.none { it.membershipId in savedIds && it.membershipId !in blockedIds }) CallingDirectoryStatus.Empty else directory.status,
-            participants = directory.participants.filter { it.membershipId in savedIds && it.membershipId !in blockedIds },
+    fun filteredDirectory(): CallingDirectorySnapshot {
+        val participants = directory.participants.filter { it.membershipId in savedIds && it.membershipId !in blockedIds }
+        return directory.copy(
+            status = if (directory.status == CallingDirectoryStatus.Ready && participants.isEmpty()) {
+                CallingDirectoryStatus.Empty
+            } else {
+                directory.status
+            },
+            participants = participants,
+            isRefreshing = directory.isRefreshing || contactBook.contactsRefreshing,
         )
+    }
+    return when (contactBook.contactsState) {
+        NqrbContactBookLoadState.Ready -> filteredDirectory()
         NqrbContactBookLoadState.Empty -> CallingDirectorySnapshot(
             status = CallingDirectoryStatus.Empty,
             isRefreshing = directory.isRefreshing || contactBook.contactsRefreshing,
@@ -1842,10 +1851,14 @@ internal fun privateCallingDirectory(directory: CallingDirectorySnapshot, contac
             status = CallingDirectoryStatus.Error,
             refreshFailed = directory.refreshFailed,
         )
-        else -> CallingDirectorySnapshot(
-            status = CallingDirectoryStatus.Loading,
-            isRefreshing = directory.isRefreshing || contactBook.contactsRefreshing,
-        )
+        else -> if (contactBook.contacts.isNotEmpty()) {
+            filteredDirectory()
+        } else {
+            CallingDirectorySnapshot(
+                status = CallingDirectoryStatus.Loading,
+                isRefreshing = directory.isRefreshing || contactBook.contactsRefreshing,
+            )
+        }
     }
 }
 

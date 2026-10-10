@@ -34,6 +34,20 @@ class NqrbPrivateDirectoryTests {
     }
 
     @Test
+    fun home_keeps_saved_call_cards_visible_while_contacts_refresh() {
+        val book = NqrbContactBookSnapshot(
+            contactsState = NqrbContactBookLoadState.Loading,
+            contactsRefreshing = true,
+            contacts = listOf(NqrbContact("saved", "Friend")),
+        )
+        val visible = privateCallingDirectory(serverDirectory, book)
+
+        assertEquals(listOf("saved"), visible.participants.map { it.membershipId })
+        assertEquals(CallingDirectoryStatus.Ready, visible.status)
+        assertTrue(visible.isRefreshing)
+    }
+
+    @Test
     fun blocked_saved_account_disappears_from_home_call_actions() {
         val book = NqrbContactBookSnapshot(
             contactsState = NqrbContactBookLoadState.Ready,

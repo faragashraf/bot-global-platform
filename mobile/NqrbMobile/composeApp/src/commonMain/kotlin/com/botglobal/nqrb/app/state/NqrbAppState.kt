@@ -254,6 +254,7 @@ class NqrbAppState(
     val missedCallBadgeCount = mutableMissedCallBadgeCount.asStateFlow()
     private val sessionRenewalMutex = Mutex()
     private var foregroundRefreshJob: Job? = null
+    private var foregroundDirectoryRefreshJob: Job? = null
     private var foregroundChatRefreshJob: Job? = null
     private var foregroundChatRefreshConversationId: String? = null
     private var foreground = false
@@ -1099,6 +1100,7 @@ class NqrbAppState(
         }
         if (destination == NqrbDestination.Notifications) markAllNotificationsRead()
         if (destination == NqrbDestination.Profile) refreshAccountProfile()
+        updateForegroundDirectoryRefresh()
         callActionScope.launch { requestPendingReviewIfReady() }
         return true
     }
@@ -1278,6 +1280,7 @@ class NqrbAppState(
             NqrbDestination.Chats -> startForegroundChatRefresh(null)
             else -> stopForegroundChatRefresh()
         }
+        updateForegroundDirectoryRefresh()
         foregroundRefreshJob?.cancel()
         foregroundRefreshJob = callActionScope.launch {
             requestReviewIfReady(ReviewTrigger.Foreground)
@@ -1303,6 +1306,7 @@ class NqrbAppState(
         val playbackIntent = invalidateChatPlayback()
         foreground = false
         stopForegroundChatRefresh()
+        stopForegroundDirectoryRefresh()
         foregroundRefreshJob?.cancel()
         foregroundRefreshJob = null
         callActionScope.launch {
@@ -1329,6 +1333,35 @@ class NqrbAppState(
         foregroundChatRefreshJob?.cancel()
         foregroundChatRefreshJob = null
         foregroundChatRefreshConversationId = null
+    }
+
+    private fun updateForegroundDirectoryRefresh() {
+        if (foreground && navigation.current in LiveDirectoryRefreshDestinations) {
+            startForegroundDirectoryRefresh()
+        } else {
+            stopForegroundDirectoryRefresh()
+        }
+    }
+
+    private fun startForegroundDirectoryRefresh() {
+        if (!foreground || navigation.current !in LiveDirectoryRefreshDestinations) return
+        if (foregroundDirectoryRefreshJob?.isActive == true) return
+        foregroundDirectoryRefreshJob = callActionScope.launch {
+            while (isActive) {
+                delay(15_000L)
+                if (startupState.value == NqrbStartupState.Ready &&
+                    identity.state.value is FederatedAuthenticationState.SignedIn &&
+                    navigation.current in LiveDirectoryRefreshDestinations
+                ) {
+                    refreshCallingDirectory()
+                }
+            }
+        }
+    }
+
+    private fun stopForegroundDirectoryRefresh() {
+        foregroundDirectoryRefreshJob?.cancel()
+        foregroundDirectoryRefreshJob = null
     }
 
     private suspend fun refreshVisibleData() {
@@ -1739,6 +1772,11 @@ class NqrbAppState(
             NqrbDestination.Notifications,
             NqrbDestination.People,
             NqrbDestination.Profile,
+        )
+        private val LiveDirectoryRefreshDestinations = setOf(
+            NqrbDestination.Home,
+            NqrbDestination.History,
+            NqrbDestination.People,
         )
         private val ReviewReadyCallStates = setOf(
             CallState.Idle,
