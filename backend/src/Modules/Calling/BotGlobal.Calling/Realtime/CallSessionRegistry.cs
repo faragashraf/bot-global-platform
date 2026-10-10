@@ -6,6 +6,7 @@ namespace BotGlobal.Calling.Realtime;
 
 public sealed class CallSessionRegistry
 {
+    private static readonly TimeSpan PresentationReceiptTimeout = TimeSpan.FromSeconds(5);
     private readonly ConcurrentDictionary<string, ConnectedParticipant> connections = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, Session> sessions = [];
     private readonly HashSet<(string ApplicationKey, Guid MembershipId)> blockedMemberships = [];
@@ -287,13 +288,16 @@ public sealed class CallSessionRegistry
     }
     private IReadOnlyList<Session> ExpireLocked(DateTimeOffset now)
     {
-        var result = sessions.Values.Where(x => x.Status == CallStatus.Ringing && x.ExpiresAtUtc <= now).ToArray();
+        var result = sessions.Values
+            .Where(x => x.Status == CallStatus.Ringing && (x.ExpiresAtUtc <= now || (x.ReceiptDeadlineUtc <= now && !x.WasPresented)))
+            .ToArray();
         foreach (var session in result)
         {
-            session.Status = CallStatus.Expired;
-            session.TerminationReason = "expired";
+            var expiredByLifetime = session.ExpiresAtUtc <= now;
+            session.Status = expiredByLifetime ? CallStatus.Expired : CallStatus.Cancelled;
+            session.TerminationReason = expiredByLifetime ? "expired" : "missed";
             session.AdvanceDelivery("terminal", now, terminal: true);
-            if (queuedExpired.Add(session.CallId)) pendingExpired.Enqueue(session);
+            if (expiredByLifetime && queuedExpired.Add(session.CallId)) pendingExpired.Enqueue(session);
         }
         return result;
     }
@@ -346,6 +350,7 @@ public sealed class CallSessionRegistry
         public string CalleeDisplayName { get; } = calleeDisplayName;
         public DateTimeOffset CreatedAtUtc { get; } = createdAtUtc;
         public DateTimeOffset ExpiresAtUtc { get; } = expiresAtUtc;
+        public DateTimeOffset ReceiptDeadlineUtc { get; } = createdAtUtc.Add(PresentationReceiptTimeout);
         public bool IsGuestCall { get; } = isGuestCall;
         public Guid? GuestInviteId { get; } = guestInviteId;
         public CallStatus Status { get; set; } = CallStatus.Ringing;

@@ -285,6 +285,46 @@ public sealed class CallSessionRegistryTests
     }
 
     [Fact]
+    public void Unpresented_offer_becomes_stale_after_receipt_deadline()
+    {
+        var registry = new CallSessionRegistry();
+        var caller = Identity("nqrb", "Caller");
+        var callee = Identity("nqrb", "Callee");
+        registry.Connected("caller", caller);
+        registry.Connected("callee", callee);
+        var now = DateTimeOffset.Parse("2026-10-09T09:00:00Z");
+        var started = registry.Start("caller", Participant(callee), now, TimeSpan.FromSeconds(45));
+
+        Assert.Equal("call_offer_stale", Assert.Throws<InvalidOperationException>(() =>
+            registry.RequireIncoming("callee", started.Session.CallId, now.AddSeconds(6))).Message);
+
+        var status = registry.DeliveryStatus("caller", started.Session.CallId, now.AddSeconds(6));
+        Assert.True(status.Terminal);
+        Assert.False(status.WasPresented);
+        Assert.Equal("missed", status.TerminalReason);
+        Assert.Equal(CallSessionRegistry.CallStatus.Cancelled, started.Session.Status);
+    }
+
+    [Fact]
+    public void Presented_offer_survives_the_receipt_deadline_until_call_lifetime_expires()
+    {
+        var registry = new CallSessionRegistry();
+        var caller = Identity("nqrb", "Caller");
+        var callee = Identity("nqrb", "Callee");
+        registry.Connected("caller", caller);
+        registry.Connected("callee", callee);
+        var now = DateTimeOffset.Parse("2026-10-09T09:00:00Z");
+        var started = registry.Start("caller", Participant(callee), now, TimeSpan.FromSeconds(45));
+
+        registry.ConfirmIncomingReceipt("callee", started.Session.CallId, now.AddSeconds(1));
+
+        var incoming = registry.RequireIncoming("callee", started.Session.CallId, now.AddSeconds(6));
+        Assert.Equal(started.Session.CallId, incoming.Session.CallId);
+        Assert.Equal(CallSessionRegistry.CallStatus.Ringing, started.Session.Status);
+        Assert.Equal("presented", started.Session.DeliveryState);
+    }
+
+    [Fact]
     public void Delivery_projection_is_caller_only_and_preserves_receipt_history_after_expiry()
     {
         var registry = new CallSessionRegistry();

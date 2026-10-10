@@ -108,11 +108,8 @@ class AndroidCallingSignaling(
     override suspend fun answer(callId: CallId) = invoke("AnswerIncomingCall", CallIdDto(callId.value))
     override suspend fun reject(callId: CallId) = invoke("RejectIncomingCall", CallIdDto(callId.value))
 
-    override suspend fun end(callId: CallId, reason: CallTerminationReason) {
-        if (activeBinding?.hub?.connectionState == HubConnectionState.CONNECTED) invoke(
-            "EndCall", EndCallDto(callId.value, reason.name.lowercase()),
-        )
-    }
+    override suspend fun end(callId: CallId, reason: CallTerminationReason) =
+        invoke("EndCall", EndCallDto(callId.value, reason.name.lowercase()))
 
     override suspend fun iceConfiguration(roomId: String): VoiceIceConfiguration {
         val binding = ensureConnected()
