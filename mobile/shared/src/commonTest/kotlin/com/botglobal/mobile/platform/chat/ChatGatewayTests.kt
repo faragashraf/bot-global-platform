@@ -149,6 +149,22 @@ class ChatGatewayTests {
         client.close()
     }
 
+    @Test fun voiceBadRequestIsPermanentConflictInsteadOfRetryableFailure() = runTest {
+        val client = HttpClient(MockEngine { request ->
+            assertEquals(HttpMethod.Post, request.method)
+            assertEquals("/api/mobile/communications/chat/conversations/thread/messages/voice", request.url.encodedPath)
+            respond("""{"code":"chat_voice_invalid_container"}""", HttpStatusCode.BadRequest, jsonHeaders())
+        }) {
+            install(ContentNegotiation) { json() }
+        }
+        val gateway = KtorChatGateway(client, "https://synthetic.invalid", credential("synthetic-voice"))
+
+        val result = gateway.sendVoice("thread", "client-voice", ChatVoiceDraft("draft", 1000, 8), ByteArray(8))
+
+        assertSame(ChatGatewayResult.Conflict, result)
+        client.close()
+    }
+
     private fun credential(token: String) = ChatCredentialProvider { ChatCredential("Bearer $token") }
 
     private fun expectedConversation(conversationId: String, displayName: String) = ChatConversation(

@@ -532,6 +532,23 @@ class ChatCorrectionTests {
         assertTrue(restarted.state.value.timeline(c).none { it.key == key })
     }
 
+    @Test fun permanentlyRejectedVoiceDoesNotBlockLaterQueuedText() = runTest {
+        val disk = Store(); val voices = Voices()
+        val api = Api().apply { voiceFailure = ChatGatewayResult.Conflict }
+        val controller = ChatController(api, disk, voices)
+        controller.bind(a)
+
+        val voiceId = controller.enqueueVoice(c, draft())!!
+        val textId = controller.enqueueText(c, "text after rejected voice")!!
+        controller.flush()
+
+        val state = disk.states.getValue(a)
+        assertEquals(ChatVoiceFailure.Rejected, state.voiceOutbox.single { it.clientMessageId == voiceId }.failure)
+        assertTrue(state.textOutbox.none { it.clientMessageId == textId })
+        assertEquals(listOf("voice", "text"), api.dispatchKinds)
+        assertEquals("text after rejected voice", api.history.single { it.clientMessageId == textId }.text)
+    }
+
     @Test fun coalescingRejectsWrongSenderConversationKindContentAndAccount() {
         val voice = PendingChatVoice(c, "same", "draft", 1000, 3, "hash", enqueueOrdinal = 1, afterSequence = 0, encodedDurationVerified = true)
         val canonical = message(1, a.subjectId, "same").copy(kind = "voice", text = null,
@@ -576,6 +593,7 @@ class ChatCorrectionTests {
         val dispatchKinds = mutableListOf<String>()
         var failConversation: String? = null
         var textFailure: ChatGatewayResult<ChatMessage>? = null
+        var voiceFailure: ChatGatewayResult<ChatMessage>? = null
         var ambiguousSuccess = false
         var ambiguousVoice = false
         var downloadWait: CompletableDeferred<Unit>? = null; var downloadCalls = 0
@@ -603,6 +621,7 @@ class ChatCorrectionTests {
         override suspend fun sendVoice(conversationId: String, clientMessageId: String, draft: ChatVoiceDraft, bytes: ByteArray): ChatGatewayResult<ChatMessage> {
             dispatchKinds += "voice"
             if (conversationId == failConversation) return ChatGatewayResult.RetryableFailure
+            voiceFailure?.let { return it }
             // Backend fixture oracle, independent of the supplied draft/timer.
             assertContentEquals(ChatAacFixture.bytes, bytes)
             val result = message((history.maxOfOrNull { it.sequence } ?: 0) + 1, a.subjectId, clientMessageId).copy(conversationId = conversationId, kind = "voice", text = null, voiceTransferId = "transfer", voiceSha256 = ChatAacFixture.hash, voiceLength = ChatAacFixture.length, voiceDurationMilliseconds = 2024)

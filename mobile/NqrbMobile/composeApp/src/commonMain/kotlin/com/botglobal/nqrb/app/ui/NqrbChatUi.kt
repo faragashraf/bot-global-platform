@@ -2,8 +2,10 @@ package com.botglobal.nqrb.app.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -127,6 +129,14 @@ internal data class NqrbChatStrings(
     val remove get() = localized("إزالة", "Remove")
     val edit get() = localized("تعديل", "Edit")
     val copy get() = localized("نسخ", "Copy")
+    val actions get() = localized("إجراءات الرسالة", "Message actions")
+    val resend get() = localized("إعادة إرسال", "Resend")
+    val resendHint get() = localized("محاولة إرسال الرسالة المعلقة الآن", "Try sending the queued message now")
+    val copyHint get() = localized("نسخ محتوى الرسالة", "Copy the message content")
+    val editHint get() = localized("تعديل النص ثم إرساله مرة أخرى", "Edit the text and send it again")
+    val removeHint get() = localized("حذف النسخة المعلقة من هذا الجهاز", "Remove the queued local copy")
+    val checkDeliveryHint get() = localized("مطابقة الرسالة مع الخادم قبل الحذف", "Match the message with the server before removing it")
+    val recordAgainHint get() = localized("حذف التسجيل الحالي وبدء تسجيل جديد", "Delete this recording and start again")
     val checkDelivery get() = localized("تحقق من الإرسال", "Check delivery")
     val voiceRejected get() = localized("تعذّر إرسال التسجيل. نسختك محفوظة ويمكنك الاستماع إليها.", "The recording was rejected. Your copy is saved and can still be played.")
     fun textFailure(reason: ChatTextFailure) = when (reason) {
@@ -535,9 +545,6 @@ internal fun NqrbChatThreadScreen(
                     if (sendEnabled) colors.callActionContent else colors.disabledContent, Modifier.size(25.dp)) }
             }
         }
-        if (snapshot.retryableFailure) TextButton(onClick = appState::refreshChat, modifier = Modifier.padding(horizontal = NqrbSpacing.Md)) {
-            Text(strings.retry)
-        }
     }
     }
 
@@ -603,6 +610,14 @@ internal data class ChatMessageMetadata(
 
 private val WhatsAppReadReceiptBlue = Color(0xFF34B7F1)
 private val VoiceWaveformPattern = floatArrayOf(.34f, .58f, .82f, .48f, .72f, .4f, .64f)
+
+private data class ChatMessageAction(
+    val label: String,
+    val glyph: NqrbGlyph,
+    val supportingText: String,
+    val destructive: Boolean = false,
+    val run: () -> Unit,
+)
 
 internal fun chatMessageMetadata(
     mine: Boolean,
@@ -685,47 +700,64 @@ private fun ChatHeader(
 @Composable
 private fun PendingVoiceBubble(pending: PendingChatVoice, snapshot: ChatSnapshot, strings: NqrbChatStrings,
     appState: NqrbAppState, playback: ChatPlayback) {
-    val colors = LocalNqrbColors.current
+    var actionsOpen by remember(pending.clientMessageId) { mutableStateOf(false) }
+    val actions = buildList {
+        if (pending.failure == null) add(ChatMessageAction(strings.resend, NqrbGlyph.Send, strings.resendHint, run = appState::retryChatDelivery))
+        if (pending.failure != null) {
+            add(ChatMessageAction(strings.recordAgain, NqrbGlyph.Microphone, strings.recordAgainHint) {
+                appState.removeFailedChatVoice(pending.clientMessageId)
+                appState.requestChatVoiceRecording()
+            })
+            add(ChatMessageAction(strings.remove, NqrbGlyph.Close, strings.removeHint, destructive = true) {
+                appState.removeFailedChatVoice(pending.clientMessageId)
+            })
+        }
+    }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
         VoiceCapsule(pending.draftToken, pending.durationMilliseconds, playback, strings, pending.failure == ChatVoiceFailure.MissingOrCorrupt,
-            onPlay = { appState.playPendingChatVoice(pending) }, onStop = appState::stopChatPlayback)
+            onPlay = { appState.playPendingChatVoice(pending) }, onStop = appState::stopChatPlayback,
+            onLongPress = { actionsOpen = true })
         MessageMetadataFooter(
             ChatMessageMetadata(
                 status = if (pending.failure == null) ChatMessageStatus.Pending else ChatMessageStatus.Failed,
                 statusLabel = when (pending.failure) { null -> strings.queued; ChatVoiceFailure.Rejected -> strings.voiceRejected; ChatVoiceFailure.MissingOrCorrupt -> strings.localUnavailable },
             ),
         )
-        if (pending.failure != null) Row {
-            TextButton(onClick = { appState.removeFailedChatVoice(pending.clientMessageId) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.remove) }
-            TextButton(onClick = { appState.removeFailedChatVoice(pending.clientMessageId); appState.requestChatVoiceRecording() }, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.recordAgain) }
-        }
     }
+    if (actionsOpen) ChatMessageActionDialog(strings.actions, strings.cancel, actions) { actionsOpen = false }
 }
 
 @Composable
 private fun PendingTextBubble(pending: PendingChatText, time: String, strings: NqrbChatStrings,
     appState: NqrbAppState, onEdit: () -> Unit) {
     val clipboard = LocalClipboardManager.current
+    var actionsOpen by remember(pending.clientMessageId) { mutableStateOf(false) }
+    val actions = buildList {
+        if (pending.failure == ChatTextFailure.Forbidden) add(ChatMessageAction(strings.edit, NqrbGlyph.Chat, strings.editHint, run = onEdit))
+        add(ChatMessageAction(strings.copy, NqrbGlyph.Link, strings.copyHint) { clipboard.setText(AnnotatedString(pending.text)) })
+        when (pending.failure) {
+            null -> add(ChatMessageAction(strings.resend, NqrbGlyph.Send, strings.resendHint, run = appState::retryChatDelivery))
+            ChatTextFailure.Conflict -> add(ChatMessageAction(strings.checkDelivery, NqrbGlyph.DoubleCheck, strings.checkDeliveryHint) {
+                appState.reconcileFailedChatText(pending.clientMessageId)
+            })
+            ChatTextFailure.Forbidden -> Unit
+        }
+        if (pending.failure != null) add(ChatMessageAction(strings.remove, NqrbGlyph.Close, strings.removeHint, destructive = true) {
+            appState.removeFailedChatText(pending.clientMessageId)
+        })
+    }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
         ChatTextBubble(pending.text, true, ChatMessageMetadata(time,
             if (pending.failure == null) ChatMessageStatus.Pending else ChatMessageStatus.Failed,
-            pending.failure?.let(strings::textFailure) ?: strings.queued))
-        if (pending.failure != null) {
-            Row {
-                if (pending.failure == ChatTextFailure.Forbidden)
-                    TextButton(onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.edit) }
-                TextButton(onClick = { clipboard.setText(AnnotatedString(pending.text)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.copy) }
-                TextButton(onClick = { appState.removeFailedChatText(pending.clientMessageId) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.remove) }
-            }
-            if (pending.failure == ChatTextFailure.Conflict)
-                TextButton(onClick = { appState.reconcileFailedChatText(pending.clientMessageId) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.checkDelivery) }
-        }
+            pending.failure?.let(strings::textFailure) ?: strings.queued), onLongPress = { actionsOpen = true })
     }
+    if (actionsOpen) ChatMessageActionDialog(strings.actions, strings.cancel, actions) { actionsOpen = false }
 }
 
 @Composable
 private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, strings: NqrbChatStrings, appState: NqrbAppState,
     playback: ChatPlayback, time: String, pendingVoice: PendingChatVoice? = null) {
+    val clipboard = LocalClipboardManager.current
     val mine = message.senderSubjectId == snapshot.account?.subjectId
     val terminal = message.voiceState?.contains("Deleted") == true || message.voiceState?.contains("Expired") == true
     val local = message.voiceTransferId?.let(snapshot.localVoiceKeys::get)
@@ -733,31 +765,49 @@ private fun ChatMessageBubble(message: ChatMessage, snapshot: ChatSnapshot, stri
         ?.counterpartLastReadSequence ?: 0
     val metadata = chatMessageMetadata(mine, time, message, counterpartRead, strings)
     if (message.kind == "voice") {
-        val colors = LocalNqrbColors.current
+        var actionsOpen by remember(message.messageId) { mutableStateOf(false) }
+        val actions = buildList {
+            if (pendingVoice != null && pendingVoice.failure != ChatVoiceFailure.MissingOrCorrupt)
+                add(ChatMessageAction(strings.retry, NqrbGlyph.Send, strings.resendHint, run = appState::retryChatDelivery))
+            if (pendingVoice?.failure != null)
+                add(ChatMessageAction(strings.remove, NqrbGlyph.Close, strings.removeHint, destructive = true) {
+                    appState.removeFailedChatVoice(pendingVoice.clientMessageId)
+                })
+        }
         Column(Modifier.fillMaxWidth(), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
             VoiceCapsule(pendingVoice?.draftToken ?: local ?: message.voiceTransferId.orEmpty(), message.voiceDurationMilliseconds ?: 0, playback, strings,
                 unavailable = if (pendingVoice != null) pendingVoice.failure == ChatVoiceFailure.MissingOrCorrupt else local == null && (terminal || mine), mine = mine,
                 loading = message.voiceTransferId?.let(snapshot.voiceLoads::get)?.takeIf { pendingVoice == null && (local == null || it == ChatVoiceLoadState.Loading) },
-                onPlay = { if (pendingVoice != null) appState.playPendingChatVoice(pendingVoice) else appState.playChatVoice(message) }, onStop = appState::stopChatPlayback)
+                onPlay = { if (pendingVoice != null) appState.playPendingChatVoice(pendingVoice) else appState.playChatVoice(message) },
+                onStop = appState::stopChatPlayback,
+                onLongPress = { if (actions.isNotEmpty()) actionsOpen = true })
             MessageMetadataFooter(metadata)
             if (pendingVoice != null) {
                 MessageMetadataFooter(ChatMessageMetadata(status = if (pendingVoice.failure == null) ChatMessageStatus.RetryPending else ChatMessageStatus.Failed,
                     statusLabel = if (pendingVoice.failure == ChatVoiceFailure.MissingOrCorrupt) strings.localUnavailable
                         else strings.localized("لم تُحفظ النسخة المحلية بعد. التسجيل المحفوظ للإرسال ما زال متاحًا.", "Local copy not saved yet. The queued recording is still available.")))
-                if (pendingVoice.failure != ChatVoiceFailure.MissingOrCorrupt)
-                    TextButton(onClick = appState::refreshChat, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.retry) }
-                if (pendingVoice.failure != null)
-                    TextButton(onClick = { appState.removeFailedChatVoice(pendingVoice.clientMessageId) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(strings.remove) }
             }
         }
-    } else ChatTextBubble(message.text.orEmpty(), mine, metadata)
+        if (actionsOpen) ChatMessageActionDialog(strings.actions, strings.cancel, actions) { actionsOpen = false }
+    } else {
+        var actionsOpen by remember(message.messageId) { mutableStateOf(false) }
+        val actions = listOf(ChatMessageAction(strings.copy, NqrbGlyph.Link, strings.copyHint) {
+            clipboard.setText(AnnotatedString(message.text.orEmpty()))
+        })
+        ChatTextBubble(message.text.orEmpty(), mine, metadata, onLongPress = { actionsOpen = true })
+        if (actionsOpen) ChatMessageActionDialog(strings.actions, strings.cancel, actions) { actionsOpen = false }
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatTextBubble(text: String, mine: Boolean, metadata: ChatMessageMetadata) {
+private fun ChatTextBubble(text: String, mine: Boolean, metadata: ChatMessageMetadata, onLongPress: (() -> Unit)? = null) {
     val colors = LocalNqrbColors.current
     BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart) {
-        Surface(Modifier.widthIn(max = maxWidth * .84f), color = if (mine) colors.accentSoft else colors.surface, shape = RoundedCornerShape(16.dp)) {
+        val bubbleModifier = Modifier.widthIn(max = maxWidth * .84f).then(
+            if (onLongPress == null) Modifier else Modifier.combinedClickable(onClick = {}, onLongClick = onLongPress)
+        )
+        Surface(bubbleModifier, color = if (mine) colors.accentSoft else colors.surface, shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.padding(horizontal = NqrbSpacing.Md, vertical = NqrbSpacing.Sm).semantics(mergeDescendants = true) {}) {
                 Text(text, color = colors.textPrimary)
                 MessageMetadataFooter(metadata, Modifier.align(Alignment.End))
@@ -797,10 +847,11 @@ private fun MessageMetadataFooter(metadata: ChatMessageMetadata, modifier: Modif
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun VoiceCapsule(key: String, duration: Int, playback: ChatPlayback, strings: NqrbChatStrings,
     unavailable: Boolean = false, mine: Boolean = true, onPlay: () -> Unit, onStop: () -> Unit,
-    playModifier: Modifier = Modifier, loading: ChatVoiceLoadState? = null) {
+    playModifier: Modifier = Modifier, loading: ChatVoiceLoadState? = null, onLongPress: (() -> Unit)? = null) {
     val colors = LocalNqrbColors.current
     val active = playback.takeIf { it.key == key } ?: ChatPlayback()
     val playing = active.phase == ChatPlaybackPhase.Playing
@@ -818,8 +869,11 @@ private fun VoiceCapsule(key: String, duration: Int, playback: ChatPlayback, str
         }
     }
     BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart) {
+        val capsuleModifier = Modifier.fillMaxWidth(.84f).then(
+            if (onLongPress == null) Modifier else Modifier.combinedClickable(onClick = {}, onLongClick = onLongPress)
+        )
         Surface(
-            Modifier.fillMaxWidth(.84f),
+            capsuleModifier,
             color = if (mine) colors.accentSoft else colors.surface,
             shape = RoundedCornerShape(16.dp),
         ) {
@@ -858,6 +912,44 @@ private fun VoiceCapsule(key: String, duration: Int, playback: ChatPlayback, str
             }
         }
     }
+}
+
+@Composable
+private fun ChatMessageActionDialog(title: String, cancel: String, actions: List<ChatMessageAction>, onDismiss: () -> Unit) {
+    if (actions.isEmpty()) return
+    val colors = LocalNqrbColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(NqrbSpacing.Xs)) {
+                actions.forEach { action ->
+                    val tint = if (action.destructive) colors.destructive else colors.accent
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Md),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable {
+                            onDismiss()
+                            action.run()
+                        }.padding(horizontal = NqrbSpacing.Xs, vertical = NqrbSpacing.Xs),
+                    ) {
+                        Box(Modifier.size(40.dp).background(if (action.destructive) colors.destructive.copy(alpha = .12f) else colors.accentSoft, CircleShape),
+                            contentAlignment = Alignment.Center) {
+                            NqrbIcon(action.glyph, null, tint, Modifier.size(21.dp))
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(action.label, style = MaterialTheme.typography.bodyLarge, color = if (action.destructive) colors.destructive else colors.textPrimary,
+                                fontWeight = FontWeight.SemiBold)
+                            Text(action.supportingText, style = MaterialTheme.typography.labelMedium, color = colors.textSecondary,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(cancel) } },
+    )
 }
 
 @Composable

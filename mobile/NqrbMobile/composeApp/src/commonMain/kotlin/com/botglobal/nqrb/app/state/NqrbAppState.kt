@@ -589,15 +589,29 @@ class NqrbAppState(
         invalidateDirectChatEntry()
         stopChatPlayback()
         navigation.push(NqrbDestination.Chats)
-        callActionScope.launch { if (renewChatAuthority()) chat.sync() }
+        callActionScope.launch { resumeChatOnline() }
     }
 
     fun refreshChat() { callActionScope.launch {
-        runCatching { if (renewChatAuthority(force = true)) {
-            if (chat.state.value.account == null) chat.bindAuthenticated() else { chat.resumeOnline() }
-        } }
+        runCatching { resumeChatOnline(force = true) }
             .onFailure { mutableChatRecordingState.value = NqrbChatRecordingState.StorageUnavailable }
     } }
+
+    fun retryChatDelivery() { callActionScope.launch {
+        val selected = chat.state.value.selectedConversationId
+        runCatching { resumeChatOnline(force = true, conversationId = selected) }
+            .onFailure { mutableChatRecordingState.value = NqrbChatRecordingState.StorageUnavailable }
+    } }
+
+    private suspend fun resumeChatOnline(force: Boolean = false, conversationId: String? = chat.state.value.selectedConversationId): Boolean {
+        if (!renewChatAuthority(force)) return false
+        val ready = if (chat.state.value.account == null) chat.bindAuthenticated() else { chat.resumeOnline(); true }
+        if (!ready) return false
+        if (conversationId != null) chat.selectConversation(conversationId)
+        chat.flush()
+        if (conversationId == null) chat.sync() else chat.sync(conversationId)
+        return true
+    }
 
     fun leaveChat() {
         visibleChatRead = null
@@ -612,7 +626,7 @@ class NqrbAppState(
         callActionScope.launch {
             chat.selectConversation(conversationId)
             navigation.push(NqrbDestination.ChatThread)
-            launch { if (renewChatAuthority()) chat.sync(conversationId) }
+            launch { resumeChatOnline(conversationId = conversationId) }
         }
     }
 
@@ -760,7 +774,7 @@ class NqrbAppState(
         callActionScope.launch {
             try {
                 val sent = runCatching { chat.enqueueText(conversationId, text, account) }.getOrNull()
-                if (sent != null) { onQueued(); launch { if (renewChatAuthority()) chat.flush() } }
+                if (sent != null) { onQueued(); launch { resumeChatOnline(force = true, conversationId = conversationId) } }
                 else mutableChatRecordingState.value = NqrbChatRecordingState.StorageUnavailable
             } finally { mutableChatSubmitting.value = false }
         }
@@ -885,7 +899,7 @@ class NqrbAppState(
         callActionScope.launch {
             try {
                 if (runCatching { chat.editFailedText(id, text) }.getOrDefault(false)) {
-                    onQueued(); launch { if (renewChatAuthority()) chat.flush() }
+                    onQueued(); launch { resumeChatOnline(force = true) }
                 } else mutableChatRecordingState.value = NqrbChatRecordingState.StorageUnavailable
             } finally { mutableChatSubmitting.value = false }
         }
@@ -907,7 +921,7 @@ class NqrbAppState(
                 if (accepted) {
                     if (mutableChatVoiceDraft.value == draft) mutableChatVoiceDraft.value = null
                     if (!abandonedSubmission) mutableChatRecordingState.value = NqrbChatRecordingState.Idle
-                    launch { if (renewChatAuthority()) chat.flush() }
+                    launch { resumeChatOnline(force = true, conversationId = conversationId) }
                 } else if (abandonedSubmission || draft.owner != chat.state.value.account) {
                     chatVoiceRecorder.discard(draft)
                 } else mutableChatRecordingState.value = NqrbChatRecordingState.StorageUnavailable
@@ -1139,9 +1153,7 @@ class NqrbAppState(
                 }
                 refreshVisibleData()
                 runCatching {
-                    if (localChatAvailable() && renewChatAuthority()) {
-                        if (chat.state.value.account == null) chat.bindAuthenticated() else { chat.resumeOnline() }
-                    }
+                    if (localChatAvailable()) resumeChatOnline()
                     visibleChatRead?.let { (conversation, sequence) -> markChatRead(conversation, sequence) }
                 }
                 delay(5 * 60 * 1000L)
