@@ -350,6 +350,7 @@ private fun NqrbShell(
                         appState,
                         callingDirectory,
                         contactBook,
+                        chat,
                         microphoneBlocked,
                     )
                     NqrbDestination.Settings -> SettingsScreen(
@@ -366,7 +367,7 @@ private fun NqrbShell(
                     )
                     NqrbDestination.History -> CallHistoryScreen(strings, languageTag, appState, callActivity, contactBook, callingDirectory, callTime)
                     NqrbDestination.Notifications -> NotificationsScreen(strings, languageTag, appState, notifications)
-                    NqrbDestination.People -> PeopleScreen(strings, languageTag, contactBook, callingDirectory, appState, onShareInvite, callTime)
+                    NqrbDestination.People -> PeopleScreen(strings, languageTag, contactBook, callingDirectory, chat, appState, onShareInvite, callTime)
                     NqrbDestination.Profile -> ProfileScreen(strings, appState, contactBook)
                     NqrbDestination.Chats -> NqrbChatListScreen(languageTag, chat, appState, callTime)
                     NqrbDestination.ChatThread -> NqrbChatThreadScreen(languageTag, chat, chatRecordingState, chatVoiceDraft, appState, callTime)
@@ -634,11 +635,13 @@ private fun PeopleScreen(
     languageTag: String,
     contactBook: NqrbContactBookSnapshot,
     directory: CallingDirectorySnapshot,
+    chat: ChatSnapshot,
     appState: NqrbAppState,
     onShareInvite: (String) -> Boolean,
     callTime: (String, String) -> NqrbCallTime,
 ) {
     val colors = LocalNqrbColors.current
+    val chatStrings = nqrbChatStrings(languageTag)
     val inviteRequester = remember { BringIntoViewRequester() }
     var query by remember { mutableStateOf(contactBook.searchQuery) }
     var editingContact by remember { mutableStateOf<NqrbContact?>(null) }
@@ -744,6 +747,8 @@ private fun PeopleScreen(
                 val isBlocked = contactBook.blockedAccounts.any { it.membershipId == contact.membershipId }
                 NqrbServerContactCard(
                     displayName = contact.nickname ?: contact.displayName,
+                    nameUnreadCount = chat.unreadCountForCounterpart(contact.membershipId),
+                    nameUnreadLabel = chatStrings.unreadCount(chat.unreadCountForCounterpart(contact.membershipId)),
                     secondaryLabel = contact.nickname?.let { strings.nicknameOriginal.replace("%s", contact.displayName) },
                     statusLabel = if (isBlocked) strings.blockedLabel else
                         participant?.let { nqrbDirectoryAvailability(strings, it) } ?: strings.availabilityUnverified,
@@ -755,8 +760,10 @@ private fun PeopleScreen(
                     onCall = { participant?.let(appState::requestOutgoingCall) },
                     messageLabel = nqrbChatStrings(languageTag).chats,
                     messageEnabled = !isBlocked,
+                    messageUnreadCount = chat.unreadCountForCounterpart(contact.membershipId),
+                    messageUnreadLabel = chatStrings.unreadCount(chat.unreadCountForCounterpart(contact.membershipId)),
                     onMessage = { appState.openChatWith(contact.membershipId) },
-                    nameActionLabel = nqrbChatStrings(languageTag).openChatWith(contact.nickname ?: contact.displayName),
+                    nameActionLabel = chatStrings.openChatWith(contact.nickname ?: contact.displayName),
                     nameActionEnabled = !isBlocked,
                     onNameClick = { appState.openChatWith(contact.membershipId) },
                     overflowLabel = strings.contactActions,
@@ -1143,6 +1150,8 @@ private fun InviteAcceptStatus(
 @Composable
 private fun NqrbServerContactCard(
     displayName: String,
+    nameUnreadCount: Int = 0,
+    nameUnreadLabel: String = "",
     secondaryLabel: String? = null,
     statusLabel: String? = null,
     actionLabel: String,
@@ -1153,6 +1162,8 @@ private fun NqrbServerContactCard(
     onCall: () -> Unit = {},
     messageLabel: String? = null,
     messageEnabled: Boolean = false,
+    messageUnreadCount: Int = 0,
+    messageUnreadLabel: String = "",
     onMessage: () -> Unit = {},
     overflowLabel: String? = null,
     editNicknameLabel: String? = null,
@@ -1188,13 +1199,17 @@ private fun NqrbServerContactCard(
                 ),
                 verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
             ) {
-                Text(
-                    displayName,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = colors.textPrimary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                    Text(
+                        displayName,
+                        modifier = Modifier.weight(1f, fill = false),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.textPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    NqrbUnreadBadge(nameUnreadCount, nameUnreadLabel)
+                }
                 secondaryLabel?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -1204,12 +1219,19 @@ private fun NqrbServerContactCard(
             }
             if (callLabel != null) {
                 if (messageLabel != null) {
-                    IconButton(
-                        modifier = Modifier.size(48.dp),
-                        enabled = messageEnabled,
-                        onClick = onMessage,
-                    ) {
-                        NqrbIcon(NqrbGlyph.Chat, messageLabel, colors.accent, Modifier.size(22.dp))
+                    Box {
+                        IconButton(
+                            modifier = Modifier.size(48.dp),
+                            enabled = messageEnabled,
+                            onClick = onMessage,
+                        ) {
+                            NqrbIcon(NqrbGlyph.Chat, messageLabel, colors.accent, Modifier.size(22.dp))
+                        }
+                        NqrbUnreadBadge(
+                            messageUnreadCount,
+                            messageUnreadLabel,
+                            Modifier.align(Alignment.TopEnd).absoluteOffset(x = 5.dp, y = 0.dp),
+                        )
                     }
                 }
                 NqrbCallIconButton(
@@ -1668,6 +1690,7 @@ private fun HomeScreen(
     appState: NqrbAppState,
     directory: CallingDirectorySnapshot,
     contactBook: NqrbContactBookSnapshot,
+    chat: ChatSnapshot,
     microphoneBlocked: Boolean,
 ) {
     val colors = LocalNqrbColors.current
@@ -1686,7 +1709,7 @@ private fun HomeScreen(
             color = colors.textSecondary,
         )
         if (privateDirectory.status == CallingDirectoryStatus.Ready && privateDirectory.participants.isNotEmpty()) {
-            MadarOrbit(strings, chatStrings, privateDirectory, contactBook, appState)
+            MadarOrbit(strings, chatStrings, privateDirectory, contactBook, chat, appState)
         } else {
             MadarEmptyCircle(strings, appState)
         }
@@ -1704,7 +1727,10 @@ private fun HomeScreen(
                     NqrbIcon(NqrbGlyph.Chat, chatStrings.chats, colors.accent, Modifier.size(25.dp))
                 }
                 Column(Modifier.weight(1f)) {
-                    Text(chatStrings.chats, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                        Text(chatStrings.chats, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary)
+                        NqrbUnreadBadge(chat.totalUnreadCount, chatStrings.unreadCount(chat.totalUnreadCount))
+                    }
                     Text(chatStrings.empty, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary)
                 }
             }
@@ -1728,7 +1754,7 @@ private fun HomeScreen(
                 }
             }
         }
-        CallingDirectorySection(strings, chatStrings, privateDirectory, contactBook, appState)
+        CallingDirectorySection(strings, chatStrings, privateDirectory, contactBook, chat, appState)
         if (microphoneBlocked) InfoNote(strings.microphoneDenied)
         Spacer(Modifier.height(NqrbSpacing.Sm))
     }
@@ -1785,7 +1811,7 @@ private fun MadarEmptyCircle(strings: NqrbStrings, appState: NqrbAppState) {
 }
 
 @Composable
-private fun MadarOrbit(strings: NqrbStrings, chatStrings: NqrbChatStrings, directory: CallingDirectorySnapshot, contactBook: NqrbContactBookSnapshot, appState: NqrbAppState) {
+private fun MadarOrbit(strings: NqrbStrings, chatStrings: NqrbChatStrings, directory: CallingDirectorySnapshot, contactBook: NqrbContactBookSnapshot, chat: ChatSnapshot, appState: NqrbAppState) {
     val colors = LocalNqrbColors.current
     val people = if (directory.status == CallingDirectoryStatus.Ready) directory.participants.take(3) else emptyList()
     Box(Modifier.fillMaxWidth().height(245.dp), contentAlignment = Alignment.Center) {
@@ -1803,16 +1829,19 @@ private fun MadarOrbit(strings: NqrbStrings, chatStrings: NqrbChatStrings, direc
         }
         people.getOrNull(0)?.let { person -> OrbitPerson(
             person, strings, chatStrings, contactBook, Modifier.align(Alignment.TopStart).padding(start = 7.dp, top = 67.dp),
+            unreadCount = chat.unreadCountForCounterpart(person.membershipId),
             onCall = { appState.requestOutgoingCall(person) },
             onMessage = { appState.openChatWith(person.membershipId) },
         ) }
         people.getOrNull(1)?.let { person -> OrbitPerson(
             person, strings, chatStrings, contactBook, Modifier.align(Alignment.TopEnd).padding(end = 8.dp, top = 22.dp),
+            unreadCount = chat.unreadCountForCounterpart(person.membershipId),
             onCall = { appState.requestOutgoingCall(person) },
             onMessage = { appState.openChatWith(person.membershipId) },
         ) }
         people.getOrNull(2)?.let { person -> OrbitPerson(
             person, strings, chatStrings, contactBook, Modifier.align(Alignment.BottomEnd).padding(end = 25.dp, bottom = 31.dp),
+            unreadCount = chat.unreadCountForCounterpart(person.membershipId),
             onCall = { appState.requestOutgoingCall(person) },
             onMessage = { appState.openChatWith(person.membershipId) },
         ) }
@@ -1832,6 +1861,7 @@ private fun OrbitPerson(
     chatStrings: NqrbChatStrings,
     contactBook: NqrbContactBookSnapshot,
     modifier: Modifier = Modifier,
+    unreadCount: Int,
     onCall: () -> Unit,
     onMessage: () -> Unit,
 ) {
@@ -1870,6 +1900,11 @@ private fun OrbitPerson(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            NqrbUnreadBadge(
+                unreadCount,
+                chatStrings.unreadCount(unreadCount),
+                Modifier.align(Alignment.TopEnd).absoluteOffset(x = 14.dp, y = (-9).dp),
+            )
         }
     }
 }
@@ -1880,6 +1915,7 @@ private fun CallingDirectorySection(
     chatStrings: NqrbChatStrings,
     directory: CallingDirectorySnapshot,
     contactBook: NqrbContactBookSnapshot,
+    chat: ChatSnapshot,
     appState: NqrbAppState,
 ) {
     val colors = LocalNqrbColors.current
@@ -1911,6 +1947,8 @@ private fun CallingDirectorySection(
                 CallableParticipantCard(
                     participant = participant,
                     displayName = privateContactDisplayName(contactBook, participant.membershipId, participant.displayName),
+                    unreadCount = chat.unreadCountForCounterpart(participant.membershipId),
+                    unreadLabel = chatStrings.unreadCount(chat.unreadCountForCounterpart(participant.membershipId)),
                     status = nqrbDirectoryAvailability(strings, participant),
                     callLabel = strings.call,
                     canCall = true,
@@ -1940,6 +1978,8 @@ private fun DirectoryRefreshAction(label: String, onClick: () -> Unit) {
 private fun CallableParticipantCard(
     participant: CallableParticipant,
     displayName: String,
+    unreadCount: Int = 0,
+    unreadLabel: String = "",
     status: String,
     callLabel: String,
     canCall: Boolean,
@@ -1968,13 +2008,17 @@ private fun CallableParticipantCard(
                     },
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Text(
-                        displayName,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = colors.textPrimary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(NqrbSpacing.Sm)) {
+                        Text(
+                            displayName,
+                            modifier = Modifier.weight(1f, fill = false),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = colors.textPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        NqrbUnreadBadge(unreadCount, unreadLabel)
+                    }
                     Text(
                         status,
                         style = MaterialTheme.typography.bodySmall,

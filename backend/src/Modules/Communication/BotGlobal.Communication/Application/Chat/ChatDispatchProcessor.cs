@@ -1,12 +1,7 @@
-using System.Text.Json;
-using BotGlobal.Communication.Application.MobileNotifications.Push;
-using BotGlobal.Communication.Contracts.MobileNotifications;
 using BotGlobal.Communication.Domain.Chat;
 using BotGlobal.Communication.Hubs;
 using BotGlobal.Communication.Infrastructure.Persistence;
 using BotGlobal.Contracts.Communication;
-using BotGlobal.Contracts.Mobile;
-using BotGlobal.Contracts.Notifications;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,13 +11,9 @@ using Microsoft.Extensions.Logging;
 namespace BotGlobal.Communication.Application.Chat;
 
 internal sealed class ChatDispatchProcessor(
-    CommunicationDbContext db, ChatPolicyRegistry registry, IMobileRecipientResolver recipients,
-    IMobilePushDestinationResolver destinations, IApplicationPushNotificationDispatcher push,
+    CommunicationDbContext db, ChatPolicyRegistry registry,
     ChatConnectionRegistry connections, IHubContext<ChatHub> hub, IServiceProvider services, TimeProvider clock)
 {
-    // Durable per-device outcomes contain opaque installation IDs only, never tokens/payloads.
-    // Unknown means the provider may have accepted: don't manufacture exactly-once or resend it.
-    internal enum RouteOutcome { InFlight, Accepted, Retry, Permanent, Unknown }
     public async Task ProcessAsync(CancellationToken token)
     {
         for (var batch = 0; batch < 10; batch++)
@@ -42,7 +33,7 @@ internal sealed class ChatDispatchProcessor(
                 if (claimed == 0) continue;
                 db.ChangeTracker.Clear();
                 var dispatch = await db.ChatDispatches.SingleAsync(x => x.Id == id && x.LeaseId == lease, token);
-                try { await SendAsync(dispatch, lease, token); }
+                try { await SendAsync(dispatch, token); }
                 catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
                 catch (DbUpdateConcurrencyException) { db.ChangeTracker.Clear(); }
                 catch (Exception)
@@ -55,7 +46,7 @@ internal sealed class ChatDispatchProcessor(
         }
     }
 
-    private async Task SendAsync(ChatDispatch dispatch, Guid lease, CancellationToken token)
+    private async Task SendAsync(ChatDispatch dispatch, CancellationToken token)
     {
         var message = await db.ChatMessages.AsNoTracking().SingleAsync(x => x.ApplicationId == dispatch.ApplicationId && x.Id == dispatch.MessageId, token);
         var conversation = await db.ChatConversations.AsNoTracking().SingleAsync(x => x.ApplicationId == dispatch.ApplicationId && x.Id == message.ConversationId, token);
@@ -74,53 +65,7 @@ internal sealed class ChatDispatchProcessor(
             dispatch.MarkHintsSent(); await db.SaveChangesAsync(token);
             await connections.SendAsync(hint, dispatch.RecipientSubjectId, services, hub, token);
         }
-        var app = new NotificationApplicationContext(dispatch.ApplicationId);
-        var devices = await recipients.ResolveActiveDevicesAsync(app, dispatch.RecipientSubjectId, token);
-        var routes = JsonSerializer.Deserialize<Dictionary<Guid, RouteOutcome>>(dispatch.RouteOutcomes) ?? [];
-        foreach (var old in routes.Where(x => x.Value == RouteOutcome.InFlight).Select(x => x.Key).ToArray()) routes[old] = RouteOutcome.Unknown;
-        foreach (var device in devices.Take(100))
-        {
-            if (routes.TryGetValue(device.DeviceId, out var outcome) && outcome != RouteOutcome.Retry) continue;
-            var destination = await destinations.ResolveActiveAsync(app, device.DeviceId, PushProviderNames.FirebaseCloudMessaging, token);
-            if (destination is null) { routes[device.DeviceId] = RouteOutcome.Retry; continue; }
-            // Renew/check ownership before each externally visible send; bounded provider timeout < lease.
-            var now = clock.GetUtcNow();
-            if (await db.ChatDispatches.Where(x => x.Id == dispatch.Id && x.LeaseId == lease && x.NextAttemptAtUtc > now)
-                .ExecuteUpdateAsync(s => s.SetProperty(x => x.NextAttemptAtUtc, now.AddMinutes(2)), token) == 0) return;
-            routes[device.DeviceId] = RouteOutcome.InFlight;
-            dispatch.SetRouteOutcomes(JsonSerializer.Serialize(routes)); await db.SaveChangesAsync(token);
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(TimeSpan.FromSeconds(15));
-            ApplicationPushDispatchResult result;
-            try
-            {
-                var conversationId = conversation.Id.ToString("D");
-                var pushBodyAr = hint.Kind == "voice" ? "لديك رسالة صوتية جديدة." : "لديك رسالة جديدة.";
-                var pushBodyEn = hint.Kind == "voice" ? "You have a new voice message." : "You have a new message.";
-                result = await push.DispatchAsync(new ApplicationPushMessage(app, destination.Provider, destination.RegistrationToken,
-                    "رسالة جديدة", pushBodyAr, new Dictionary<string, string> {
-                        ["notificationId"] = message.Id.ToString("N"), ["type"] = ChatContract.MessageEvent,
-                        ["applicationId"] = dispatch.ApplicationId.ToString("D"), ["conversationId"] = conversationId,
-                        ["messageId"] = message.Id.ToString("D"), ["sequence"] = message.Sequence.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                        ["kind"] = hint.Kind, ["destination"] = $"chat:{conversationId}",
-                        ["titleEn"] = "New message", ["bodyEn"] = pushBodyEn },
-                    TimeSpan.FromHours(24)), timeout.Token);
-            }
-            catch (OperationCanceledException) when (!token.IsCancellationRequested) { result = new(ApplicationPushDispatchKind.Ambiguous); }
-            routes[device.DeviceId] = result.Kind switch {
-                ApplicationPushDispatchKind.Accepted => RouteOutcome.Accepted,
-                ApplicationPushDispatchKind.PermanentFailure or ApplicationPushDispatchKind.ProviderDisabled or ApplicationPushDispatchKind.MissingConfiguration => RouteOutcome.Permanent,
-                ApplicationPushDispatchKind.Ambiguous => RouteOutcome.Unknown,
-                _ => RouteOutcome.Retry };
-            dispatch.SetRouteOutcomes(JsonSerializer.Serialize(routes)); await db.SaveChangesAsync(token);
-        }
-        dispatch.SetRouteOutcomes(JsonSerializer.Serialize(routes));
-        if (devices.Count == 0 || routes.Values.Any(x => x == RouteOutcome.Retry))
-        {
-            if (dispatch.AttemptCount >= 4) dispatch.Terminal("chat_dispatch_retry_exhausted");
-            else dispatch.Retry(clock.GetUtcNow().AddSeconds(Math.Pow(2, dispatch.AttemptCount + 1)), "chat_route_retry");
-        }
-        else if (routes.Values.All(x => x == RouteOutcome.Accepted)) dispatch.Delivered();
-        else dispatch.Terminal("chat_routes_partial_or_unknown");
+        dispatch.Delivered();
         await db.SaveChangesAsync(token);
     }
 }

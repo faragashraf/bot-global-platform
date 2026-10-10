@@ -114,6 +114,22 @@ class ChatCorrectionTests {
         assertEquals(listOf("z", "a"), snapshot.conversationActivity.map { it.conversation.conversationId })
     }
 
+    @Test fun unreadCountsAreSharedPerConversationAndCounterpart() {
+        val bero = ChatConversation("bero-thread", "bero-subject", "bero", "Bero", 5, 1, updatedAtUtc = "2026-10-08T00:00:00Z")
+        val other = ChatConversation("other-thread", "other-subject", "other", "Other", 3, 2, updatedAtUtc = "2026-10-08T00:01:00Z")
+        val readLocally = ChatConversation("read-thread", "read-subject", "bero", "Bero", 7, 0, updatedAtUtc = "2026-10-08T00:02:00Z")
+        val snapshot = ChatSnapshot(
+            account = a,
+            conversations = listOf(bero, other, readLocally),
+            localReadWatermarks = mapOf("read-thread" to 7),
+        )
+
+        assertEquals(5, snapshot.totalUnreadCount)
+        assertEquals(4, snapshot.unreadCountForCounterpart("bero"))
+        assertEquals(1, snapshot.unreadCountForCounterpart("other"))
+        assertFalse(snapshot.conversationActivity.single { it.conversation.conversationId == "read-thread" }.unread)
+    }
+
     @Test fun legacyDurationMigrationIsAtomicAndCachedUploadIsNeverResent() = runTest {
         val old = PendingChatVoice(c, "voice", "draft", 2179, ChatAacFixture.length, ChatAacFixture.hash)
         val canonical = message(1, a.subjectId, "voice").copy(kind = "voice", text = null,

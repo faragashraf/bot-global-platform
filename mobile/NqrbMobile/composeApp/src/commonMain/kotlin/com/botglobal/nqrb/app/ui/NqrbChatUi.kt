@@ -135,6 +135,8 @@ internal data class NqrbChatStrings(
     }
     val settings get() = localized("فتح الإعدادات", "Open settings")
     val unread get() = localized("غير مقروءة", "Unread")
+    fun unreadCount(count: Int) = if (count > 99) localized("أكثر من ٩٩ غير مقروءة", "99+ unread")
+        else localized("${digits(count.toString())} غير مقروءة", "$count unread")
     val limit get() = localized("الحد الأقصى ٥ دقائق", "5 minute maximum")
     val localOnly get() = localized("المحفوظ على هذا الجهاز · أعد الاتصال للمزامنة", "Saved on this device · reconnect to sync")
     val openingConversation get() = localized("جارٍ فتح المحادثة الخاصة…", "Opening private conversation…")
@@ -273,6 +275,7 @@ internal fun NqrbChatListScreen(languageTag: String, snapshot: ChatSnapshot, app
                 items(snapshot.conversationActivity, key = { it.conversation.conversationId }) { activity ->
                     val conversation = activity.conversation
                     val displayName = conversation.counterpartDisplayName ?: strings.participantUnavailable
+                    val unreadCount = activity.unreadCount
                     Surface(
                         Modifier.fillMaxWidth().clickable { appState.openChat(conversation.conversationId) },
                         color = colors.surface,
@@ -285,7 +288,7 @@ internal fun NqrbChatListScreen(languageTag: String, snapshot: ChatSnapshot, app
                             }
                             Spacer(Modifier.width(NqrbSpacing.Md))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                val unread = activity.unread
+                                val unread = unreadCount > 0
                                 val latest = activity.latestMessage
                                 val failed = latest == null && (activity.pending?.text?.failure != null || activity.pending?.voice?.failure != null)
                                 val recency = if (failed) strings.notSent else if (latest == null && activity.pending != null && activity.pending?.createdAtUtc == null) strings.queued
@@ -294,6 +297,10 @@ internal fun NqrbChatListScreen(languageTag: String, snapshot: ChatSnapshot, app
                                     Text(displayName, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
                                         fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium, color = colors.textPrimary,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    if (unreadCount > 0) {
+                                        Spacer(Modifier.width(NqrbSpacing.Sm))
+                                        NqrbUnreadBadge(unreadCount, strings.unreadCount(unreadCount))
+                                    }
                                     Spacer(Modifier.width(NqrbSpacing.Sm))
                                     Text(recency, Modifier.widthIn(max = 104.dp), style = MaterialTheme.typography.labelSmall,
                                         color = if (failed) colors.destructive else colors.textSecondary, maxLines = 1,
@@ -304,11 +311,6 @@ internal fun NqrbChatListScreen(languageTag: String, snapshot: ChatSnapshot, app
                                         else activity.pending?.let { it.text?.text ?: strings.voiceNote } ?: strings.messageHint,
                                         Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    if (unread) {
-                                        Spacer(Modifier.width(NqrbSpacing.Sm))
-                                        Box(Modifier.size(10.dp).background(colors.accent, CircleShape)
-                                            .semantics { contentDescription = strings.unread })
-                                    }
                                 }
                             }
                         }
@@ -317,6 +319,26 @@ internal fun NqrbChatListScreen(languageTag: String, snapshot: ChatSnapshot, app
             }
         }
     }
+    }
+}
+
+@Composable
+internal fun NqrbUnreadBadge(count: Int, label: String, modifier: Modifier = Modifier) {
+    if (count <= 0) return
+    val colors = LocalNqrbColors.current
+    Box(
+        modifier.heightIn(min = 22.dp).widthIn(min = 22.dp).background(colors.accent, CircleShape)
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (count > 99) "99+" else count.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.background,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
     }
 }
 

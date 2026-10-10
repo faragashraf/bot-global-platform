@@ -245,6 +245,7 @@ fun ChatSnapshot.timeline(conversationId: String): List<ChatTimelineActivity> {
 
 data class ChatConversationActivity(val conversation: ChatConversation, val latestMessage: ChatMessage?,
     val pending: ChatPendingActivity?, val lastReadSequence: Long, val activityOrdinal: Long = 0) {
+    val unreadCount get() = (conversation.lastSequence - lastReadSequence).coerceAtLeast(0).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     val unread get() = conversation.lastSequence > lastReadSequence
     val updatedAtUtc get() = if (pending != null && latestMessage == null) pending.createdAtUtc ?: conversation.updatedAtUtc
         else maxOf(latestMessage?.createdAtUtc.orEmpty(), conversation.updatedAtUtc)
@@ -272,6 +273,10 @@ data class ChatSnapshot(
     val activityOrders: Map<String, ChatActivityOrder> = emptyMap(),
 ) {
     val pendingActivity get() = pendingChatActivity(pendingTexts, pendingVoices)
+    val totalUnreadCount: Int get() = conversationActivity.sumOf { it.unreadCount }
+    fun unreadCountForCounterpart(counterpartReference: String): Int =
+        conversationActivity.filter { it.conversation.counterpartReference == counterpartReference }.sumOf { it.unreadCount }
+
     val conversationActivity: List<ChatConversationActivity> get() {
         val activities = conversations.map { conversation ->
             val rows = timeline(conversation.conversationId)

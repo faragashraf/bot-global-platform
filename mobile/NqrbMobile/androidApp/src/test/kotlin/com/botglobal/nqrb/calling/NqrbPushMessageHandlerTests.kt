@@ -121,7 +121,7 @@ class NqrbPushMessageHandlerTests {
     }
 
     @Test
-    fun generalCampaignPushShowsNotification() = runTest {
+    fun generalCampaignPushIsIgnoredOutsideCallNotifications() = runTest {
         val session = RecordingPushSession()
         val notifications = RecordingGeneralNotifications()
 
@@ -139,14 +139,11 @@ class NqrbPushMessageHandlerTests {
 
         assertEquals(emptyList(), session.received)
         assertEquals(emptyList(), session.dismissed)
-        assertEquals(
-            listOf(ShownNotification("campaign-1", "Welcome to Nqrb", "Thanks for trying Nqrb.", null)),
-            notifications.shown,
-        )
+        assertEquals(emptyList(), notifications.shown)
     }
 
     @Test
-    fun chatPushSyncsConversationAndShowsNotificationWithDestination() = runTest {
+    fun chatPushSyncsConversationWithoutShowingSystemNotification() = runTest {
         val session = RecordingPushSession()
         val notifications = RecordingGeneralNotifications()
         val chat = RecordingChatSynchronizer()
@@ -173,10 +170,7 @@ class NqrbPushMessageHandlerTests {
         )
 
         assertEquals(listOf<String?>(conversationId), chat.synced)
-        assertEquals(
-            listOf(ShownNotification("notification-1", "رسالة جديدة", "لديك رسالة جديدة.", "chat:$conversationId")),
-            notifications.shown,
-        )
+        assertEquals(emptyList(), notifications.shown)
     }
 
     @Test
