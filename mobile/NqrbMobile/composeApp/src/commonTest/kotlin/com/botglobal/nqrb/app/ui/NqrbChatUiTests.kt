@@ -2,6 +2,7 @@ package com.botglobal.nqrb.app.ui
 
 import com.botglobal.mobile.platform.chat.ChatMessage
 import com.botglobal.mobile.platform.chat.ChatConversation
+import com.botglobal.mobile.platform.chat.ChatRealtimeActivity
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -90,6 +91,13 @@ class NqrbChatUiTests {
 
         assertEquals("Ashraf Farag", chatConversationDisplayName(conversation, strings))
         assertEquals("This person is currently unavailable", chatConversationDisplayName(conversation.copy(counterpartDisplayName = ""), strings))
+    }
+
+    @Test
+    fun realtimeActivityLabelsFollowChatLanguage() {
+        assertEquals("Typing…", chatRealtimeActivityLabel(ChatRealtimeActivity.Typing, nqrbChatStrings("en")))
+        assertEquals("يسجل رسالة صوتية…", chatRealtimeActivityLabel(ChatRealtimeActivity.Recording, nqrbChatStrings("ar")))
+        assertEquals(null, chatRealtimeActivityLabel(ChatRealtimeActivity.Idle, nqrbChatStrings("en")))
     }
 
     private fun textMessage(sequence: Long) = ChatMessage(

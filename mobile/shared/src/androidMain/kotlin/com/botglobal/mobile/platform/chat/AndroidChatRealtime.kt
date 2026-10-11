@@ -14,7 +14,8 @@ import kotlinx.coroutines.sync.withLock
 /** The consumer supplies its native SignalR transport; retry/lifetime belongs to the SDK. */
 interface ChatRealtimeTransport {
     val connected: Boolean
-    suspend fun start(onHint: (ChatMessageHint) -> Unit)
+    suspend fun start(onHint: (ChatMessageHint) -> Unit, onPresence: (ChatPresenceHint) -> Unit)
+    suspend fun setPresence(conversationId: String, activity: ChatRealtimeActivity)
     suspend fun stop()
 }
 
@@ -24,6 +25,11 @@ class AndroidChatRealtime(private val transport: suspend () -> ChatRealtimeTrans
     private var active: ChatRealtimeTransport? = null
     override suspend fun connect(onHint: suspend (ChatMessageHint) -> Unit) = connect(onHint) { }
     override suspend fun connect(onHint: suspend (ChatMessageHint) -> Unit, onConnected: suspend () -> Unit) {
+        connect(onHint, {}, onConnected)
+    }
+    override suspend fun connect(onHint: suspend (ChatMessageHint) -> Unit,
+        onPresence: suspend (ChatPresenceHint) -> Unit,
+        onConnected: suspend () -> Unit) {
         lock.withLock {
             if (lifetime != null) return
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -38,9 +44,11 @@ class AndroidChatRealtime(private val transport: suspend () -> ChatRealtimeTrans
                 while (isActive) {
                     if (!captured.connected) {
                         wasConnected = false
-                        try { captured.start { hint -> scope.launch {
+                        try { captured.start({ hint -> scope.launch {
                             try { onHint(hint) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { }
-                        } } }
+                        } }, { presence -> scope.launch {
+                            try { onPresence(presence) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { }
+                        } }) }
                         catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                         catch (_: Exception) { }
                     }
@@ -55,6 +63,11 @@ class AndroidChatRealtime(private val transport: suspend () -> ChatRealtimeTrans
                     delay(backoff)
                 }
             }
+        }
+    }
+    override suspend fun setPresence(conversationId: String, activity: ChatRealtimeActivity) {
+        lock.withLock {
+            try { active?.takeIf { it.connected }?.setPresence(conversationId, activity) } catch (_: Exception) { }
         }
     }
     override suspend fun disconnect() {

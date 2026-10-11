@@ -373,6 +373,7 @@ class NqrbAppState(
                 if (draft != null) callActionScope.launch { chatVoiceRecorder.discard(draft) }
                 return@onAutomaticStop
             }
+            chat.state.value.selectedConversationId?.let { publishChatRecording(it, false) }
             if (draft != null && (draft.owner != chat.state.value.account || draft.conversationId != chat.state.value.selectedConversationId)) {
                 callActionScope.launch { chatVoiceRecorder.discard(draft) }
                 return@onAutomaticStop
@@ -384,6 +385,7 @@ class NqrbAppState(
             calling.state.collect { snapshot ->
                 if (snapshot.state in OngoingCallStates) { invalidateChatPlayback(); chatVoicePlayer.stop() }
                 if (snapshot.state in OngoingCallStates && mutableChatRecordingState.value == NqrbChatRecordingState.Recording) {
+                    chat.state.value.selectedConversationId?.let { publishChatRecording(it, false) }
                     chatVoiceRecorder.cancel()
                     mutableChatRecordingState.value = NqrbChatRecordingState.CallInterrupted
                 }
@@ -823,6 +825,14 @@ class NqrbAppState(
             callActionScope.launch { runCatching { chat.markRead(conversationId, sequence, account) } }
     }
 
+    fun setChatTyping(conversationId: String, isTyping: Boolean) {
+        callActionScope.launch { runCatching { chat.setTyping(conversationId, isTyping) } }
+    }
+
+    private fun publishChatRecording(conversationId: String, isRecording: Boolean) {
+        callActionScope.launch { runCatching { chat.setRecording(conversationId, isRecording) } }
+    }
+
     fun requestChatVoiceRecording() {
         callActionScope.launch {
             if (mutableChatSubmitting.value) return@launch
@@ -870,11 +880,14 @@ class NqrbAppState(
         mutableChatVoiceDraft.value?.takeUnless { it == submittingDraft }?.let { chatVoiceRecorder.discard(it) }
         mutableChatVoiceDraft.value = null
         chatVoicePlayer.stop()
-        mutableChatRecordingState.value = if (chatVoiceRecorder.start(account, conversation)) NqrbChatRecordingState.Recording else NqrbChatRecordingState.Unavailable
+        val started = chatVoiceRecorder.start(account, conversation)
+        mutableChatRecordingState.value = if (started) NqrbChatRecordingState.Recording else NqrbChatRecordingState.Unavailable
+        if (started) publishChatRecording(conversation, true)
     }
 
     fun finishChatRecording() {
         if (mutableChatRecordingState.value != NqrbChatRecordingState.Recording) return
+        chat.state.value.selectedConversationId?.let { publishChatRecording(it, false) }
         mutableChatRecordingState.value = NqrbChatRecordingState.Finalizing
         callActionScope.launch {
             val draft = chatVoiceRecorder.stop()
@@ -888,6 +901,7 @@ class NqrbAppState(
 
     fun finishAndSendChatRecording() {
         if (mutableChatRecordingState.value != NqrbChatRecordingState.Recording) return
+        chat.state.value.selectedConversationId?.let { publishChatRecording(it, false) }
         mutableChatRecordingState.value = NqrbChatRecordingState.Finalizing
         callActionScope.launch {
             val draft = chatVoiceRecorder.stop()
@@ -902,6 +916,7 @@ class NqrbAppState(
 
     fun cancelChatRecording() {
         val draft = mutableChatVoiceDraft.value
+        chat.state.value.selectedConversationId?.let { publishChatRecording(it, false) }
         val shouldStopPlayback = draft != null || mutableChatRecordingState.value in setOf(
             NqrbChatRecordingState.Recording,
             NqrbChatRecordingState.Finalizing,
@@ -1310,7 +1325,10 @@ class NqrbAppState(
         foregroundRefreshJob?.cancel()
         foregroundRefreshJob = null
         callActionScope.launch {
-            if (mutableChatRecordingState.value == NqrbChatRecordingState.Recording) chatVoiceRecorder.cancel()
+            if (mutableChatRecordingState.value == NqrbChatRecordingState.Recording) {
+                chat.state.value.selectedConversationId?.let { publishChatRecording(it, false) }
+                chatVoiceRecorder.cancel()
+            }
             if (chatPlaybackIntent.value.generation == playbackIntent) chatVoicePlayer.stop()
             if (mutableChatRecordingState.value == NqrbChatRecordingState.Recording) mutableChatRecordingState.value = NqrbChatRecordingState.BackgroundInterrupted
         }

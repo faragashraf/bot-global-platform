@@ -85,6 +85,34 @@ data class ChatMessageHint(
 )
 
 @Serializable
+enum class ChatRealtimeActivity { Idle, Typing, Recording }
+
+@Serializable
+data class ChatPresenceHint(
+    val applicationId: String,
+    val conversationId: String,
+    val subjectId: String,
+    val state: String,
+    val changedAtUtc: String,
+    val expiresAtUtc: String,
+) {
+    val activity: ChatRealtimeActivity? get() = when (state.trim().lowercase()) {
+        "idle" -> ChatRealtimeActivity.Idle
+        "typing" -> ChatRealtimeActivity.Typing
+        "recording" -> ChatRealtimeActivity.Recording
+        else -> null
+    }
+}
+
+data class ChatRealtimeActivityIndicator(
+    val conversationId: String,
+    val subjectId: String,
+    val activity: ChatRealtimeActivity,
+    val changedAtUtc: String,
+    val expiresAtUtc: String,
+)
+
+@Serializable
 data class PendingChatText(
     val conversationId: String,
     val clientMessageId: String,
@@ -319,6 +347,7 @@ data class ChatSnapshot(
     val localVoiceKeys: Map<String, String> = emptyMap(),
     val localReadWatermarks: Map<String, Long> = emptyMap(),
     val voiceLoads: Map<String, ChatVoiceLoadState> = emptyMap(),
+    val realtimeActivities: Map<String, ChatRealtimeActivityIndicator> = emptyMap(),
     val accountGeneration: Long = 0,
     val activityOrders: Map<String, ChatActivityOrder> = emptyMap(),
 ) {
@@ -451,6 +480,10 @@ object UnavailableChatVoicePlayer : ChatVoicePlayer {
 interface ChatRealtime {
     suspend fun connect(onHint: suspend (ChatMessageHint) -> Unit)
     suspend fun connect(onHint: suspend (ChatMessageHint) -> Unit, onConnected: suspend () -> Unit) = connect(onHint)
+    suspend fun connect(onHint: suspend (ChatMessageHint) -> Unit,
+        onPresence: suspend (ChatPresenceHint) -> Unit,
+        onConnected: suspend () -> Unit) = connect(onHint, onConnected)
+    suspend fun setPresence(conversationId: String, activity: ChatRealtimeActivity) = Unit
     suspend fun disconnect()
 }
 

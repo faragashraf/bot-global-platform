@@ -6,10 +6,24 @@ public static class ChatContract
 {
     public const string HubPath = "/hubs/chat";
     public const string MessageEvent = "chat_message";
+    public const string PresenceEvent = "chat_presence";
     public const int SubjectMaxLength = 200;
     public const int ReferenceMaxLength = 200;
     public const int ClientMessageIdMaxLength = 100;
     public const int TextMaxLength = 4000;
+}
+
+public static class ChatPresenceStates
+{
+    public const string Idle = "idle";
+    public const string Typing = "typing";
+    public const string Recording = "recording";
+
+    public static string? Normalize(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        return normalized is Idle or Typing or Recording ? normalized : null;
+    }
 }
 
 // Ephemeral authentication capability created by the owning authentication handler.
@@ -86,3 +100,15 @@ public sealed record ChatMessageHint(
     long Sequence,
     string Kind,
     DateTimeOffset CreatedAtUtc);
+
+public sealed record ChatPresenceRequest(
+    Guid ConversationId,
+    string State);
+
+public sealed record ChatPresenceChangedEvent(
+    Guid ApplicationId,
+    Guid ConversationId,
+    string SubjectId,
+    string State,
+    DateTimeOffset ChangedAtUtc,
+    DateTimeOffset ExpiresAtUtc);

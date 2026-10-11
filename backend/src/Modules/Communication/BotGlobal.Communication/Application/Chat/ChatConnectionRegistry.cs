@@ -40,4 +40,29 @@ public sealed class ChatConnectionRegistry
                 await hub.Clients.Client(id).SendAsync(ChatContract.MessageEvent, hint, token);
         }
     }
+
+    public async Task SendPresenceAsync(ChatPresenceChangedEvent hint, string subject, IServiceProvider services,
+        Func<string, IClientProxy> client, CancellationToken token)
+    {
+        foreach (var (id, subscription) in _connections.ToArray())
+        {
+            if (subscription.Actor.Application.ApplicationId != hint.ApplicationId || subscription.Actor.SubjectId != subject) continue;
+            var valid = false;
+            try
+            {
+                valid = await subscription.Credential.ValidateAsync(services, token) &&
+                    await services.GetRequiredService<IChatActorResolver>().ResolveAsync(subscription.Principal, token) == subscription.Actor;
+                if (valid)
+                {
+                    var adapters = services.GetRequiredService<ChatPolicyRegistry>().Resolve(subscription.Actor.Application.ApplicationKey);
+                    valid = adapters is not null && await adapters.Value.Directory.FindBySubjectAsync(subscription.Actor.Application, subject, token) is not null;
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch { valid = false; }
+            if (!valid) { Remove(id); subscription.Abort(); continue; }
+            if (_connections.TryGetValue(id, out var current) && ReferenceEquals(current, subscription))
+                await client(id).SendAsync(ChatContract.PresenceEvent, hint, token);
+        }
+    }
 }

@@ -35,6 +35,23 @@ public sealed class ChatDeliveryTests
     }
 
     [Fact]
+    public async Task PresenceHintUsesChatPresenceEventForValidatedRecipientSocket()
+    {
+        var actor = new ChatActor(new(Guid.NewGuid(), "test-app"), "staff:recipient", ChatActorMechanism.ApplicationSession);
+        var registry = new ChatConnectionRegistry(); var hub = new Hub(); var clock = new Clock();
+        registry.Add("valid", actor, new(), new((_, _) => Task.FromResult(true)), () => { });
+        registry.Add("other-subject", actor with { SubjectId = "staff:other" }, new(), new((_, _) => Task.FromResult(true)), () => { });
+        using var services = new ServiceCollection().AddSingleton<IChatActorResolver>(new Actor(actor))
+            .AddSingleton(new ChatPolicyRegistry([new Directory()], [new Policy()], new Applications())).BuildServiceProvider();
+
+        await registry.SendPresenceAsync(new(actor.Application.ApplicationId, Guid.NewGuid(), "staff:sender",
+            ChatPresenceStates.Typing, clock.Now, clock.Now.AddSeconds(8)), actor.SubjectId, services, hub.ClientsImpl.Client, default);
+
+        Assert.Equal(["valid"], hub.ClientsImpl.Sent);
+        Assert.Equal([ChatContract.PresenceEvent], hub.ClientsImpl.Methods);
+    }
+
+    [Fact]
     public async Task DispatcherDrainsBeyondFiftyAndKeepsApplicationsIsolated()
     {
         await using var f = await Fixture.Create(61);
@@ -175,13 +192,14 @@ public sealed class ChatDeliveryTests
     }
     private sealed class RecordingClients : IHubClients {
         public List<string> Sent { get; } = [];
-        public IClientProxy Client(string id) => new Proxy(() => Sent.Add(id));
+        public List<string> Methods { get; } = [];
+        public IClientProxy Client(string id) => new Proxy(method => { Sent.Add(id); Methods.Add(method); });
         public IClientProxy All => throw new InvalidOperationException("Unvalidated broadcast");
         public IClientProxy AllExcept(IReadOnlyList<string> ids) => All; public IClientProxy Clients(IReadOnlyList<string> ids) => All;
         public IClientProxy Group(string name) => All; public IClientProxy GroupExcept(string name, IReadOnlyList<string> ids) => All;
         public IClientProxy Groups(IReadOnlyList<string> names) => All; public IClientProxy User(string id) => All; public IClientProxy Users(IReadOnlyList<string> ids) => All;
     }
-    private sealed class Proxy(Action sent) : IClientProxy { public Task SendCoreAsync(string method, object?[] args, CancellationToken token = default) { sent(); return Task.CompletedTask; } }
+    private sealed class Proxy(Action<string> sent) : IClientProxy { public Task SendCoreAsync(string method, object?[] args, CancellationToken token = default) { sent(method); return Task.CompletedTask; } }
     private sealed class Groups : IGroupManager {
         public Task AddToGroupAsync(string id, string group, CancellationToken token = default) => Task.CompletedTask;
         public Task RemoveFromGroupAsync(string id, string group, CancellationToken token = default) => Task.CompletedTask;

@@ -101,6 +101,45 @@ class ChatControllerTests {
     }
 
     @Test
+    fun realtimePresenceTracksCounterpartActivityAndClearsOnIdle() = runTest {
+        val scope = ChatAccountScope("application-a", "subject-a")
+        val realtime = CapturingRealtime()
+        val controller = ChatController(
+            gateway = FakeGateway(scope),
+            durableStore = MemoryStore(),
+            voiceStore = MemoryVoiceStore(),
+            realtime = realtime,
+            installationId = { "installation-1" },
+            ids = ChatIdGenerator { "client-1" },
+        )
+        controller.bindAuthenticated()
+
+        realtime.presence(ChatPresenceHint(
+            applicationId = scope.applicationId,
+            conversationId = ConversationId,
+            subjectId = "other",
+            state = "recording",
+            changedAtUtc = "2026-10-07T00:00:00Z",
+            expiresAtUtc = "2099-10-07T00:00:08Z",
+        ))
+        runCurrent()
+
+        assertEquals(ChatRealtimeActivity.Recording, controller.state.value.realtimeActivities[ConversationId]?.activity)
+
+        realtime.presence(ChatPresenceHint(
+            applicationId = scope.applicationId,
+            conversationId = ConversationId,
+            subjectId = "other",
+            state = "idle",
+            changedAtUtc = "2026-10-07T00:00:01Z",
+            expiresAtUtc = "2026-10-07T00:00:01Z",
+        ))
+        runCurrent()
+
+        assertTrue(controller.state.value.realtimeActivities.isEmpty())
+    }
+
+    @Test
     fun canonicalMessageMutationWindowIsOneHourForOwnerOnly() {
         val own = message("client-1").copy(createdAtUtc = "2026-10-07T00:00:00Z")
 
@@ -163,6 +202,20 @@ class ChatControllerTests {
             expectedLength: Long, content: ByteArray) = if (acceptDownloadedContent) StoredChatVoice("$transferId.m4a", expectedLength, expectedSha256) else null
         override suspend fun read(scope: ChatAccountScope, localKey: String): ByteArray? = null
         override suspend fun deleteAccount(scope: ChatAccountScope) = Unit
+    }
+
+    private class CapturingRealtime : ChatRealtime {
+        private var onPresence: (suspend (ChatPresenceHint) -> Unit)? = null
+        override suspend fun connect(onHint: suspend (ChatMessageHint) -> Unit) = Unit
+        override suspend fun connect(onHint: suspend (ChatMessageHint) -> Unit,
+            onPresence: suspend (ChatPresenceHint) -> Unit,
+            onConnected: suspend () -> Unit) {
+            this.onPresence = onPresence
+        }
+        suspend fun presence(hint: ChatPresenceHint) {
+            onPresence?.invoke(hint)
+        }
+        override suspend fun disconnect() = Unit
     }
 
     private class FakeGateway(initialScope: ChatAccountScope) : ChatGateway {

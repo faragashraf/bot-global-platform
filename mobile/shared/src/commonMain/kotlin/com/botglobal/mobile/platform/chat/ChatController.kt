@@ -1,8 +1,11 @@
 package com.botglobal.mobile.platform.chat
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -10,11 +13,13 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlin.random.Random
+import kotlin.time.Instant
 
 class ChatController(
     private val gateway: ChatGateway = UnavailableChatGateway,
@@ -40,6 +45,7 @@ class ChatController(
     private val bindLock = Mutex()
     private val ackLock = Mutex()
     private val downloads = mutableMapOf<Pair<Long, String>, CompletableDeferred<StoredChatVoice?>>()
+    private val realtimeActivityExpiries = mutableMapOf<String, Job>()
 
     suspend fun bindAuthenticated(knownScope: ChatAccountScope? = null, resumeNetwork: Boolean = true): Boolean {
         val ticket = clearBinding()
@@ -77,6 +83,8 @@ class ChatController(
     private suspend fun clearBinding(): Long = bindLock.withLock {
         val ticket = lock.withLock {
             sessionJob.cancel()
+            realtimeActivityExpiries.values.forEach { it.cancel() }
+            realtimeActivityExpiries.clear()
             sessionJob = SupervisorJob()
             generation += 1
             durable = ChatDurableState(); committed = durable
@@ -119,6 +127,9 @@ class ChatController(
             try { realtime.connect({ hint ->
                 val account = state.value.account
                 if (generation == ticket && hint.applicationId == account?.applicationId) sync(hint.conversationId, ticket)
+            }, { presence ->
+                val account = state.value.account
+                if (generation == ticket && presence.applicationId == account?.applicationId) acceptRealtimeActivity(presence, ticket)
             }, { if (generation == ticket) { flush(ticket); sync(expectedGeneration = ticket) } }) } catch (error: CancellationException) { throw error } catch (_: Exception) { }
         }
         flush(ticket)
@@ -140,6 +151,24 @@ class ChatController(
 
     suspend fun selectConversation(conversationId: String?) {
         lock.withLock { mutableState.value = mutableState.value.copy(selectedConversationId = conversationId) }
+    }
+
+    suspend fun setTyping(conversationId: String, active: Boolean) =
+        setRealtimeActivity(conversationId, if (active) ChatRealtimeActivity.Typing else ChatRealtimeActivity.Idle)
+
+    suspend fun setRecording(conversationId: String, active: Boolean) =
+        setRealtimeActivity(conversationId, if (active) ChatRealtimeActivity.Recording else ChatRealtimeActivity.Idle)
+
+    private suspend fun setRealtimeActivity(conversationId: String, activity: ChatRealtimeActivity) {
+        active() ?: return
+        val known = lock.withLock {
+            mutableState.value.selectedConversationId == conversationId ||
+                durable.conversations.any { it.conversationId == conversationId }
+        }
+        if (!known) return
+        try { realtime.setPresence(conversationId, activity) }
+        catch (error: CancellationException) { throw error }
+        catch (_: Exception) { }
     }
 
     suspend fun sendText(conversationId: String, text: String, expectedAccount: ChatAccountScope? = null,
@@ -637,6 +666,42 @@ class ChatController(
         try { durableStore.save(scope, durable); committed = durable; publish(scope, state) }
         catch (error: Exception) { durable = committed; throw error }
     }
+
+    private suspend fun acceptRealtimeActivity(hint: ChatPresenceHint, ticket: Long) {
+        val activity = hint.activity ?: return
+        val expiresAt = runCatching { Instant.parse(hint.expiresAtUtc).toEpochMilliseconds() }.getOrNull() ?: return
+        val key = hint.conversationId
+        val shouldSchedule = lock.withLock {
+            val snapshot = mutableState.value
+            val account = snapshot.account ?: return@withLock false
+            if (snapshot.accountGeneration != ticket || hint.subjectId == account.subjectId ||
+                durable.conversations.none { it.conversationId == hint.conversationId && it.counterpartSubjectId == hint.subjectId })
+                return@withLock false
+            realtimeActivityExpiries.remove(key)?.cancel()
+            val current = snapshot.realtimeActivities
+            mutableState.value = if (activity == ChatRealtimeActivity.Idle) snapshot.copy(realtimeActivities = current - key)
+                else snapshot.copy(realtimeActivities = current + (key to ChatRealtimeActivityIndicator(
+                    hint.conversationId, hint.subjectId, activity, hint.changedAtUtc, hint.expiresAtUtc)))
+            activity != ChatRealtimeActivity.Idle
+        }
+        if (shouldSchedule) scheduleRealtimeActivityExpiry(key, hint.subjectId, expiresAt, ticket)
+    }
+
+    private fun scheduleRealtimeActivityExpiry(conversationId: String, subjectId: String, expiresAtEpochMillis: Long, ticket: Long) {
+        val waitMs = (expiresAtEpochMillis - kotlin.time.Clock.System.now().toEpochMilliseconds()).coerceAtLeast(0)
+        realtimeActivityExpiries[conversationId] = CoroutineScope(sessionJob + Dispatchers.Default).launch {
+            delay(waitMs)
+            lock.withLock {
+                val snapshot = mutableState.value
+                if (snapshot.accountGeneration == ticket &&
+                    snapshot.realtimeActivities[conversationId]?.subjectId == subjectId) {
+                    mutableState.value = snapshot.copy(realtimeActivities = snapshot.realtimeActivities - conversationId)
+                }
+                realtimeActivityExpiries.remove(conversationId)
+            }
+        }
+    }
+
     private fun publish(scope: ChatAccountScope, state: ChatLoadState) { mutableState.value = mutableState.value.copy(account = scope, accountGeneration = generation, state = state, conversations = durable.conversations, messages = durable.messages, pendingClientMessageIds = (durable.textOutbox.map { it.clientMessageId } + durable.voiceOutbox.map { it.clientMessageId }).toSet(), pendingTexts = durable.textOutbox, pendingVoices = durable.voiceOutbox, localVoiceKeys = durable.localVoiceKeys,
         activityOrders = durable.activityOrders,
         localReadWatermarks = durable.localReadWatermarks + durable.readReceipts.associate { it.conversationId to maxOf(it.sequence, durable.localReadWatermarks[it.conversationId] ?: 0) }) }

@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import com.botglobal.mobile.platform.chat.ChatLoadState
 import com.botglobal.mobile.platform.chat.ChatMessage
 import com.botglobal.mobile.platform.chat.ChatSnapshot
+import com.botglobal.mobile.platform.chat.ChatRealtimeActivity
 import com.botglobal.mobile.platform.chat.canBeDeletedBy
 import com.botglobal.mobile.platform.chat.canBeEditedBy
 import com.botglobal.mobile.platform.chat.timeline
@@ -63,6 +65,7 @@ import com.botglobal.nqrb.app.state.NqrbChatCallTarget
 import com.botglobal.nqrb.app.state.NqrbChatCallUnavailableReason
 import com.botglobal.nqrb.app.state.NqrbChatRecordingState
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberCoroutineScope
@@ -159,6 +162,8 @@ internal data class NqrbChatStrings(
     val recordAgainHint get() = localized("حذف التسجيل الحالي وبدء تسجيل جديد", "Delete this recording and start again")
     val checkDelivery get() = localized("تحقق من الإرسال", "Check delivery")
     val voiceRejected get() = localized("تعذّر إرسال التسجيل. نسختك محفوظة ويمكنك الاستماع إليها.", "The recording was rejected. Your copy is saved and can still be played.")
+    val peerTyping get() = localized("يكتب…", "Typing…")
+    val peerRecording get() = localized("يسجل رسالة صوتية…", "Recording a voice note…")
     fun textFailure(reason: ChatTextFailure) = when (reason) {
         ChatTextFailure.Forbidden -> localized("تعذّر الإرسال لهذا الشخص. رسالتك محفوظة؛ يمكنك تعديلها أو نسخها أو إزالتها.", "Sending to this person was rejected. Your text is saved; edit, copy or remove it.")
         ChatTextFailure.Conflict -> localized("لم نتأكد من إرسال الرسالة. النص محفوظ؛ تحقق من الإرسال قبل إرسال نسخة أخرى.", "Delivery could not be confirmed. Your text is saved; check delivery before sending another copy.")
@@ -343,9 +348,11 @@ internal fun NqrbChatListScreen(languageTag: String, snapshot: ChatSnapshot, app
                                         overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.End)
                                 }
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                    Text(if (latest != null) { if (latest.kind == "voice") strings.voiceNote else latest.text ?: strings.messageHint }
+                                    val activityLabel = snapshot.realtimeActivities[conversation.conversationId]?.let { chatRealtimeActivityLabel(it.activity, strings) }
+                                    Text(activityLabel ?: if (latest != null) { if (latest.kind == "voice") strings.voiceNote else latest.text ?: strings.messageHint }
                                         else activity.pending?.let { it.text?.text ?: strings.voiceNote } ?: strings.messageHint,
-                                        Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary,
+                                        Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                                        color = if (activityLabel != null) colors.accent else colors.textSecondary,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
@@ -384,6 +391,12 @@ internal fun chatRecencyLabel(time: NqrbCallTime): String =
 internal fun chatConversationDisplayName(conversation: ChatConversation?, strings: NqrbChatStrings): String =
     conversation?.counterpartDisplayName?.takeIf(String::isNotBlank) ?: strings.participantUnavailable
 
+internal fun chatRealtimeActivityLabel(activity: ChatRealtimeActivity, strings: NqrbChatStrings): String? = when (activity) {
+    ChatRealtimeActivity.Typing -> strings.peerTyping
+    ChatRealtimeActivity.Recording -> strings.peerRecording
+    ChatRealtimeActivity.Idle -> null
+}
+
 @Composable
 internal fun NqrbChatThreadScreen(
     languageTag: String,
@@ -402,6 +415,7 @@ internal fun NqrbChatThreadScreen(
     val authentication by appState.identity.state.collectAsState()
     val localOnly by appState.chatLocalOnly.collectAsState()
     val displayName = chatConversationDisplayName(conversation, strings)
+    val realtimeStatus = conversationId?.let { snapshot.realtimeActivities[it] }?.let { chatRealtimeActivityLabel(it.activity, strings) }
     val callTarget = remember(
         authentication,
         directory,
@@ -466,6 +480,18 @@ internal fun NqrbChatThreadScreen(
     var editing by remember { mutableStateOf<PendingChatText?>(null) }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var replyingTo by remember { mutableStateOf<ChatMessage?>(null) }
+    DisposableEffect(conversationId) {
+        onDispose { conversationId?.let { appState.setChatTyping(it, false) } }
+    }
+    LaunchedEffect(conversationId, text, recordingState) {
+        val id = conversationId ?: return@LaunchedEffect
+        val active = text.isNotBlank() && recordingState != NqrbChatRecordingState.Recording
+        appState.setChatTyping(id, active)
+        if (active) {
+            delay(3_500)
+            appState.setChatTyping(id, false)
+        }
+    }
     LaunchedEffect(conversationId) {
         if (conversationId != null && draftConversationId != conversationId) {
             draftConversationId = conversationId
@@ -479,6 +505,7 @@ internal fun NqrbChatThreadScreen(
     Column(Modifier.widthIn(max = NqrbLayout.ThreadMaxWidth).fillMaxSize().imePadding()) {
         ChatHeader(
             title = displayName,
+            subtitle = realtimeStatus,
             back = strings.back,
             onBack = appState::leaveChat,
             callTarget = callTarget,
@@ -756,6 +783,7 @@ private fun ChatStatePane(title: String, body: String, modifier: Modifier = Modi
 @Composable
 private fun ChatHeader(
     title: String,
+    subtitle: String? = null,
     back: String,
     onBack: () -> Unit,
     callTarget: NqrbChatCallTarget? = null,
@@ -782,8 +810,12 @@ private fun ChatHeader(
                 Text(title.take(1), color = colors.accent, style = MaterialTheme.typography.titleMedium)
             }
             Spacer(Modifier.width(NqrbSpacing.Sm))
-            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = colors.textPrimary,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, color = colors.textPrimary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelMedium, color = colors.accent,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             if (callTarget != null) {
                 NqrbCallIconButton(
                     label = callLabel,
