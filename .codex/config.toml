@@ -6,7 +6,7 @@ sandbox_mode = "workspace-write"
 approval_policy = "on-request"
 
 [agents]
-default_subagent_model = "gpt-5.6-terra"
+default_subagent_model = "gpt-6.1-sol"
 default_subagent_reasoning_effort = "medium"
 max_threads = 2
 max_depth = 1
